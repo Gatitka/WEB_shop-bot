@@ -1,0 +1,44 @@
+mypy temp.py - Для проверки файлов на соответствие указанным аннотациям
+
+OS.path
+
+Функция abspath() модуля os.path вернет нормализованную абсолютную версию пути.
+На большинстве платформ это эквивалентно вызову функции os.path.normpath()
+следующим образом: os.path.normpath(join(os.getcwd(),path)).
+
+>>> os.path.abspath('file.txt')
+# '/home/docs-python/file.txt'
+
+
+
+>>> os.path.basename('/home/User/Documents/file.txt')
+# 'file.txt'
+>>> os.path.basename('/home/User/Documents')
+# 'Documents'
+
+
+Функция dirname() модуля os.path возвращает имя каталога в пути path.
+Это первый элемент пары, возвращаемый путем передачи пути к функции os.path.split().
+
+>>> os.path.dirname('/home/User/Documents/file.txt')
+# '/home/User/Documents'
+
+>>> os.path.dirname('file.txt')
+# ''
+
+>>> os.path.dirname('/home/User/Documents')
+# '/home/User'
+
+
+
+>>> os.path.join('home', 'User', 'Desktop', 'file.txt')
+# 'home/User/Desktop/file.txt'
+
+>>> os.path.join('/home', 'User/Desktop', 'file.txt')
+# '/home/User/Desktop/file.txt'
+
+>>> os.path.join('/home', '/User/Desktop', 'file.txt')
+# '/User/Desktop/file.txt'
+
+>>> os.path.join('User/Desktop', '/home', 'file.txt')
+# '/home/file.txt'
