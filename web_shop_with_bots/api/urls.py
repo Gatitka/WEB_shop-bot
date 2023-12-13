@@ -29,6 +29,7 @@ v1_router.register(
     basename='user_orders'
 )
 v1_router.register('auth/users/me/delete', DeleteUserViewSet, basename='users')
+
 # v1_router.register('auth/users', CustomUserViewSet)
 # menu
 # delivery contacts
