@@ -6,6 +6,7 @@ from django.db import models
 from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from phonenumber_field.modelfields import PhoneNumberField
 
 # UserRoles (models.TextChoices):
 #     ADMIN = ('admin', 'Администратор')
@@ -17,15 +18,14 @@ ADDRESS_TYPE_CHOICES = (
 )
 
 
-class UserAddresses(models.Model):
-    base_profile = models.ForeignKey(
-        'BaseProfile',
-        on_delete=models.PROTECT,
-        related_name='my_addresses',
-        verbose_name='Аккаунт сайта'
-        )
+class UserAddress(models.Model):
     short_name = models.CharField(
         'адрес коротко',
+        max_length=20,
+        null=True, blank=True
+    )
+    city = models.CharField(
+        'город',
         max_length=20
     )
     full_address = models.CharField(
@@ -37,6 +37,11 @@ class UserAddresses(models.Model):
         max_length=100,
         choices=ADDRESS_TYPE_CHOICES
     )
+    base_profile = models.ForeignKey(
+        'BaseProfile',
+        on_delete=models.PROTECT,
+        verbose_name='базовый профиль',
+    )   # НЕ УДАЛЯТЬ! нужен для правильного отображения админки
 
     class Meta:
         ordering = ['-id']
@@ -66,6 +71,13 @@ class BaseProfile(models.Model):
         verbose_name='Мессенджер',
         blank=True, null=True
         )
+    my_addresses = models.ForeignKey(
+        'UserAddress',
+        on_delete=models.PROTECT,
+        related_name='profile',
+        verbose_name='адреса',
+        blank=True, null=True
+    )
     city = models.CharField(
         'Город',
         max_length=20,
@@ -100,6 +112,7 @@ class BaseProfile(models.Model):
         default="RUS"
     )
 
+
     @property
     def email(self):
         return self.email
@@ -123,12 +136,6 @@ class CustomWEBAccountManager(BaseUserManager):
         web_account = self.model(email=email, **extra_fields)
         web_account.set_password(password)
         web_account.save()
-        # base_profile = BaseProfile(
-        #     web_account=web_account
-        # )
-        # base_profile.save(using=self._db)
-        # web_account.base_profile = base_profile
-        # web_account.save()
         return web_account
 
     def create_user(self, email, password=None, **extra_fields):
@@ -152,9 +159,9 @@ class CustomWEBAccountManager(BaseUserManager):
 
 
 class WEBAccount(AbstractUser):
-    ''' Базовая модель клиента, созданная для сведения клиентов сайта и ботов из соц сетей
-    в одну сущность, которая будет хранить данные о клиенте: имя, фамилия, телефон, адрес и пр
-    + корзину, заказы.'''
+    ''' Модель для зарегистрированного пользователя сайта.
+    Имеет привязку к базовому профилю,
+    через который осуществляется пополнение корзины и сооздание заказов.'''
     username = None
     password = models.CharField(
         'Пароль',
@@ -173,11 +180,8 @@ class WEBAccount(AbstractUser):
         choices=settings.LANGUAGE_CHOICES,
         default="RUS"
     )
-    phone = models.CharField(
-        'Телефон',
-        max_length=15,
-        validators=[MinLengthValidator(8)],
-        # настроить норм валидацию
+    phone = PhoneNumberField(
+        verbose_name='телефон',
     )
     notes = models.CharField(
         'Пометки',
@@ -216,10 +220,11 @@ class WEBAccount(AbstractUser):
     REQUIRED_FIELDS = ['first_name', 'last_name', 'phone']
 
 
+# ------    сигналы для создания базового профиля при создании web account
 @receiver(post_save, sender=WEBAccount)
 def create_base_profile(sender, instance, created, **kwargs):
     if created:
-        base_profile=BaseProfile(web_account=instance)
+        base_profile = BaseProfile(web_account=instance)
         base_profile.save()
         instance.base_profile = base_profile
         instance.save()

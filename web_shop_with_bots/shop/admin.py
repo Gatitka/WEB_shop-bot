@@ -5,6 +5,8 @@ from .models import (ShoppingCart, CartDish, Order, OrderDish, Delivery, Shop)
 from utils.utils import activ_actions
 
 
+admin.site.register(OrderDish)
+
 class CartDishInline(admin.TabularInline):
     """Вложенная админка CartDish для добавления товаров в заказ (создания записей CartDish)
     сразу в админке заказа (через объект Cart)."""
@@ -43,8 +45,8 @@ class OrderAdmin(admin.ModelAdmin):
     list_display = ('pk', 'status',
                     'user', 'recipient_phone',
                     'created', 'delivery',
-                    'total_amount')
-    readonly_fields = ['total_amount']
+                    'amount')
+    readonly_fields = ['amount']
     list_filter = ('status', 'user', 'created') # user_groups, paid
     inlines = (OrderDishInline,)
 
@@ -57,12 +59,12 @@ class OrderAdmin(admin.ModelAdmin):
 class DeliveryAdmin(admin.ModelAdmin):
     """Настройки админ панели доставки".
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
-    list_display = ('name_rus', 'type', 'is_active', 'min_price', 'price')
+    list_display = ('name_rus', 'type', 'city', 'is_active', 'min_price', 'price')
     actions = [*activ_actions]
 
 
 @admin.register(Shop)
 class ShopAdmin(admin.ModelAdmin):
     """Настройки админ панели магазинов."""
-    list_display = ('pk', 'short_name', 'is_active', 'phone', 'work_hours')
+    list_display = ('pk', 'city', 'short_name', 'is_active', 'phone', 'work_hours')
     actions = [*activ_actions]

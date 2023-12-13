@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BaseProfile, WEBAccount, UserAddresses
+from .models import BaseProfile, WEBAccount, UserAddress
 from shop.models import Order  # ShoppingCart
 from django.contrib.auth.admin import UserAdmin
 
@@ -10,7 +10,7 @@ class WEBAccountAdminInline(admin.StackedInline):
 
 
 class UserAddressesAdminInline(admin.TabularInline):
-    model = UserAddresses
+    model = UserAddress
     min_num = 0
 
 

@@ -1,19 +1,21 @@
 from django.contrib.auth import get_user_model
 from catalog.models import Dish
-from shop.models import ShoppingCart, CartDish, Shop, Delivery
+from shop.models import ShoppingCart, CartDish, Shop, Delivery, Order
+from users.models import BaseProfile, UserAddress
 from django.shortcuts import get_object_or_404, redirect
 from api.utils import check_existance_create_delete
 from rest_framework.decorators import action
-from .serializers import WebAccauntSerializer, SignUpSerializer, PasswordSerializer, DishShortSerializer,ShopSerializer, DeliverySerializer
+from .serializers import UserOrdersSerializer, DishShortSerializer, ShopSerializer, DeliverySerializer, UserAddressSerializer
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import mixins, status, viewsets
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view
+from django.contrib import messages
+from djoser.views import UserViewSet
+from django.views.decorators.csrf import csrf_protect
+from django.utils.decorators import method_decorator
 
-# import base64
-# from django.utils.encoding import force_text
-# from django.contrib.auth.tokens.PasswordResetTokenGenerator import default_token_generator
 
 
 User = get_user_model()
@@ -22,129 +24,63 @@ User = get_user_model()
 DATE_TIME_FORMAT = '%d/%m/%Y %H:%M'
 
 
-def activateuseraccount(request, uidb64=None, token=None):
-# print(force_text(urlsafe_base64_decode(uidb64)))
-    # print(token)
-    try:
-        uid = force_text(base64.urlsafe_base64_decode(uidb64))
-        #print(type(uid),uid)
-        user = User.objects.get(pk=uid)
-        print(user)
-    except User.DoesNotExist:
-        user = None
-    if user and default_token_generator.check_token(user, token):
-        user.is_email_verified = True
-        user.is_active = True
+class DeleteUserViewSet(mixins.DestroyModelMixin,
+                        viewsets.GenericViewSet):
+    permission_classes = [IsAuthenticated,]
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        user.is_active = False
         user.save()
-        login(request,user)
-        print("Activaton done")
-    else:
-        print("Activation failed")
+        messages.success(self.request, 'Profile successfully disabled.')
+        return redirect('contacts')
 
 
-class ShopViewSet(viewsets.ReadOnlyModelViewSet):
+class ContactsDeliveryViewSet(viewsets.ViewSet):
+    def list(self, request):
+        shops = Shop.objects.filter(is_active=True).all()
+        delivery = Delivery.objects.filter(is_active=True).filter(type="1").all()
+        response_data = {}
+        response_data['shops'] = ShopSerializer(shops, many=True).data
+        response_data['delivery'] = DeliverySerializer(delivery, many=True).data
+        return Response(response_data)
+
+
+class UserAddressViewSet(mixins.ListModelMixin,
+                         mixins.RetrieveModelMixin,
+                         mixins.CreateModelMixin,
+                         mixins.UpdateModelMixin,
+                         mixins.DestroyModelMixin,
+                         viewsets.GenericViewSet):
     """
-    Работает с ресторанами.
-    Изменение и создание тэгов разрешено только через админку.
+    Вьюсет модели UserAddresses для просмотра сохраненных адресов пользователя.
     """
-    serializer_class = ShopSerializer
-    pagination_class = None
+    serializer_class = UserAddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return UserAddress.objects.filter(
+            base_profile=self.request.user.profile
+        ).all()
+
+    def perform_create(self, serializer):
+        serializer.save(base_profile=self.request.user.profile)
+
+    def perform_update(self, serializer):
+        serializer.save(base_profile=self.request.user.profile)
 
 
-
-@api_view(['GET'])
-def contacts_delivery(request):
-    shops = Shop.objects.filter(is_active=True).all()
-    delivery = Delivery.objects.filter(is_active=True).filter(type=1).all()
-    response_data = {}
-    response_data['shops'] = ShopSerializer(shops, many=True).data
-    response_data['delivery'] = DeliverySerializer(delivery).data
-    return Response(response_data)
-
-
-
-
-
-class UserActivationView(APIView):
-    def get(self, request, uid, token):
-        protocol = 'https://' if request.is_secure() else 'http://'
-        web_url = protocol + request.get_host()
-        post_url = web_url + "/auth/users/activation/"
-        post_data = {'uid': uid, 'token': token}
-        result = request.post(post_url, data = post_data)
-        content = result.text()
-        return Response(content)
-
-
-class MyUserViewSet(mixins.CreateModelMixin,
-                    mixins.RetrieveModelMixin,
-                    viewsets.GenericViewSet):
+class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    Вьюсет модели WebAcount и BaseProfile для создания
-    нового пользователя, изменения пароля,
-    просмотра актуального пользователя (/me).
-
-
+    Вьюсет модели Orders для просмотра истории заказов.
     """
-    queryset = User.objects.all()
-    serializer_class = WebAccauntSerializer
-    permission_classes = [AllowAny]
+    serializer_class = UserOrdersSerializer
+    permission_classes = [IsAuthenticated]
 
-    def get_instance(self):
-        return self.request.user
-
-    def get_serializer_class(self):
-        if self.action in ["create", "partial_update"]:
-            return SignUpSerializer
-        return self.serializer_class
-
-    @action(
-        detail=False,
-        methods=['get'],
-        serializer_class=WebAccauntSerializer,
-        permission_classes=[IsAuthenticated],
-        url_path='me'
-    )
-    def user_profile(self, request):
-        """
-        Экшен для обработки страницы актуального пользователя
-        api/users/me. Только GET, PATCH запросы
-        """
-        self.get_object = self.get_instance
-        if request.method == "GET":
-            return self.retrieve(request)
-        return self.partial_update(request)
-
-    @action(detail=False,
-            methods=['post'],
-            permission_classes=[IsAuthenticated])
-    def set_password(self, request):
-        """
-        Экшен для обработки страницы смены пароля
-        api/users/set_password.
-        Только POST запросы.
-        """
-        user = request.user
-        request.data['user'] = user
-        serializer = PasswordSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user.set_password(request.data['new_password'])
-        user.save()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=True,
-            methods=['get'],
-            permission_classes=[IsAuthenticated])
-    def orders(self, request):
-        """
-        Экшен для обработки страницы заказов
-        api/users/orders.
-        Только GET запросы.
-        """
-        self.get_object = self.get_instance
-        if request.method == "GET":
-            return self.retrieve(request)
-        return self.partial_update(request)
+    def get_queryset(self):
+        return Order.objects.filter(
+            user=self.request.user.profile
+        ).all()[:5]
 
 
 class MenuViewSet(mixins.ListModelMixin,
@@ -198,6 +134,24 @@ class MenuViewSet(mixins.ListModelMixin,
 
 
 
+class ShopViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Вьюсет для отображения ресторанов.
+    Изменение, создание, удаление ресторанов разрешено только через админку.
+    """
+    queryset = Shop.objects.filter(is_active=True).all()
+    serializer_class = ShopSerializer
+    pagination_class = None
+
+
+class DeliveryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Вьюсет для отображения доставки.
+    Изменение, создание, удаление разрешено только через админку.
+    """
+    queryset = Delivery.objects.filter(is_active=True).all()
+    serializer_class = DeliverySerializer
+    pagination_class = None
 
 
 
@@ -210,8 +164,7 @@ class MenuViewSet(mixins.ListModelMixin,
 
 
 
-
-
+######-------------------------------------------------------------------------------------------------------#####
 
 # from django.contrib.auth import get_user_model
 # from django.db.models import Count, F, Sum

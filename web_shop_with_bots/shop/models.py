@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator, MinLengthValidator
+from django.core.validators import MinValueValidator, MinLengthValidator, MaxValueValidator
 from catalog.models import Dish
 from users.models import BaseProfile
 from django.db.models import Sum
@@ -191,6 +191,10 @@ class Delivery(models.Model):
         null=True,
         blank=True
     )
+    city = models.CharField(
+        max_length=20,
+        verbose_name='город'
+    )
 
     class Meta:
         verbose_name = 'доставка'
@@ -268,18 +272,13 @@ class Order(models.Model):
         null=True,
         default=1
     )
-
-    @property
-    def total_amount(self):
-        """  CONSIDER PROMOCODE DICOUNT!!!!!"""
-        total_amount = self.order_dishes.select_related(
-            'dish'
-            ).annotate(
-                item_amount=Sum('dish__price')*Sum('quantity')
-                ).aggregate(total_amount=Sum('item_amount'))
-        return total_amount['total_amount']
-
-    total_amount.fget.short_description = 'Итого'
+    persons_qty = models.PositiveSmallIntegerField(
+        verbose_name='Кол-во приборов',
+        validators=[MaxValueValidator(10)]
+    )
+    amount = models.FloatField(
+        default=0.00
+    )
 
     class Meta:
         ordering = ['-created']
@@ -288,6 +287,13 @@ class Order(models.Model):
 
     def __str__(self):
         return f'{self.id}'
+
+    def save(self, *args, **kwargs):
+        amount = self.order_dishes.select_related(
+            'dish'
+            ).aggregate(total_amount=Sum('amount'))
+        self.amount = amount['total_amount']
+        super(Order, self).save(*args, **kwargs)
 
 
 class OrderDish(models.Model):
@@ -308,10 +314,12 @@ class OrderDish(models.Model):
         verbose_name='Кол-во',
         validators=[MinValueValidator(1)]
     )
-
-    @property
-    def amount(self):
-        return self.dish.price*self.quantity
+    unit_price = models.FloatField(
+        default=0.00
+    )
+    amount = models.FloatField(
+        default=0.00
+    )
 
     class Meta:
         ordering = ['dish']
@@ -323,6 +331,11 @@ class OrderDish(models.Model):
                 name='unique_dish_order'
             )
         ]
+
+    def save(self, *args, **kwargs):
+        self.unit_price = self.dish.price
+        self.amount = self.unit_price * self.quantity
+        super(OrderDish, self).save(*args, **kwargs)
 
 
 class Shop(models.Model):
@@ -359,6 +372,12 @@ class Shop(models.Model):
     )
     is_active = models.BooleanField(
         default=False
+    )
+    city = models.CharField(
+        max_length=50,
+        verbose_name='город',
+        blank=True,
+        null=True
     )
     # map_location = картинка карты
 

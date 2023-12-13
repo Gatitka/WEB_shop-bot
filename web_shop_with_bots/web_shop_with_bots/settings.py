@@ -32,6 +32,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'djoser',
     'corsheaders',
+    'drf_yasg',
+    'rest_framework.authtoken',
 ]
 
 MIDDLEWARE = [
@@ -70,7 +72,7 @@ WSGI_APPLICATION = 'web_shop_with_bots.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, os.environ.get('DB_FILE')),
+        'NAME': os.path.join(BASE_DIR, os.getenv('DB_FILE')),    # os.environ.get('DB_FILE')),
     }
 }
 
@@ -139,8 +141,13 @@ DJOSER = {
         'password_reset': 'djoser.email.PasswordResetEmail',
         'password_changed_confirmation': 'djoser.email.PasswordChangedConfirmationEmail',
     },
+    'PERMISSIONS': {
+        'user_delete': ['api.permissions.DenyAllPermission'],
+        # запрет на удаление пользователей стандартным способом,
+        # т.к. кастомный метод удаления, делая юзера неактивным
+    },
 }
-
+TOKEN_MODEL = None
 
 
 
@@ -169,10 +176,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.WEBAccount'
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000',
-]
-CORS_ORIGIN_ALLOW_ALL = False  # True Разрешает обрабатывать запросы с любого хоста, если False/удалить, то разрешены запросы только с этого хоста
+# CORS_ALLOWED_ORIGINS = [
+#     'http://localhost:3000',
+# ]
+
+CORS_ORIGIN_ALLOW_ALL = True  # True Разрешает обрабатывать запросы с любого хоста, если False/удалить, то разрешены запросы только с этого хоста
 CORS_URLS_REGEX = r'^/api/.*$' # шаблон адресов, к которым можно обращаться с других доменов
 
 SESSION_COOKIE_AGE = 3600
@@ -190,3 +198,6 @@ CURRENCY_CHOICES = (
     ("DIN", "Динар"),
     ("EURO", "Евро")
 )
+
+# CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
+CSRF_COOKIE_HTTPONLY = True

@@ -8,10 +8,10 @@ from rest_framework import permissions
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="Foodgram API",
+        title="YumeSushi API",
         default_version='v1',
-        description="Документация для приложения api проекта Foodgram",
-        contact=openapi.Contact(email="admin@foodgram.ru"),
+        description="Документация для приложения api проекта YumeSushi",
+        contact=openapi.Contact(email="gatitka@yandex.ru"),
         license=openapi.License(name="BSD License"),
     ),
     public=True,

@@ -1,110 +1,41 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework.serializers import SerializerMethodField
-
+from django.db.models import F, QuerySet
 from catalog.models import Dish, Category
 from shop.models import ShoppingCart, CartDish, Delivery, Order, OrderDish, Shop
-from users.models import BaseProfile
+from users.models import BaseProfile, UserAddress
 
 User = get_user_model()
 
 
-class WebAccauntSerializer(serializers.ModelSerializer):
+
+class UserOrdersSerializer(serializers.ModelSerializer):
     """
-    Базовый сериализатор для модели WebAccount.
-    Все поля обязательны.
+    Базовый сериализатор для сериализатора Orders.
+    Возможно только чтение создание.
     """
+    dishes = SerializerMethodField()
 
     class Meta:
-        fields = ('id', 'email', 'first_name',
-                  'last_name')
-        model = User
+        fields = ('id', 'created', 'status', 'dishes', 'amount')
+        model = Order
 
+    def get_dishes(self, order: Order) -> QuerySet[dict]:
+        """Получает список блюд заказа.
 
-class SignUpSerializer(WebAccauntSerializer):
-    """
-    Сериализатор для регистрации нового пользователя.
-    Все поля обязательны.
-    Валидация:
-     - Если в БД есть пользователи с переданными email,
-    вызывается ошибка.
-     - Если имя пользователя - me, вызывается ошибка.
-    """
-    email = serializers.EmailField(
-        max_length=254,
-        required=True
-    )
-    password = serializers.CharField(
-        write_only=True,
-        required=True,
-        max_length=150,
-        min_length=8
-    )   # забрать валидацию из стандарта django
-    first_name = serializers.CharField(
-        write_only=True,
-        required=True,
-        max_length=150,
-        min_length=8
-    )
-
-    class Meta:
-        fields = ('id', 'email', 'first_name',
-                  'last_name', 'password')
-        read_only_fields = ('id',)
-        model = User
-
-    def validate(self, data: dict) -> dict:
-        email = data['email']
-        password = data['password']
-        if User.objects.filter(email=email).exists():
-            raise serializers.ValidationError(
-                "Пользователь с таким email уже существует."
-            )
-        if password is None:
-            raise serializers.ValidationError(
-                "Придумайте пароль."
-            )
-        return data
-
-    def create(self, validated_data: dict) -> User:
-        """ Создаёт нового пользователя с запрошенными полями.
         Args:
-            validated_data (dict): Полученные проверенные данные.
+            order (Order): Запрошенный заказ.
+
         Returns:
-            User: Созданный пользователь.
+            QuerySet[dict]: Список блюд в заказе.
         """
-        user = User(
-            email=validated_data['email'],
-            first_name=validated_data['first_name'],
-            last_name=validated_data['last_name'],
+        return order.dishes.values(
+            'id',
+            'short_name_rus',
+            quantity=F('orders__quantity'),
+            # amount=F('orders__amount')
         )
-        user.set_password(validated_data['password'])
-        user.save()
-        return user
-
-
-class PasswordSerializer(serializers.Serializer):
-    """
-    Сериалайзер для данных, получаемых для смены пароля
-    актуального пользователя.
-    """
-    new_password = serializers.CharField(write_only=True)
-    current_password = serializers.CharField(write_only=True)
-
-    def validate_current_password(self, value: str) -> str:
-        user = self.initial_data['user']
-        if not user.check_password(value):
-            raise serializers.ValidationError(
-                'Введен неверный текущий пароль.'
-            )
-        return value
-
-    def validate_new_password(self, value: str) -> str:
-        if value == self.initial_data['current_password']:
-            raise serializers.ValidationError(
-                'Новый пароль должен отличаться от старого!'
-            )
-        return value
 
 
 class DishShortSerializer(serializers.ModelSerializer):
@@ -142,12 +73,161 @@ class DeliverySerializer(serializers.ModelSerializer):
     """
 
     class Meta:
-        fields = ('id', 'description_rus', 'description_en',
+        fields = ('id', 'city', 'description_rus', 'description_en',
                   'description_srb')
         model = Delivery
-        read_only_fields = ('id', 'description_rus', 'description_en',
+        read_only_fields = ('id', 'city', 'description_rus', 'description_en',
                   'description_srb')
 
+
+class UserAddressSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для сериализатора UserAddresses.
+    Возможно создание, редактирование, удаление автором.
+    """
+    class Meta:
+        fields = ('id', 'city', 'short_name', 'full_address', 'type')
+        model = UserAddress
+        read_only_fields = ('id',)
+
+    # если не писать кастомной валидации, то по умолчанию и так просиходит валидация обязательных полей
+    # def validate(self, data: dict) -> dict:
+    #     city = data['city']
+    #     if city is None:
+    #         raise serializers.ValidationError(
+    #             "Выберите город."
+    #         )
+    #     return data
+
+
+
+
+
+# class WebAccauntSerializer(serializers.ModelSerializer):
+#     """
+#     Базовый сериализатор для модели WebAccount.
+#     Все поля обязательны.
+#     """
+
+#     class Meta:
+#         fields = ('id', 'email', 'first_name',
+#                   'last_name')
+#         model = User
+
+
+# class SignUpSerializer(WebAccauntSerializer):
+#     """
+#     Сериализатор для регистрации нового пользователя.
+#     Все поля обязательны.
+#     Валидация:
+#      - Если в БД есть пользователи с переданными email,
+#     вызывается ошибка.
+#      - Если имя пользователя - me, вызывается ошибка.
+#     """
+#     email = serializers.EmailField(
+#         max_length=254,
+#         required=True
+#     )
+#     password = serializers.CharField(
+#         write_only=True,
+#         required=True,
+#         max_length=150,
+#         min_length=8
+#     )   # забрать валидацию из стандарта django
+#     first_name = serializers.CharField(
+#         write_only=True,
+#         required=True,
+#         max_length=150,
+#         min_length=8
+#     )
+
+#     class Meta:
+#         fields = ('id', 'email', 'first_name',
+#                   'last_name', 'password')
+#         read_only_fields = ('id',)
+#         model = User
+
+#     def validate(self, data: dict) -> dict:
+#         email = data['email']
+#         password = data['password']
+#         if User.objects.filter(email=email).exists():
+#             raise serializers.ValidationError(
+#                 "Пользователь с таким email уже существует."
+#             )
+#         if password is None:
+#             raise serializers.ValidationError(
+#                 "Придумайте пароль."
+#             )
+#         return data
+
+#     def create(self, validated_data: dict) -> User:
+#         """ Создаёт нового пользователя с запрошенными полями.
+#         Args:
+#             validated_data (dict): Полученные проверенные данные.
+#         Returns:
+#             User: Созданный пользователь.
+#         """
+#         user = User(
+#             email=validated_data['email'],
+#             first_name=validated_data['first_name'],
+#             last_name=validated_data['last_name'],
+#         )
+#         user.set_password(validated_data['password'])
+#         user.save()
+#         return user
+
+
+# class PasswordSerializer(serializers.Serializer):
+#     """
+#     Сериалайзер для данных, получаемых для смены пароля
+#     актуального пользователя.
+#     """
+#     new_password = serializers.CharField(write_only=True)
+#     current_password = serializers.CharField(write_only=True)
+
+#     def validate_current_password(self, value: str) -> str:
+#         user = self.initial_data['user']
+#         if not user.check_password(value):
+#             raise serializers.ValidationError(
+#                 'Введен неверный текущий пароль.'
+#             )
+#         return value
+
+#     def validate_new_password(self, value: str) -> str:
+#         if value == self.initial_data['current_password']:
+#             raise serializers.ValidationError(
+#                 'Новый пароль должен отличаться от старого!'
+#             )
+#         return value
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#############------------------------------------------------------------------------------------------------------------------------#####
 
 # from django.contrib.auth import get_user_model
 # from django.db.models import F, QuerySet
