@@ -3,10 +3,13 @@ from django.contrib.auth import get_user_model
 from rest_framework.serializers import SerializerMethodField
 from django.db.models import F, QuerySet
 from catalog.models import Dish, Category
-from shop.models import ShoppingCart, CartDish, Delivery, Order, OrderDish, Shop
+from shop.models import ShoppingCart, CartDish, Order, OrderDish
+from delivery_contacts.models import Delivery, Shop
 from users.models import BaseProfile, UserAddress
+from promos.models import PromoNews
 
 User = get_user_model()
+
 
 
 
@@ -38,18 +41,33 @@ class UserOrdersSerializer(serializers.ModelSerializer):
         )
 
 
+class CategorySerializer(serializers.ModelSerializer):
+    """ Базовый сериализатор для категории."""
+    class Meta:
+        fields = ('id', 'priority', 'name_rus', 'slug')
+        model = Category
+        read_only_fields = ('id', 'priority', 'name_rus', 'slug')
+
+
 class DishShortSerializer(serializers.ModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
     # image = Base64ImageField()
+    category = CategorySerializer(many=True)
 
     class Meta:
-        fields = ('id', 'short_name_rus', 'price',
-                  'text_rus', 'category')  # 'image'
+        fields = ('id', 'priority',
+                  'short_name_rus', 'text_rus',
+                  'category',
+                  'price','final_price',
+                  'spicy_icon', 'vegan_icon')  # 'image'
         model = Dish
-        read_only_fields = ('id', 'short_name_rus',
-                            'price', 'text_rus', 'category')  # 'image'
+        read_only_fields = ('id', 'priority',
+                            'short_name_rus', 'text_rus',
+                            'category',
+                            'price','final_price',
+                            'spicy_icon', 'vegan_icon')  # 'image'
 
 
 class ShopSerializer(serializers.ModelSerializer):
@@ -78,6 +96,21 @@ class DeliverySerializer(serializers.ModelSerializer):
         model = Delivery
         read_only_fields = ('id', 'city', 'description_rus', 'description_en',
                   'description_srb')
+
+
+class PromoNewsSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для модели PromoNews, только чтение!
+    """
+
+    class Meta:
+        fields = ('id', 'city', 'created',
+                  'title_rus', 'full_text_rus',
+                  )
+        model = PromoNews
+        read_only_fields = ('id', 'city', 'created',
+                            'title_rus', 'full_text_rus',
+                            )
 
 
 class UserAddressSerializer(serializers.ModelSerializer):

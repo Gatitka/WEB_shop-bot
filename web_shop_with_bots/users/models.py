@@ -4,9 +4,10 @@ from tm_bot.models import TelegramAccount
 from django.core.validators import MinLengthValidator
 from django.db import models
 from django.conf import settings
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from phonenumber_field.modelfields import PhoneNumberField
+from django.core.exceptions import ValidationError
 
 # UserRoles (models.TextChoices):
 #     ADMIN = ('admin', 'Администратор')
@@ -39,7 +40,7 @@ class UserAddress(models.Model):
     )
     base_profile = models.ForeignKey(
         'BaseProfile',
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         verbose_name='базовый профиль',
     )   # НЕ УДАЛЯТЬ! нужен для правильного отображения админки
 
@@ -112,7 +113,6 @@ class BaseProfile(models.Model):
         default="RUS"
     )
 
-
     @property
     def email(self):
         return self.email
@@ -161,7 +161,11 @@ class CustomWEBAccountManager(BaseUserManager):
 class WEBAccount(AbstractUser):
     ''' Модель для зарегистрированного пользователя сайта.
     Имеет привязку к базовому профилю,
-    через который осуществляется пополнение корзины и сооздание заказов.'''
+    через который осуществляется пополнение корзины и сооздание заказов.
+
+    При тестировании через shell не работали методы clean, а так же create_user.
+    Для валидации созданы сигналы перед сохранением.
+    '''
     username = None
     password = models.CharField(
         'Пароль',
@@ -171,8 +175,7 @@ class WEBAccount(AbstractUser):
     email = models.EmailField(
         'Email',
         max_length=254,
-        unique=True,
-        blank=True, null=True
+        unique=True
     )
     web_language = models.CharField(
         'Язык сайта',
@@ -182,6 +185,7 @@ class WEBAccount(AbstractUser):
     )
     phone = PhoneNumberField(
         verbose_name='телефон',
+        unique=True
     )
     notes = models.CharField(
         'Пометки',
@@ -200,6 +204,14 @@ class WEBAccount(AbstractUser):
     #     choices=UserRoles.choices,
     #     default=UserRoles.USER
     # )
+    is_active = models.BooleanField(
+        ('active'),
+        default=False,
+        help_text=(
+            'Designates whether this user should be treated as active. '
+            'Unselect this instead of deleting accounts.'
+        ),
+    )
 
     class Meta:
         ordering = ['-date_joined']
@@ -214,6 +226,14 @@ class WEBAccount(AbstractUser):
     def __str__(self):
         return f'{self.email}'
 
+    def clean(self):
+        if not self.phone:
+            raise ValidationError(
+                {'phone': "Please provide phone"})
+        if not self.first_name or self.first_name in ['me', 'я', 'ja', 'и']:
+            raise ValidationError(
+                {'first_name': "Please provide first_name"})
+
     objects = CustomWEBAccountManager()
 
     USERNAME_FIELD = 'email'
@@ -227,7 +247,18 @@ def create_base_profile(sender, instance, created, **kwargs):
         base_profile = BaseProfile(web_account=instance)
         base_profile.save()
         instance.base_profile = base_profile
-        instance.save()
+        instance.save(update_fields=['base_profile'])
+
+
+# ------    сигналы для валидации создания web_account если нет имени или phone
+@receiver(pre_save, sender=WEBAccount)
+def create_web_account(sender, instance, **kwargs):
+    if not instance.phone:
+        raise ValidationError(
+            {'phone': "Please provide phone"})
+    if not instance.first_name or instance.first_name in ['me', 'я', 'ja', 'и']:
+        raise ValidationError(
+            {'first_name': "Please provide first_name"})
 
 
 # @receiver(post_save, sender=WEBAccount)

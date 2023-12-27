@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from pytils.translit import slugify
+from decimal import Decimal
 
 
 class Category(models.Model):
@@ -9,7 +10,7 @@ class Category(models.Model):
     priority = models.PositiveSmallIntegerField(
         verbose_name='Порядок отображения в меню',
         validators=[MinValueValidator(1)],
-        null=True, blank=True
+        blank=True
     )
     name_rus = models.CharField(
         max_length=200,
@@ -21,13 +22,14 @@ class Category(models.Model):
         verbose_name='Название SRB',
         unique=True
     )
-    active = models.BooleanField(
-        default=False
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name='активен'
     )
     slug = models.SlugField(
         max_length=200,
         verbose_name='slug',
-        # unique=True,
+        unique=True,
         help_text=(
             'Укажите уникальный адрес для категории блюд. Используйте только '
             'латиницу, цифры, дефисы и знаки подчёркивания'
@@ -44,6 +46,11 @@ class Category(models.Model):
     def clean(self) -> None:
         self.name_rus = self.name_rus.strip().lower()
         self.name_srb = self.name_srb.strip().lower()
+        if Category.objects.filter(name_rus=self.name_rus).exists():
+            raise ValidationError('Категория с таким названием уже есть')
+        if not self.priority:
+            max_position = Category.objects.all().order_by('-priority').values('priority').first()
+            self.priority = max_position['priority'] + 1
         return super().clean()
 
     def save(self, *args, **kwargs):
@@ -57,60 +64,63 @@ class Category(models.Model):
 
 class Dish(models.Model):
     '''Модель блюда.'''
-    article = models.IntegerField(
-        validators=[MinValueValidator(6)],
-        verbose_name='артикул'
+    priority = models.PositiveSmallIntegerField(
+        verbose_name='Порядок отображения в меню',
+        validators=[MinValueValidator(1)],
+        blank=True,
     )
-    active = models.BooleanField(
+    article = models.CharField(
+        max_length=6,
+        verbose_name='артикул',
+        help_text='Добавьте артикул прим. 0101.'
+        # валидация длинны от 4 до 6
+    )
+    is_active = models.BooleanField(
         verbose_name='активен',
-        default=False
+        default=False,
+        help_text='Активные позиции виды пользователям.'
     )
     short_name_rus = models.CharField(
         max_length=200,
         db_index=True,
         verbose_name='Название РУС',
-        help_text='Добавьте название блюда.'
+        help_text='Добавьте название блюда RUS.'
     )
     short_name_srb = models.CharField(
         max_length=200,
         db_index=True,
         verbose_name='Название SRB',
-        help_text='Добавьте название блюда.'
+        help_text='Добавьте название блюда SRB.'
     )
     text_rus = models.CharField(
         max_length=200,
         verbose_name='Описание РУС',
-        help_text='Добавьте описание блюда.'
+        help_text='Добавьте описание блюда RUS.'
     )
     text_srb = models.CharField(
         max_length=200,
         verbose_name='Описание SRB',
-        help_text='Добавьте описание блюда.'
+        help_text='Добавьте описание блюда SRB.'
     )
-    category = models.ForeignKey(
+    category = models.ManyToManyField(
         Category,
-        on_delete=models.CASCADE,
-        verbose_name='Категория',
-        related_name='dishes',
-        help_text='Добавьте категорию блюда.'
+        through='DishCategory',
+        verbose_name='категория',
+        help_text='Выберите категории блюда.'
     )
-    # image = models.ImageField(
-    #     upload_to='recipe/images/',
-    #     help_text='Добавьте изображение готового блюда.'
-    # )
-
-    # ingredients = models.ManyToManyField(
-    #     Ingredient,
-    #     through='DishIngredient',
-    #     verbose_name='Ингредиенты',
-    #     related_name='ingredient',
-    #     help_text='Добавьте ингредиенты рецепта.'
-    # )
-
-    # discount
-    price = models.FloatField(    # цена
+    price = models.DecimalField(
         verbose_name='цена',
-        validators=[MinValueValidator(0.01)]
+        validators=[MinValueValidator(0.01)],
+        help_text='Внесите цену, DIN.',
+        max_digits=6, decimal_places=2,
+        default=Decimal('0'),
+    )
+    discount = models.DecimalField(
+        verbose_name='скидка',
+        default=None,
+        null=True, blank=True,
+        help_text="Внесите скидку, прим. для 10% внесите '10'.",
+        max_digits=6, decimal_places=2
     )
     weight = models.CharField(
         max_length=10,
@@ -130,7 +140,23 @@ class Dish(models.Model):
     add_date = models.DateTimeField(
         'Дата добавления', auto_now_add=True
     )
+    vegan_icon = models.BooleanField(
+        verbose_name='веган',
+        default=False,
+        help_text='иконка веган.',
+        null=True, blank=True,
+    )
+    spicy_icon = models.BooleanField(
+        verbose_name='острое',
+        default=False,
+        help_text='иконка острое.',
+        null=True, blank=True,
+    )
 
+    # image = models.ImageField(
+    #     upload_to='recipe/images/',
+    #     help_text='Добавьте изображение готового блюда.'
+    # )
 
     class Meta:
         ordering = ['article']
@@ -140,83 +166,48 @@ class Dish(models.Model):
     def __str__(self):
         return self.short_name_rus
 
-    # def final_price(self):
-    #    price with discount
+    def clean(self) -> None:
+        self.short_name_rus = self.short_name_rus.strip().lower()
+        self.short_name_srb = self.short_name_srb.strip().lower()
+        # self.short_name_en = self.short_name_en.strip().lower()
+        if Dish.objects.filter(short_name_rus=self.short_name_rus).exists():
+            raise ValidationError('Блюдо с таким названием уже есть')
+        if not self.priority:
+            max_position = Dish.objects.filter(category=self.category).all().order_by('-priority').values('priority').first()
+            self.priority = max_position['priority'] + 1
+        return super().clean()
 
-    # def load_ingredients(self, ingredients):
-    #     lst_ingrd = [
-    #         DishIngredient(
-    #             ingredient=ingredient["id"],
-    #             amount=ingredient["amount"],
-    #             recipe=self,
-    #         )
-    #         for ingredient in ingredients
-    #     ]
-    #     DishIngredient.objects.bulk_create(lst_ingrd)
+    @property
+    def final_price(self):
+        if self.discount:
+            return Decimal(self.price * Decimal(1 - self.discount/100))
 
-
-# class Ingredient(models.Model):
-#     """ Модель для описания ингредиентов."""
-#     name_rus = models.CharField(
-#         max_length=200,
-#         db_index=True,
-#         verbose_name='Название РУС'
-#     )
-#     name_srb = models.CharField(
-#         max_length=200,
-#         db_index=True,
-#         verbose_name='Название SRB'
-#     )
-#     measurement_unit = models.CharField(
-#         max_length=24,
-#         db_index=True,
-#         verbose_name='Ед-ца измерения'
-#     )
-#     # image
-
-#     class Meta:
-#         verbose_name = 'ингредиент'
-#         verbose_name_plural = 'ингредиенты'
-#         ordering = ('id', )
-
-#     def __str__(self):
-#         return self.name_rus
-
-#     def clean(self) -> None:
-#         self.name_rus = self.name_rus.strip().lower()
-#         self.name_srb = self.name_srb.strip().lower()
-#         self.measurement_unit = self.measurement_unit.lower()
-#         if Ingredient.objects.filter(name_rus=self.name_rus).exists() or Ingredient.objects.filter(name_srb=self.name_srb).exists():
-#             raise ValidationError('Ингредиент с таким названием уже есть')
-#         super().clean()
+        return self.price
 
 
-# class DishIngredient(models.Model):
-#     """ Модель для сопоставления связи блюда и ингридиентов."""
-#     dish = models.ForeignKey(
-#         Dish,
-#         on_delete=models.CASCADE,
-#         verbose_name='Блюдо',
-#         related_name='ingredient',
-#     )
-#     ingredient = models.ForeignKey(
-#         Ingredient,
-#         on_delete=models.PROTECT,
-#         verbose_name='Ингредиент',
-#         related_name='dishes'
-#     )
-#     # amount = models.PositiveSmallIntegerField(
-#     #     verbose_name='Кол-во',
-#     #     validators=[MinValueValidator(1)]
-#     # )
+class DishCategory(models.Model):
+    """ Модель для сопоставления связи рецепта и тэгов."""
+    dish = models.ForeignKey(
+        Dish,
 
-#     class Meta:
-#         ordering = ['dish']
-#         verbose_name = 'блюдо-ингредиенты'
-#         verbose_name_plural = 'блюдо-ингредиенты'
-#         constraints = [
-#             models.UniqueConstraint(
-#                 fields=['dish', 'ingredient'],
-#                 name='unique_dish_ingredient'
-#             )
-#         ]
+        on_delete=models.CASCADE,
+        verbose_name='блюдо',
+        # related_name='category'
+    )
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.PROTECT,
+        verbose_name='категория',
+        # related_name='dish'
+    )
+
+    class Meta:
+        ordering = ['dish']
+        verbose_name = 'связь блюдо-категория'
+        verbose_name_plural = 'связи блюдо-категория'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['dish', 'category'],
+                name='unique_dish_category'
+            )
+        ]

@@ -5,6 +5,11 @@ from django.conf.urls.static import static
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
+from django_summernote.views import (
+    SummernoteEditor, SummernoteUploadAttachment
+)
+from django_summernote.utils import get_config
+
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -22,6 +27,15 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
+
+    # needed for text HTML editing in browser
+    path('summernote/', include('django_summernote.urls')), # needed for text HTML editing in browser
+    path('editor/<id>/', SummernoteEditor.as_view(),
+         name='django_summernote-editor'),
+    path('upload_attachment/', SummernoteUploadAttachment.as_view(),
+             name='django_summernote-upload_attachment'),
+
+    # redoc
     re_path(r'^redoc/$',
             schema_view.with_ui('redoc', cache_timeout=0),
             name='schema-redoc'
@@ -32,6 +46,9 @@ if settings.DEBUG:
     urlpatterns += static(
         settings.MEDIA_URL, document_root=settings.MEDIA_ROOT
     )
+
+    import debug_toolbar
+    urlpatterns += (path('__debug__/', include(debug_toolbar.urls)),)
 
 admin.site.index_title = 'SUSHI SHOP'
 # надпись над перечнем админок приложений

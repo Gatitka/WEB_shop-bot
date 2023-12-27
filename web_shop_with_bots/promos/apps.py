@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class ShopConfig(AppConfig):
+class PromosConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'shop'
-    verbose_name = '2. Продажи'
+    name = 'promos'
+    verbose_name = '5. Промо'

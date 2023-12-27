@@ -18,3 +18,30 @@ python manage.py load_menu - загрузить пресеты в базу да�
 ###Внести изменения в структуру базы данных (изменение моделей, создание новых таблиц)
 python manage.py makemigrations
 python manage.py migrate
+
+python -m pip freeze > requirements.txt
+python -m pip install -r requirements.txt
+
+python manage.py test
+
+# Запустит все тесты проекта
+python3 manage.py test
+
+# Запустит только тесты в приложении posts
+python3 manage.py test posts
+
+# Запустит только тесты из файла test_urls.py в приложении posts
+python3 manage.py test posts.tests.test_urls
+
+# Запустит только тесты из класса StaticURLTests для test_urls.py в приложении posts
+python3 manage.py test posts.tests.test_urls.StaticURLTests
+
+# Запустит только тест test_homepage()
+# из класса StaticURLTests для test_urls.py в приложении posts
+python3 manage.py test posts.tests.test_urls.StaticURLTests.test_homepage
+
+python3 manage.py test
+# Это то же самое, что
+python3 manage.py test -v 1
+Чтобы увидеть развёрнутый список пройденных и проваленных тестов — установите --verbosity 2:
+python3 manage.py test -v 2

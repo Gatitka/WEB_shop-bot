@@ -5,13 +5,12 @@ from catalog.models import Dish
 from users.models import BaseProfile
 from django.db.models import Sum
 from django.conf import settings # для импорта валюты
+from delivery_contacts.models import Delivery, Shop
+from promos.models import Promocode
+from decimal import Decimal
 
 User = get_user_model()
 
-DELIVERY_CHOICES = (
-    ("1", "Доставка"),
-    ("2", "Самовывоз")
-)
 
 # List of order statuses
 
@@ -58,36 +57,45 @@ class ShoppingCart(models.Model):
     created = models.DateTimeField(
         'Дата добавления', auto_now_add=True
     )
-    complited = models.BooleanField(default=False)
+    complited = models.BooleanField(
+        verbose_name='Заказана',
+        default=False
+    )
     session_id = models.CharField(
         max_length=100,
         blank=True,
         null=True
     )
-    amount = models.CharField(
-        max_length=9,
-        default=0
+    amount = models.DecimalField(
+        verbose_name='Сумма, DIN',
+        default=0.00,
+        blank=True,
+        max_digits=6, decimal_places=2
     )
-    items_num = models.PositiveSmallIntegerField(
-        verbose_name='Кол-во',
-        default=0
+    promocode = models.ForeignKey(
+        Promocode,
+        verbose_name='Промокод',
+        null=True, blank=True,
+        on_delete=models.SET_NULL
+    )
+    discount = models.DecimalField(
+        verbose_name='Скидка, DIN',
+        default=0.00,
+        null=True,
+        max_digits=6, decimal_places=2
+    )
+    final_amount = models.DecimalField(
+        verbose_name='Итог сумма, DIN',
+        default=0.00,
+        blank=True,
+        max_digits=6, decimal_places=2
     )
 
     @property
     def num_of_items(self):
         itemsqty = self.cart_dishes.aggregate(qty=Sum('quantity'))
         return itemsqty['qty']
-    num_of_items.fget.short_description = 'Кол-во'
-
-    @property
-    def total_amount(self):
-        total_amount = self.cart_dishes.select_related(
-            'dish'
-            ).annotate(
-                item_amount=Sum('dish__price')*Sum('quantity')
-                ).aggregate(total_amount=Sum('item_amount'))
-        return total_amount['total_amount']
-    total_amount.fget.short_description = 'Итого'
+    num_of_items.fget.short_description = 'Кол-во ед-ц тов, шт'
 
     class Meta:
         ordering = ['-created']
@@ -96,6 +104,30 @@ class ShoppingCart(models.Model):
 
     def __str__(self):
         return f'{self.user} -> корзина id={self.pk}'
+
+    def calculate_final_amount(self):
+        """
+        Рассчитывает final_amount с учетом скидки от промокода.
+        """
+        print(self.cart_dishes)
+        print(self.cart_dishes.all())
+        if self.promocode:
+            # Если есть промокод, применяем скидку
+            discount_amount = self.amount * (self.promocode.discount / Decimal(100))
+            self.final_amount = self.amount - discount_amount
+        if self.discount:
+            # Если есть вручную внесенная скидка, применяем её
+            self.final_amount = self.amount - self.discount
+        else:
+            # Если нет промокода, final_amount равен общей сумме
+            self.final_amount = self.amount
+
+    def save(self, *args, **kwargs):
+        """
+        Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
+        """
+        self.calculate_final_amount()
+        super().save(*args, **kwargs)
 
 
 class CartDish(models.Model):
@@ -108,24 +140,25 @@ class CartDish(models.Model):
     )
     cart = models.ForeignKey(
         ShoppingCart,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         verbose_name='Заказ',
         related_name='cart_dishes',
     )
     quantity = models.PositiveSmallIntegerField(
         verbose_name='Кол-во',
         validators=[MinValueValidator(1)],
-        default=1
+        default=0
     )
-
-    @property
-    def amount(self):
-        return self.dish.price*self.quantity
+    amount = models.DecimalField(
+        default=0.00,
+        blank=True,
+        max_digits=6, decimal_places=2
+    )
 
     class Meta:
         ordering = ['cart']
-        verbose_name = 'корзина-блюдо'
-        verbose_name_plural = 'корзина-блюдо'
+        verbose_name = 'связь корзина-блюдо'
+        verbose_name_plural = 'связи корзина-блюдо'
         constraints = [
             models.UniqueConstraint(
                 fields=['dish', 'cart'],
@@ -134,74 +167,25 @@ class CartDish(models.Model):
         ]
 
     def __str__(self):
-        return f'корзина id={self.id} -> {self.dish}'
+        return f'корзина id={self.cart.pk} <- {self.dish}'
+
+    def save(self, *args, **kwargs):
+        self.amount = self.dish.final_price * self.quantity
+        super(CartDish, self).save(*args, **kwargs)
+        total_amount = CartDish.objects.filter(cart=self.cart).aggregate(ta=Sum('amount'))['ta']
+        self.cart.amount = total_amount if total_amount is not None else 0
+        self.cart.save(update_fields=['amount', 'final_amount'])
+
+    def save_in_flow(self, *args, **kwargs):
+        self.amount = self.dish.final_price * self.quantity
+        super(CartDish, self).save(*args, **kwargs)
 
 
-class Delivery(models.Model):
-    name_rus = models.CharField(
-        max_length=200,
-        db_index=True,
-        verbose_name='Название РУС'
-    )
-    name_srb = models.CharField(
-        max_length=200,
-        db_index=True,
-        verbose_name='Название SRB'
-    )
-    name_en = models.CharField(
-        max_length=200,
-        db_index=True,
-        verbose_name='Название EN'
-    )
-    type = models.CharField(
-        max_length=1,
-        verbose_name="тип",
-        choices=DELIVERY_CHOICES
-    )
-    is_active = models.BooleanField(
-        default=False
-    )
-    price = models.FloatField(    # цена
-        verbose_name='цена',
-        # validators=[MinValueValidator(0.01)]
-        null=True,
-        blank=True
-    )
-    min_price = models.FloatField(    # мин цена заказа
-        verbose_name='min_цена_заказа',
-        # validators=[MinValueValidator(0.01)]
-        null=True,
-        blank=True
-    )
-    description_rus = models.CharField(
-        max_length=400,
-        verbose_name='Описание РУС',
-        null=True,
-        blank=True
-    )
-    description_srb = models.CharField(
-        max_length=400,
-        verbose_name='Описание SRB',
-        null=True,
-        blank=True
-    )
-    description_en = models.CharField(
-        max_length=400,
-        verbose_name='Описание EN',
-        null=True,
-        blank=True
-    )
-    city = models.CharField(
-        max_length=20,
-        verbose_name='город'
-    )
-
-    class Meta:
-        verbose_name = 'доставка'
-        verbose_name_plural = 'доставка'
-
-    def __str__(self):
-        return f'{self.name_rus}'
+    def delete(self, *args, **kwargs):
+        super(CartDish, self).delete()
+        total_amount = CartDish.objects.filter(cart=self.cart).aggregate(ta=Sum('amount'))['ta']
+        self.cart.amount = total_amount if total_amount is not None else 0
+        self.cart.save(update_fields=['amount', 'final_amount'])
 
 
 class Order(models.Model):
@@ -264,7 +248,7 @@ class Order(models.Model):
         null=True
     )
     shop = models.ForeignKey(
-        'Shop',
+        Shop,
         on_delete=models.CASCADE,
         verbose_name='точка',
         related_name='заказы',
@@ -276,8 +260,10 @@ class Order(models.Model):
         verbose_name='Кол-во приборов',
         validators=[MaxValueValidator(10)]
     )
-    amount = models.FloatField(
-        default=0.00
+    amount = models.DecimalField(
+        default=0.00,
+        blank=True,
+        max_digits=6, decimal_places=2
     )
 
     class Meta:
@@ -287,13 +273,6 @@ class Order(models.Model):
 
     def __str__(self):
         return f'{self.id}'
-
-    def save(self, *args, **kwargs):
-        amount = self.order_dishes.select_related(
-            'dish'
-            ).aggregate(total_amount=Sum('amount'))
-        self.amount = amount['total_amount']
-        super(Order, self).save(*args, **kwargs)
 
 
 class OrderDish(models.Model):
@@ -314,11 +293,15 @@ class OrderDish(models.Model):
         verbose_name='Кол-во',
         validators=[MinValueValidator(1)]
     )
-    unit_price = models.FloatField(
-        default=0.00
+    unit_price = models.DecimalField(
+        default=0.00,
+        null=True,
+        max_digits=6, decimal_places=2
     )
-    amount = models.FloatField(
-        default=0.00
+    amount = models.DecimalField(
+        default=0.00,
+        blank=True,
+        max_digits=6, decimal_places=2
     )
 
     class Meta:
@@ -333,57 +316,12 @@ class OrderDish(models.Model):
         ]
 
     def save(self, *args, **kwargs):
-        self.unit_price = self.dish.price
-        self.amount = self.unit_price * self.quantity
+        self.amount = self.dish.final_price * self.quantity
         super(OrderDish, self).save(*args, **kwargs)
+        self.order.amount = OrderDish.objects.filter(order=self.order).aggregate(ta=Sum('amount'))['ta']
+        self.order.save(update_fields=['amount'])
 
-
-class Shop(models.Model):
-    """ Модель для магазина."""
-    short_name = models.CharField(
-        max_length=20,
-        verbose_name='название'
-    )
-    address_rus = models.CharField(
-        max_length=200,
-        verbose_name='описание_РУС'
-    )
-    address_en = models.CharField(
-        max_length=200,
-        verbose_name='описание_EN'
-    )
-    address_srb = models.CharField(
-        max_length=200,
-        verbose_name='описание_SRB'
-    )
-    work_hours = models.CharField(
-        max_length=100,
-        verbose_name='время работы'
-    )
-    phone = models.CharField(
-        max_length=100,
-        verbose_name='телефон'
-    )
-    admin = models.CharField(
-        max_length=100,
-        verbose_name='админ',
-        blank=True,
-        null=True
-    )
-    is_active = models.BooleanField(
-        default=False
-    )
-    city = models.CharField(
-        max_length=50,
-        verbose_name='город',
-        blank=True,
-        null=True
-    )
-    # map_location = картинка карты
-
-    class Meta:
-        verbose_name = 'ресторан'
-        verbose_name_plural = 'рестораны'
-
-    def __str__(self):
-        return f'{self.short_name}'
+    def delete(self, *args, **kwargs):
+        super(OrderDish, self).delete()
+        self.order.amount = OrderDish.objects.filter(order=self.order).aggregate(ta=Sum('amount'))['ta']
+        self.order.save(update_fields=['amount'])

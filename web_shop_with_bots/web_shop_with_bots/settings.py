@@ -13,8 +13,12 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '[::1]',
+    'testserver', # для тестов
+]
 
 INSTALLED_APPS = [
     'catalog.apps.CatalogConfig',
@@ -34,18 +38,24 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_yasg',
     'rest_framework.authtoken',
+    'debug_toolbar',
+    'django_summernote',   # HTML editable text in Admin section for promo
+    'promos.apps.PromosConfig',
+    'delivery_contacts.apps.DeliveryContactsConfig',
+    'django_filters',
 ]
 
 MIDDLEWARE = [
+    'django.middleware.csrf.CsrfViewMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
 ]
 
 ROOT_URLCONF = 'web_shop_with_bots.urls'
@@ -98,11 +108,12 @@ AUTH_PASSWORD_VALIDATORS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
 
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
 }
 
@@ -170,6 +181,12 @@ USE_TZ = True
 
 
 STATIC_URL = 'static/'
+# STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static/')]
+STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
+
 
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -194,10 +211,37 @@ LANGUAGE_CHOICES = (
     ("SRB", "Српски")
 )
 
-CURRENCY_CHOICES = (
-    ("DIN", "Динар"),
-    ("EURO", "Евро")
-)
-
 # CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
-CSRF_COOKIE_HTTPONLY = True
+# CSRF_COOKIE_HTTPONLY = True
+# CSRF_USE_SESSIONS = True
+
+REST_USE_JWT = True
+
+INTERNAL_IPS = [
+    '127.0.0.1',
+]  # debug tool bar
+
+
+# settings for HTML text editing in admin
+X_FRAME_OPTIONS = 'SAMEORIGIN'
+SUMMERNOTE_CONFIG = {
+    'iframe' : True,
+    'summernote' : {
+        'airMode': False,
+        'width' : '100%',
+        'lang' : 'ru-RU'
+    },
+    'disable_attachment': True,
+    'toolbar': [
+            ['style', ['style']],
+            ['font', ['bold', 'underline', 'clear']],
+            ['fontname', ['fontname']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['table', ['table']],
+            ['insert', ['link']],
+            ['view', ['fullscreen', 'codeview', 'help']],
+        ],
+    'width': '80%',
+    'height': '200',
+}

@@ -4,7 +4,7 @@ from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.markdown import hbold
 
-from users.models import User
+from users.models import TelegramAccount
 from tm_bot.models import Message
 
 
@@ -15,7 +15,7 @@ async def command_start_handler(message: types.Message) -> None:
     """
     chat_id = message.from_user.id
     text = message.text
-    u, _ = User.objects.get_or_create(
+    u, _ = TelegramAccount.objects.get_or_create(
         Tm_ID=chat_id,
         defaults={
             'Tm_username': message.from_user.username,

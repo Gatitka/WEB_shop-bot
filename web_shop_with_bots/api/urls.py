@@ -1,6 +1,6 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import MenuViewSet, UserAddressViewSet, ContactsDeliveryViewSet, UserOrdersViewSet, DeleteUserViewSet
+from .views import MenuViewSet, UserAddressViewSet, ContactsDeliveryViewSet, UserOrdersViewSet, DeleteUserViewSet, PromoNewsViewSet
 
 app_name = 'api'
 
@@ -28,7 +28,12 @@ v1_router.register(
     UserOrdersViewSet,
     basename='user_orders'
 )
-v1_router.register('auth/users/me/delete', DeleteUserViewSet, basename='users')
+v1_router.register(
+    r'promonews',
+    PromoNewsViewSet,
+    basename='promonews'
+)
+# v1_router.register('auth/users/me/delete', DeleteUserViewSet.as_view({'delete': 'destroy'}), basename='users')
 
 # v1_router.register('auth/users', CustomUserViewSet)
 # menu
@@ -42,12 +47,13 @@ v1_router.register('auth/users/me/delete', DeleteUserViewSet, basename='users')
 
 urlpatterns = [
     path('v1/', include(v1_router.urls)),
+    path('v1/auth/users/me/delete/', DeleteUserViewSet.as_view(), name='users'),
 
     # Djoser создаст набор необходимых эндпоинтов.
     # базовые, для управления пользователями в Django:
     path('v1/auth/', include('djoser.urls')),
     # JWT-эндпоинты, для управления JWT-токенами:
-    path('v1/auth/', include('djoser.urls.jwt'))
+    path('v1/auth/', include('djoser.urls.jwt')),
 ]
 
 #######----------------------------------------------------------########

@@ -1,11 +1,14 @@
 from django.contrib.auth import get_user_model
 from catalog.models import Dish
-from shop.models import ShoppingCart, CartDish, Shop, Delivery, Order
+from shop.models import ShoppingCart, CartDish, Order
+from delivery_contacts.models import Shop, Delivery
 from users.models import BaseProfile, UserAddress
 from django.shortcuts import get_object_or_404, redirect
 from api.utils import check_existance_create_delete
 from rest_framework.decorators import action
-from .serializers import UserOrdersSerializer, DishShortSerializer, ShopSerializer, DeliverySerializer, UserAddressSerializer
+from .serializers import (UserOrdersSerializer, DishShortSerializer,
+                          ShopSerializer, DeliverySerializer,
+                          UserAddressSerializer, PromoNewsSerializer)
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import mixins, status, viewsets
@@ -15,7 +18,13 @@ from django.contrib import messages
 from djoser.views import UserViewSet
 from django.views.decorators.csrf import csrf_protect
 from django.utils.decorators import method_decorator
-
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.generics import DestroyAPIView
+from djoser.serializers import UserSerializer
+from promos.models import PromoNews
+from drf_yasg.utils import swagger_auto_schema
+from django_filters.rest_framework import DjangoFilterBackend
+from .filters import CategoryFilter
 
 
 User = get_user_model()
@@ -24,24 +33,34 @@ User = get_user_model()
 DATE_TIME_FORMAT = '%d/%m/%Y %H:%M'
 
 
-class DeleteUserViewSet(mixins.DestroyModelMixin,
-                        viewsets.GenericViewSet):
-    permission_classes = [IsAuthenticated,]
+# @csrf_protect
+class DeleteUserViewSet(DestroyAPIView):
+    serializer_class = [UserSerializer]
+    permission_classes = [IsAuthenticated]
 
-    def perform_destroy(self, instance):
-        user = self.request.user
-        user.is_active = False
-        user.save()
-        messages.success(self.request, 'Profile successfully disabled.')
-        return redirect('contacts')
+    def destroy(self, request, *args, **kwargs):
+        instance = self.request.user
+        instance.is_active = False
+        instance.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ContactsDeliveryViewSet(viewsets.ViewSet):
-    def list(self, request):
-        shops = Shop.objects.filter(is_active=True).all()
-        delivery = Delivery.objects.filter(is_active=True).filter(type="1").all()
+class ContactsDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Вьюсет для адреса /contacts.
+    Отображает список всех активных ресторанов
+    и условия самовывоза во всех городах.
+    Доступно только чтение спика
+    """
+    permission_classes = [AllowAny,]
+    queryset = Shop.objects.filter(is_active=True).all()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        delivery = Delivery.objects.filter(is_active=True, type="1").all()
+
         response_data = {}
-        response_data['shops'] = ShopSerializer(shops, many=True).data
+        response_data['shops'] = ShopSerializer(queryset, many=True).data
         response_data['delivery'] = DeliverySerializer(delivery, many=True).data
         return Response(response_data)
 
@@ -70,6 +89,16 @@ class UserAddressViewSet(mixins.ListModelMixin,
         serializer.save(base_profile=self.request.user.profile)
 
 
+class PromoNewsViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Вьюсет модели PromoNews доступен только для чтения.
+    Отбираются только новости is_active=True.
+    """
+    queryset = PromoNews.objects.filter(is_active=True).all()
+    serializer_class = PromoNewsSerializer
+    permission_classes = [AllowAny,]
+
+
 class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Вьюсет модели Orders для просмотра истории заказов.
@@ -84,9 +113,10 @@ class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class MenuViewSet(mixins.ListModelMixin,
+                  mixins.RetrieveModelMixin,
                   viewsets.GenericViewSet):
     """
-    Вьюсет для работы с меню и моделью Dish.
+    Вьюсет для работы с меню и моделями Dish, Category.
     Просмотр меню и отдельных блюд.
 
     Для авторизованных и неавторизованных пользователей —
@@ -95,42 +125,50 @@ class MenuViewSet(mixins.ListModelMixin,
     Queryset фильтруется кастомным фильтром RecipeFilter по параметрам запроса
     и выдает список всех рецептов/нахоядщихся в корзине.
     """
-    # permission_classes = [IsAuthorAdminOrReadOnly]
+    permission_classes = [AllowAny,] #[IsAuthorAdminOrReadOnly]
     serializer_class = DishShortSerializer
-    # filter_backends = (DjangoFilterBackend,)
-    # filterset_class = RecipeFilter
-    queryset = Dish.objects.select_related(
-        'category'
-    ).all
+    filter_backends = (DjangoFilterBackend,)
+    filterset_class = CategoryFilter
+    queryset = Dish.objects.filter(is_active=True).prefetch_related('category').all().exclude(category__slug='Extra')
 
-    # @action(detail=True,
-    #         methods=['post', 'delete'])
-    # def shopping_cart(self, request, pk=None):
-    #     """
-    #     Добавляет/удалет блюдо в `список покупок`.
+    # def get_queryset(self):
+    #     return Order.objects.filter(
+    #         user=self.request.user.profile
+    #     ).all()[:5]
 
-    #     Args:
-    #         request (WSGIRequest): Объект запроса.
-    #         pk (int):
-    #             id блюда, которое нужно добавить/удалить в `корзину покупок`.
+    @action(detail=True,
+            methods=['post'])   #, 'delete'])
+    def shopping_cart(self, request, pk=None):
+        """
+        Добавляет блюдо в `список покупок`.
 
-    #     Returns:
-    #         Responce: Статус подтверждающий/отклоняющий действие.
-    #     """
-    #     current_user = request.user
-    #     dish = get_object_or_404(Dish, id=pk)
-    #     method = request.method
-    #     return_obj = 'response'
-    #     cart = ShoppingCart.objects.get_or_create(user=current_user)
+        Args:
+            request (WSGIRequest): Объект запроса.
+            pk (int):
+                id блюда, которое нужно добавить в `корзину покупок`.
 
+        Returns:
+            Responce: Статус подтверждающий/отклоняющий действие.
+        """
+        dish = get_object_or_404(Dish, id=pk)
+        method = request.method
+        return_obj = 'response'
+        current_user = request.user
 
+        if current_user.is_authenticated:
+            cart = ShoppingCart.objects.get_or_create(user=current_user)
+        else:
+            try:
+                cart = ShoppingCart.objects.get(session_id=request.session['hi'], completed=False)
+            except:
+                request.session['hi'] = str(uuid.uuid4())
+                cart = ShoppingCart.objects.get_or_create(session_id=request.session['hi'], completed=False)
 
-    #     return check_existance_create_delete(CartDish, method,
-    #                                          return_obj,
-    #                                          RecipesShortSerializer, dish,
-    #                                          cart=cart,
-    #                                          dish=dish)
-
+        return check_existance_create_delete(CartDish, method,
+                                             return_obj,
+                                             DishShortSerializer, dish,
+                                             cart=cart,
+                                             dish=dish)
 
 
 
