@@ -51,7 +51,7 @@ class Command(BaseCommand):
                     is_active=True,
                 )[0]
                 cat = (category,)
-                if 'авокад' in dish.text_rus:
+                if self.vegan_icon == True:
                     cat = (category, vegan_cat)
                 dish.category.set(cat)
 

@@ -19,6 +19,10 @@ python manage.py load_menu - загрузить пресеты в базу да�
 python manage.py makemigrations
 python manage.py migrate
 
+pip install django-debug-toolbar==3.2.4  - тулбар для дебага (кол-во запросов)
+pip install django-summernote  - редактор HTML
+pip install django-filter  - django фильтры
+
 python -m pip freeze > requirements.txt
 python -m pip install -r requirements.txt
 

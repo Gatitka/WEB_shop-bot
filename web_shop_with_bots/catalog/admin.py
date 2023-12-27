@@ -34,10 +34,13 @@ class DishAdmin(admin.ModelAdmin):
               ('price', 'discount'),
               ( 'final_price'),
               ('uom', 'volume', 'weight'),
+              ('spicy_icon', 'vegan_icon'),
               )
     readonly_fields = ('final_price',)
     list_display = ('pk', 'is_active', 'priority', 'short_name_rus',
-                    'price', 'discount', 'final_price')    #  image preview
+                    'price', 'discount', 'final_price',
+                    'spicy_icon', 'vegan_icon')
+                    #  image preview
     list_filter = ('category', 'is_active',)
     search_fields = ('short_name_rus', 'text_rus')
     inlines = (DishCategoryAdmin,)

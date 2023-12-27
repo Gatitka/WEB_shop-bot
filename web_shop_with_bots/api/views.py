@@ -129,7 +129,7 @@ class MenuViewSet(mixins.ListModelMixin,
     serializer_class = DishShortSerializer
     filter_backends = (DjangoFilterBackend,)
     filterset_class = CategoryFilter
-    queryset = Dish.objects.filter(is_active=True).prefetch_related('category').all().exclude(category__slug='Extra')
+    queryset = Dish.objects.filter(is_active=True).prefetch_related('category').all().exclude(category__slug='extra')
 
     # def get_queryset(self):
     #     return Order.objects.filter(
