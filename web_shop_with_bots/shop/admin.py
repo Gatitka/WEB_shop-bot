@@ -9,8 +9,8 @@ from decimal import Decimal
 from django import forms
 
 
-admin.site.register(OrderDish)
-admin.site.register(CartDish)
+# admin.site.register(OrderDish)
+# admin.site.register(CartDish)
 
 
 # @admin.register(BaseProfile)
