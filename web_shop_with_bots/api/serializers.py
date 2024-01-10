@@ -11,7 +11,8 @@ from promos.models import PromoNews
 User = get_user_model()
 
 
-
+# ---------------- ЛИЧНЫЙ КАБИНЕТ --------------------
+# --------       история заказов   ---------
 
 class UserOrdersSerializer(serializers.ModelSerializer):
     """
@@ -41,6 +42,32 @@ class UserOrdersSerializer(serializers.ModelSerializer):
         )
 
 
+# --------       свои адреса   ---------
+
+
+class UserAddressSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для сериализатора UserAddresses.
+    Возможно создание, редактирование, удаление автором.
+    """
+    class Meta:
+        fields = ('id', 'city', 'short_name', 'full_address', 'type')
+        model = UserAddress
+        read_only_fields = ('id',)
+
+    # если не писать кастомной валидации, то по умолчанию и так просиходит валидация обязательных полей
+    # def validate(self, data: dict) -> dict:
+    #     city = data['city']
+    #     if city is None:
+    #         raise serializers.ValidationError(
+    #             "Выберите город."
+    #         )
+    #     return data
+
+
+# ---------------- МЕНЮ: БЛЮДА и КАТЕГОРИИ --------------------
+
+
 class CategorySerializer(serializers.ModelSerializer):
     """ Базовый сериализатор для категории."""
     class Meta:
@@ -55,19 +82,41 @@ class DishShortSerializer(serializers.ModelSerializer):
     """
     # image = Base64ImageField()
     category = CategorySerializer(many=True)
+    is_in_shopping_cart = SerializerMethodField()
 
     class Meta:
         fields = ('id', 'priority',
                   'short_name_rus', 'text_rus',
                   'category',
                   'price','final_price',
-                  'spicy_icon', 'vegan_icon')  # 'image'
+                  'spicy_icon', 'vegan_icon',
+                  'is_in_shopping_cart',)  # 'image'
         model = Dish
         read_only_fields = ('id', 'priority',
                             'short_name_rus', 'text_rus',
                             'category',
                             'price','final_price',
-                            'spicy_icon', 'vegan_icon')  # 'image'
+                            'spicy_icon', 'vegan_icon',
+                            'is_in_shopping_cart',)  # 'image'
+
+    def get_is_in_shopping_cart(self, dish: Dish) -> bool:
+        """Получает булевое значение, если авторизованный пользователь имеет
+        этот рецепт в корзине покупок.
+        Args:
+            dish (Dish): Запрошенное блюдо.
+        Returns:
+            bool: в корзине покупок или нет.
+        """
+        request = self.context['request']
+        if request.user.is_authenticated:
+            return CartDish.objects.filter(
+                cart=request.user.base_profile.shopping_cart.id,
+                dish=dish.id
+            ).exists()
+        return False
+
+
+# ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
 
 
 class ShopSerializer(serializers.ModelSerializer):
@@ -113,39 +162,93 @@ class PromoNewsSerializer(serializers.ModelSerializer):
                             )
 
 
-class UserAddressSerializer(serializers.ModelSerializer):
+# --------------------------- КОРЗИНА ------------------------------
+class CartItemDishSerializer(serializers.ModelSerializer):
     """
-    Базовый сериализатор для сериализатора UserAddresses.
-    Возможно создание, редактирование, удаление автором.
+    Сериализатор для краткого отображения блюд.
     """
+    # image = Base64ImageField()
+
     class Meta:
-        fields = ('id', 'city', 'short_name', 'full_address', 'type')
-        model = UserAddress
-        read_only_fields = ('id',)
-
-    # если не писать кастомной валидации, то по умолчанию и так просиходит валидация обязательных полей
-    # def validate(self, data: dict) -> dict:
-    #     city = data['city']
-    #     if city is None:
-    #         raise serializers.ValidationError(
-    #             "Выберите город."
-    #         )
-    #     return data
+        fields = ('id',
+                  'short_name_rus', 'text_rus',
+                  'price','final_price',
+                  'spicy_icon', 'vegan_icon',)  # 'image'
+        model = Dish
+        read_only_fields = ('id',
+                            'short_name_rus', 'text_rus',
+                            'price','final_price',
+                            'spicy_icon', 'vegan_icon',)  # 'image'
 
 
+class CartDishSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для модели CartDish.
+    Все поля обязательны.
+    """
+    dish = CartItemDishSerializer()
+
+    class Meta:
+        fields = ('id', 'dish', 'quantity',
+                  'amount')
+        model = CartDish
 
 
+class ShoppingCartSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для модели ShoppingCart.
+    Все поля обязательны.
+    """
+    cart_dishes = serializers.SerializerMethodField()
 
-# class WebAccauntSerializer(serializers.ModelSerializer):
-#     """
-#     Базовый сериализатор для модели WebAccount.
-#     Все поля обязательны.
-#     """
+    class Meta:
+        fields = ('id', 'cart_dishes', 'num_of_items',
+                  'amount', 'promocode',
+                  'discount', 'final_amount')
+        model = ShoppingCart
 
-#     class Meta:
-#         fields = ('id', 'email', 'first_name',
-#                   'last_name')
-#         model = User
+    def to_representation(self, instance: ShoppingCart) -> dict:
+        """
+        Метод для выбора RecipeReadSerializer сериализатором для
+        отображения созданного/измененного рецепта.
+        """
+        serializer = ShoppingCartReadSerializer(instance)
+        # serializer.context['request'] = self.context['request']
+        return serializer.data
+
+
+class ShoppingCartReadSerializer(serializers.ModelSerializer):
+    """
+    Сериализатор для чтения модели ShoppingCart.
+    """
+    cart_dishes = serializers.SerializerMethodField()
+
+    class Meta:
+        fields = ('id', 'cart_dishes', 'num_of_items',
+                  'amount', 'promocode',
+                  'discount', 'final_amount')
+        model = ShoppingCart
+        read_only_fields = ('id', 'cart_dishes', 'num_of_items',
+                  'amount', 'promocode',
+                  'discount', 'final_amount')
+
+    def get_cart_dishes(self, obj: ShoppingCart) -> dict:
+        """ Получает список блюд в корзине  автора,
+
+        #    на которого оформлена подписка
+        # и возвращает кол-во, переданное в параметр запроса recipes_limit,
+        # переданного в URL.
+        # Args:
+        #     user (User): Автор на которого подписан пользователь.
+        # Returns:
+        #     QuerySet: список рецептов автора из подписки.
+        """
+        serializer = CartDishSerializer(
+            obj.cart_dishes.all(),
+            many=True
+        )
+        return serializer.data
+
 
 
 # class SignUpSerializer(WebAccauntSerializer):

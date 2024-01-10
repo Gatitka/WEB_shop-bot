@@ -3,10 +3,11 @@ from django.contrib.auth import get_user_model
 from django.core.management import BaseCommand
 
 from catalog.models import Dish, Category
-from shop.models import Delivery, Shop
+from shop.models import Delivery, Shop, DistrictDeliveryCost
 from users.models import UserAddress, BaseProfile, WEBAccount
 from promos.models import PromoNews
 from delivery_contacts.models import Shop, Delivery
+from decimal import Decimal
 
 
 User = get_user_model()
@@ -51,7 +52,7 @@ class Command(BaseCommand):
                     is_active=True,
                 )[0]
                 cat = (category,)
-                if self.vegan_icon == True:
+                if dish.vegan_icon == True:
                     cat = (category, vegan_cat)
                 dish.category.set(cat)
 
@@ -108,6 +109,7 @@ class Command(BaseCommand):
             name_en="самовывоз",
             type="2",
             city='Белград',
+            discount="10",
             is_active=True,
         )
         shop1 = Shop.objects.get_or_create(
@@ -182,6 +184,19 @@ class Command(BaseCommand):
             city='Belgrade',
             is_active=True,
         )
+
+        with open('delivery_districts.csv', encoding='utf-8-sig') as f:
+            for row in DictReader(f, delimiter=';'):
+                if not any(row.values()):
+                    continue
+                district_delivery, created = DistrictDeliveryCost.objects.get_or_create(
+                        city=row["город"],
+                        district=row['район'],
+                        promo=row['промо'],
+                        delivery_cost=Decimal(row['стоимость доставки']),
+
+                        min_order_amount=Decimal(row['мин ст-ть промо']),
+                    )
 
         self.stdout.write(
             self.style.SUCCESS(

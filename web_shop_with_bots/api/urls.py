@@ -1,6 +1,9 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import MenuViewSet, UserAddressViewSet, ContactsDeliveryViewSet, UserOrdersViewSet, DeleteUserViewSet, PromoNewsViewSet
+from .views import (MenuViewSet, UserAddressViewSet,
+                    ContactsDeliveryViewSet, UserOrdersViewSet,
+                    DeleteUserViewSet, PromoNewsViewSet,
+                    ShoppingCartView)
 
 app_name = 'api'
 
@@ -12,6 +15,11 @@ v1_router.register(
     MenuViewSet,
     basename='menu'
 )
+# v1_router.register(
+#     r'shopping_cart',
+#     ShoppingCartViewSet,
+#     basename='shopping_cart'
+# )
 v1_router.register(
     r'contacts',
     ContactsDeliveryViewSet,
@@ -47,6 +55,7 @@ v1_router.register(
 
 urlpatterns = [
     path('v1/', include(v1_router.urls)),
+    path('v1/shopping_cart/', ShoppingCartView.as_view(), name='shopping_cart'),
     path('v1/auth/users/me/delete/', DeleteUserViewSet.as_view(), name='users'),
 
     # Djoser создаст набор необходимых эндпоинтов.

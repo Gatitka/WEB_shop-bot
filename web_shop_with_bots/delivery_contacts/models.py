@@ -1,10 +1,16 @@
 from django.db import models
+from decimal import Decimal
 
 
 DELIVERY_CHOICES = (
     ("1", "Доставка"),
     ("2", "Самовывоз")
 )
+
+CITY_CHOICES = [
+    ('Белград', 'Белград'),
+    ('Нови_Сад', 'Нови_Сад'),
+]
 
 
 class Delivery(models.Model):
@@ -44,6 +50,11 @@ class Delivery(models.Model):
         null=True,
         blank=True
     )
+    discount = models.FloatField(
+        verbose_name='размер скидки',
+        null=True,
+        blank=True
+    )
     description_rus = models.CharField(
         max_length=400,
         verbose_name='Описание РУС',
@@ -73,6 +84,55 @@ class Delivery(models.Model):
 
     def __str__(self):
         return f'{self.name_rus}'
+
+
+class DistrictDeliveryCost(models.Model):
+    """ Модель для стоимости доставки по районам."""
+    city = models.CharField(
+        max_length=20,
+        verbose_name="город",
+        choices=CITY_CHOICES
+    )
+    district = models.CharField(
+        max_length=20,
+        verbose_name="район",
+        unique=True,
+    )
+    promo = models.BooleanField(
+        verbose_name='промо',
+        default=False
+    )
+    min_order_amount = models.DecimalField(
+        verbose_name='мин сумма заказа, DIN',
+        default=0.00,
+        blank=True,
+        max_digits=10, decimal_places=2
+    )
+    delivery_cost = models.DecimalField(
+        verbose_name='стоимость доставки, DIN',
+        default=0.00,
+        blank=True,
+        max_digits=10, decimal_places=2
+    )
+
+    def get_delivery_cost(self, discontinued_amount, recipient_district):
+        """
+        Рассчитывает delivery_cost с учетом суммы заказа.
+        """
+        if (recipient_district.promo
+                and discontinued_amount >= recipient_district.min_order_amount):
+            # Если район имеет промо предложение, и сумма заказа больше мин суммы,
+            # доставка бесплатная
+            return Decimal(0)
+        return recipient_district.delivery_cost
+
+    class Meta:
+        verbose_name = 'район доставки'
+        verbose_name_plural = 'районы доставки'
+
+    def __str__(self):
+        return f'{self.district}'
+
 
 
 class Shop(models.Model):

@@ -13,6 +13,7 @@ class WEBAccountAdminInline(admin.StackedInline):
 class UserAddressesAdminInline(admin.TabularInline):
     model = UserAddress
     min_num = 0
+    extra = 0   # чтобы не добавлялись путые поля
 
 
 @admin.register(BaseProfile)

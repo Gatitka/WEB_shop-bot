@@ -5,7 +5,7 @@ from catalog.models import Dish
 from users.models import BaseProfile
 from django.db.models import Sum
 from django.conf import settings # для импорта валюты
-from delivery_contacts.models import Delivery, Shop
+from delivery_contacts.models import Delivery, Shop, DistrictDeliveryCost
 from promos.models import Promocode
 from decimal import Decimal
 
@@ -43,34 +43,37 @@ class ShoppingCart(models.Model):
     user = models.OneToOneField(
         BaseProfile,
         on_delete=models.CASCADE,
-        primary_key=True,
-        verbose_name='Клиент',
+        verbose_name='ID клиента',
         related_name='shopping_cart',
+        blank=True, null=True
+    )
+    device_id = models.CharField(
+        max_length=100,
+        verbose_name='ID устройства',
+        blank=True, null=True
+    )
+    created = models.DateTimeField(
+        'Дата добавления',
+        auto_now_add=True
     )
     dishes = models.ManyToManyField(
         Dish,
         through='CartDish',
         # related_name='dish',
-        verbose_name='Товары в заказе',
-        help_text='Добавьте блюда в заказ.'
+        verbose_name='Товары в корзине',
+        help_text='Добавьте блюда в корзину.'
     )   # нужен ли вообще?
-    created = models.DateTimeField(
-        'Дата добавления', auto_now_add=True
-    )
+
     complited = models.BooleanField(
         verbose_name='Заказана',
         default=False
     )
-    session_id = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True
-    )
+
     amount = models.DecimalField(
         verbose_name='Сумма, DIN',
         default=0.00,
         blank=True,
-        max_digits=6, decimal_places=2
+        max_digits=10, decimal_places=2
     )
     promocode = models.ForeignKey(
         Promocode,
@@ -88,13 +91,14 @@ class ShoppingCart(models.Model):
         verbose_name='Итог сумма, DIN',
         default=0.00,
         blank=True,
-        max_digits=6, decimal_places=2
+        max_digits=10, decimal_places=2
     )
 
     @property
     def num_of_items(self):
         itemsqty = self.cart_dishes.aggregate(qty=Sum('quantity'))
-        return itemsqty['qty']
+        items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+        return items_qty
     num_of_items.fget.short_description = 'Кол-во ед-ц тов, шт'
 
     class Meta:
@@ -109,17 +113,16 @@ class ShoppingCart(models.Model):
         """
         Рассчитывает final_amount с учетом скидки от промокода.
         """
-        print(self.cart_dishes)
         print(self.cart_dishes.all())
         if self.promocode:
             # Если есть промокод, применяем скидку
-            discount_amount = self.amount * (self.promocode.discount / Decimal(100))
-            self.final_amount = self.amount - discount_amount
-        if self.discount:
+            discount_amount = Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
+            self.final_amount = Decimal(self.amount) - discount_amount
+        elif self.discount:
             # Если есть вручную внесенная скидка, применяем её
             self.final_amount = self.amount - self.discount
         else:
-            # Если нет промокода, final_amount равен общей сумме
+            # Если нет промокода и вручную внесенной скидки, final_amount равен общей сумме
             self.final_amount = self.amount
 
     def save(self, *args, **kwargs):
@@ -147,7 +150,7 @@ class CartDish(models.Model):
     quantity = models.PositiveSmallIntegerField(
         verbose_name='Кол-во',
         validators=[MinValueValidator(1)],
-        default=0
+        default=1
     )
     amount = models.DecimalField(
         default=0.00,
@@ -173,11 +176,11 @@ class CartDish(models.Model):
         self.amount = self.dish.final_price * self.quantity
         super(CartDish, self).save(*args, **kwargs)
         total_amount = CartDish.objects.filter(cart=self.cart).aggregate(ta=Sum('amount'))['ta']
-        self.cart.amount = total_amount if total_amount is not None else 0
+        self.cart.amount = total_amount if total_amount is not None else Decimal(0)
         self.cart.save(update_fields=['amount', 'final_amount'])
 
     def save_in_flow(self, *args, **kwargs):
-        self.amount = self.dish.final_price * self.quantity
+        self.amount = Decimal(self.dish.final_price * self.quantity)
         super(CartDish, self).save(*args, **kwargs)
 
 
@@ -190,14 +193,19 @@ class CartDish(models.Model):
 
 class Order(models.Model):
     """ Модель для заказов."""
-    created = models.DateTimeField(
-        'Дата добавления', auto_now_add=True
-    )
     user = models.ForeignKey(
         BaseProfile,
         on_delete=models.CASCADE,
         verbose_name='Клиент',
         related_name='orders',
+        blank=True, null=True
+    )
+    device_id = models.CharField(
+        max_length=100,
+        blank=True, null=True
+    )
+    created = models.DateTimeField(
+        'Дата добавления', auto_now_add=True
     )
     dishes = models.ManyToManyField(
         Dish,
@@ -218,8 +226,13 @@ class Order(models.Model):
         related_name='orders',
         verbose_name='доставка'
     )
+    delivery_cost = models.DecimalField(
+        verbose_name='стоимость доставки',
+        default=0.00,
+        max_digits=6, decimal_places=2,
+        blank=True, null=True,
+    )
     # payment
-    # promocode
     recipient_name = models.CharField(
         max_length=400,
         verbose_name='получатель'
@@ -227,25 +240,32 @@ class Order(models.Model):
     recipient_phone = models.CharField(
         verbose_name='Телефон',
         max_length=100,
-        validators=[MinLengthValidator(8)],
-        blank=True,
-        null=True,
-        default=None
+        # validators=[MinLengthValidator(8)],
+        # blank=True,
+        # null=True,
+        # default=None
     )
     recipient_address = models.CharField(
-        verbose_name='адрес',
-        max_length=200
+        verbose_name='Адрес',
+        max_length=200,
+        blank=True, null=True
+    )
+    recipient_district = models.ForeignKey(
+        DistrictDeliveryCost,
+        on_delete=models.PROTECT,
+        verbose_name='Район',
+        blank=True, null=True
     )
     time = models.CharField(
-        verbose_name='время',
-        max_length=100
+        verbose_name='время доставки',
+        max_length=100,
+        blank=True, null=True
     )   # настроить форматирование вносимых данных
     comment = models.CharField(
         max_length=400,
         verbose_name='Комментарий',
         help_text='Комментарий к заказу.',
-        blank=True,
-        null=True
+        blank=True, null=True
     )
     shop = models.ForeignKey(
         Shop,
@@ -263,8 +283,39 @@ class Order(models.Model):
     amount = models.DecimalField(
         default=0.00,
         blank=True,
+        max_digits=6, decimal_places=2,
+        verbose_name='сумма заказа до скидки, DIN',
+    )
+    promocode = models.ForeignKey(
+        Promocode,
+        verbose_name='Промокод',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+    discount = models.DecimalField(
+        verbose_name='Скидка, DIN',
+        default=0.00,
+        null=True,
         max_digits=6, decimal_places=2
     )
+    discounted_amount = models.DecimalField(
+        verbose_name='Сумма заказа после скидок, DIN',
+        default=0.00,
+        blank=True,
+        max_digits=6, decimal_places=2
+    )
+    final_amount_with_shipping = models.DecimalField(
+        verbose_name='Сумма заказа с учетом скидок и доставки, DIN',
+        default=0.00,
+        blank=True,
+        max_digits=6, decimal_places=2
+    )
+
+    @property
+    def num_of_items(self):
+        itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
+        return itemsqty['qty']
+    num_of_items.fget.short_description = 'Кол-во ед-ц тов, шт'
 
     class Meta:
         ordering = ['-created']
@@ -273,6 +324,55 @@ class Order(models.Model):
 
     def __str__(self):
         return f'{self.id}'
+
+    def calculate_discontinued_amount(self):
+        """
+        Рассчитывает final_amount с учетом скидки от промокода.
+        """
+        if self.promocode:
+            # Если есть промокод, применяем скидку
+            discount_amount = Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
+            self.discounted_amount = Decimal(self.amount) - discount_amount
+        else:
+            # Если нет промокода, final_amount равен общей сумме
+            self.discounted_amount = Decimal(self.amount)
+        if self.discount:
+            # Если есть вручную внесенная скидка, применяем её
+            self.discounted_amount = (
+                Decimal(self.discounted_amount) - Decimal(self.discount)
+            )
+
+    def calculate_final_amount_with_shipping(self):
+        """
+        Рассчитывает final_amount с учетом скидки от промокода.
+        """
+        if self.delivery_id == 1:
+            self.delivery_cost = self.recipient_district.get_delivery_cost(
+                self.discounted_amount,
+                self.recipient_district
+            )
+        else:
+            if self.delivery.discount:
+                delivery_discount = (
+                    Decimal(self.discounted_amount)
+                    * Decimal(self.delivery.discount) / Decimal(100)
+                )
+                self.delivery_cost = (
+                    Decimal(0 - delivery_discount)
+                )
+            else:
+                self.delivery_cost = Decimal(0)
+        self.final_amount_with_shipping = (
+            Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
+        )
+
+    def save(self, *args, **kwargs):
+        """
+        Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
+        """
+        self.calculate_discontinued_amount()
+        self.calculate_final_amount_with_shipping()
+        super().save(*args, **kwargs)
 
 
 class OrderDish(models.Model):
@@ -285,13 +385,13 @@ class OrderDish(models.Model):
     )
     order = models.ForeignKey(
         Order,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         verbose_name='Заказ',
         related_name='order_dishes',
     )
     quantity = models.PositiveSmallIntegerField(
         verbose_name='Кол-во',
-        validators=[MinValueValidator(1)]
+        validators=[MinValueValidator(1)],
     )
     unit_price = models.DecimalField(
         default=0.00,
@@ -318,10 +418,27 @@ class OrderDish(models.Model):
     def save(self, *args, **kwargs):
         self.amount = self.dish.final_price * self.quantity
         super(OrderDish, self).save(*args, **kwargs)
-        self.order.amount = OrderDish.objects.filter(order=self.order).aggregate(ta=Sum('amount'))['ta']
-        self.order.save(update_fields=['amount'])
+        total_amount = OrderDish.objects.filter(
+            order=self.order
+                ).aggregate(ta=Sum('amount'))['ta']
+        self.order.amount = total_amount if total_amount is not None else 0
+        self.order.save(update_fields=[
+            'amount',
+            'discounted_amount',
+            'final_amount_with_shipping',
+            'delivery_cost',
+            ])
 
     def delete(self, *args, **kwargs):
         super(OrderDish, self).delete()
-        self.order.amount = OrderDish.objects.filter(order=self.order).aggregate(ta=Sum('amount'))['ta']
-        self.order.save(update_fields=['amount'])
+        total_amount = OrderDish.objects.filter(
+            order=self.order
+                ).aggregate(ta=Sum('amount'))['ta']
+
+        self.order.amount = total_amount if total_amount is not None else 0
+        self.order.save(update_fields=[
+            'amount',
+            'discounted_amount',
+            'final_amount_with_shipping',
+            'delivery_cost',
+            ])

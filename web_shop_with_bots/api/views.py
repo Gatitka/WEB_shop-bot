@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from catalog.models import Dish
-from shop.models import ShoppingCart, CartDish, Order
+from shop.models import ShoppingCart, CartDish, Order, OrderDish
 from delivery_contacts.models import Shop, Delivery
 from users.models import BaseProfile, UserAddress
 from django.shortcuts import get_object_or_404, redirect
@@ -8,7 +8,8 @@ from api.utils import check_existance_create_delete
 from rest_framework.decorators import action
 from .serializers import (UserOrdersSerializer, DishShortSerializer,
                           ShopSerializer, DeliverySerializer,
-                          UserAddressSerializer, PromoNewsSerializer)
+                          UserAddressSerializer, PromoNewsSerializer,
+                          CartDishSerializer, ShoppingCartReadSerializer)
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import mixins, status, viewsets
@@ -138,9 +139,9 @@ class MenuViewSet(mixins.ListModelMixin,
 
     @action(detail=True,
             methods=['post'])   #, 'delete'])
-    def shopping_cart(self, request, pk=None):
+    def add_to_shopping_cart(self, request, pk=None):
         """
-        Добавляет блюдо в `список покупок`.
+        Добавляет блюдо в `корзину`.
 
         Args:
             request (WSGIRequest): Объект запроса.
@@ -152,23 +153,71 @@ class MenuViewSet(mixins.ListModelMixin,
         """
         dish = get_object_or_404(Dish, id=pk)
         method = request.method
-        return_obj = 'response'
         current_user = request.user
 
         if current_user.is_authenticated:
-            cart = ShoppingCart.objects.get_or_create(user=current_user)
+            cart, state = ShoppingCart.objects.get_or_create(user=current_user.base_profile)
         else:
-            try:
-                cart = ShoppingCart.objects.get(session_id=request.session['hi'], completed=False)
-            except:
-                request.session['hi'] = str(uuid.uuid4())
-                cart = ShoppingCart.objects.get_or_create(session_id=request.session['hi'], completed=False)
+            print('no_user')
+            # try:
+            #     cart = ShoppingCart.objects.get(session_id=request.session['hi'], completed=False)
+            # except:
+            #     request.session['hi'] = str(uuid.uuid4())
+            #     cart = ShoppingCart.objects.get_or_create(session_id=request.session['hi'], completed=False)
 
-        return check_existance_create_delete(CartDish, method,
-                                             return_obj,
-                                             DishShortSerializer, dish,
-                                             cart=cart,
-                                             dish=dish)
+        if method == 'POST':
+            cartitem, created = CartDish.objects.get_or_create(cart=cart, dish=dish)
+            if not created:
+                cartitem.quantity += 1
+                cartitem.save(update_fields=['quantity',])
+
+            # if CartDish.objects.filter(cart=cart, dish=dish).exists():
+            #     return Response('Данное блюдо уже в корзине.',
+            #                     status=status.HTTP_400_BAD_REQUEST)
+            # else:
+            #     CartDish.objects.create(cart=cart, dish=dish)
+            return redirect('api:menu-list')
+            #pk=author.id   # нужно сохранить предвыбор ноавной страницы, т.к. в противном случаебудет скидываться
+
+
+class ShoppingCartView(APIView):
+    """
+    Вьюсет модели ShoppingCart.
+    """
+    def get(self, request, format=None):
+        current_user = request.user
+        if current_user.is_authenticated:
+            cart, created = ShoppingCart.objects.get_or_create(
+                user=current_user.base_profile
+                )
+        serializer = ShoppingCartReadSerializer(cart)
+        return Response(serializer.data)
+
+
+# class ShoppingCartViewSet(mixins.RetrieveModelMixin,
+#                           mixins.CreateModelMixin,
+#                           mixins.UpdateModelMixin,
+#                           mixins.DestroyModelMixin,
+#                           # mixins.ListModelMixin,
+#                           viewsets.GenericViewSet):
+#     """
+#     Вьюсет модели ShoppingCart.
+#     """
+#     queryset = ShoppingCart.objects.all()
+#     serializer_class = ShoppingCartSerializer
+#     permission_classes = [AllowAny,]
+
+#     def retrieve(self, request, *args, **kwargs):
+#         current_user = self.request.user
+#         if current_user.is_authenticated:
+#             cart, created = ShoppingCart.objects.get_or_create(
+#                 user=current_user.base_profile
+#                 )
+#         serializer = self.get_serializer(cart)
+#         return Response(serializer.data)
+
+#     def list(self, request, *args, **kwargs):
+#         return Response({'detail': 'Method "GET" not allowed for this endpoint.'}, status=HTTP_405_METHOD_NOT_ALLOWED)
 
 
 

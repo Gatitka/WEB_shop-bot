@@ -35,7 +35,6 @@ class Category(models.Model):
             'латиницу, цифры, дефисы и знаки подчёркивания'
         )
     )
-    # URLField
     # category_image
 
     class Meta:
