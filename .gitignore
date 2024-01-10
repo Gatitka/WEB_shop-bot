@@ -165,3 +165,5 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+
+notes.txt

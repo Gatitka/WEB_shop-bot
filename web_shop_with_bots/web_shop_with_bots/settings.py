@@ -10,7 +10,6 @@ load_dotenv(os.path.join(os.path.dirname(BASE_DIR), 'infra', '.env'), verbose=Tr
 SECRET_KEY = os.getenv('SECRET_KEY')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-
 DEBUG = os.getenv('DEBUG')
 
 ALLOWED_HOSTS = [
