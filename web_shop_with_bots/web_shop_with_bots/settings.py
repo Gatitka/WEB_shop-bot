@@ -11,13 +11,14 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 
-DEBUG = True
+DEBUG = os.getenv('DEBUG')
 
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     '[::1]',
     'testserver', # для тестов
+    '81.19.141.98',
 ]
 
 INSTALLED_APPS = [
