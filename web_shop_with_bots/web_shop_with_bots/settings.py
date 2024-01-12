@@ -214,8 +214,8 @@ LANGUAGE_CHOICES = (
 
 # CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
 # CSRF_COOKIE_HTTPONLY = True
-# CSRF_USE_SESSIONS = True
-
+CSRF_USE_SESSIONS = True
+CSRF_TRUSTED_ORIGINS = ['http://81.19.141.98']
 REST_USE_JWT = True
 
 INTERNAL_IPS = [
