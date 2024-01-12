@@ -167,3 +167,6 @@ coverage.xml
 *.cover
 
 notes.txt
+
+mediia/
+static/
