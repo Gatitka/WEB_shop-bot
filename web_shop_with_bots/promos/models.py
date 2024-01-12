@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.safestring import mark_safe
 
 
 class PromoNews(models.Model):
@@ -11,14 +12,14 @@ class PromoNews(models.Model):
         max_length=600,
         verbose_name='описание рус'
     )
-    title_eng = models.CharField(
+    title_en = models.CharField(
         max_length=100,
-        verbose_name='заголовок eng',
+        verbose_name='заголовок en',
         blank=True, null=True
     )
-    full_text_eng = models.TextField(
+    full_text_en = models.TextField(
         max_length=600,
-        verbose_name='описание eng',
+        verbose_name='описание en',
         blank=True, null=True
     )
     title_srb = models.CharField(
@@ -44,7 +45,64 @@ class PromoNews(models.Model):
     created = models.DateField(
         'Дата добавления', auto_now_add=True
     )
-    # image
+    image_rus = models.ImageField(
+        upload_to='promo/',
+        null=True,
+        default=None,
+        blank=True,
+        verbose_name='Изображение',
+        )
+    image_en = models.ImageField(
+        upload_to='promo/',
+        null=True,
+        default=None,
+        blank=True,
+        verbose_name='Изображение',
+        )
+    image_srb = models.ImageField(
+        upload_to='promo/',
+        null=True,
+        default=None,
+        blank=True,
+        verbose_name='Изображение',
+        )
+
+    def admin_photo_rus(self):
+        if self.image_rus:
+            return mark_safe(
+                '<img src="{}" width="100" />'.format(self.image_rus.url)
+                )
+        missing_image_url = "icons/missing_image.jpg"
+        return mark_safe(
+            '<img src="{}" width="100" />'.format(missing_image_url)
+            )
+
+    def admin_photo_srb(self):
+        if self.image_srb:
+            return mark_safe(
+                '<img src="{}" width="100" />'.format(self.image_srb.url)
+                )
+        missing_image_url = "icons/missing_image.jpg"
+        return mark_safe(
+            '<img src="{}" width="100" />'.format(missing_image_url)
+            )
+
+    def admin_photo_en(self):
+        if self.image_en:
+            return mark_safe(
+                '<img src="{}" width="100" />'.format(self.image_en.url)
+                )
+        missing_image_url = "icons/missing_image.jpg"
+        return mark_safe(
+            '<img src="{}" width="100" />'.format(missing_image_url)
+            )
+
+    admin_photo_rus.short_description = 'Image_rus'
+    admin_photo_rus.allow_tags = True
+    admin_photo_srb.short_description = 'Image_srb'
+    admin_photo_srb.allow_tags = True
+    admin_photo_en.short_description = 'Image_EN'
+    admin_photo_en.allow_tags = True
 
     class Meta:
         ordering = ['-created']

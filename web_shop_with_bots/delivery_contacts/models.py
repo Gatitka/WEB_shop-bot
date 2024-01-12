@@ -1,5 +1,6 @@
 from django.db import models
 from decimal import Decimal
+from django.utils.safestring import mark_safe
 
 
 DELIVERY_CHOICES = (
@@ -77,10 +78,30 @@ class Delivery(models.Model):
         max_length=20,
         verbose_name='город'
     )
+    image = models.ImageField(
+        upload_to='contacts/',
+        null=True,
+        default=None,
+        blank=True,
+        verbose_name='Карта районов доставки',
+    )
+
+    def admin_photo(self):
+        if self.image:
+            return mark_safe(
+                '<img src="{}" width="100" />'.format(self.image.url)
+                )
+        missing_image_url = "icons/missing_image.jpg"
+        return mark_safe(
+            '<img src="{}" width="100" />'.format(missing_image_url)
+            )
+
+    admin_photo.short_description = 'Image'
+    admin_photo.allow_tags = True
 
     class Meta:
         verbose_name = 'доставка'
-        verbose_name_plural = 'доставка'
+        verbose_name_plural = 'доставки'
 
     def __str__(self):
         return f'{self.name_rus}'
@@ -134,7 +155,6 @@ class DistrictDeliveryCost(models.Model):
         return f'{self.district}'
 
 
-
 class Shop(models.Model):
     """ Модель для магазина."""
     short_name = models.CharField(
@@ -177,7 +197,26 @@ class Shop(models.Model):
         blank=True,
         null=True
     )
-    # map_location = картинка карты
+    image = models.ImageField(
+        upload_to='contacts/',
+        null=True,
+        default=None,
+        blank=True,
+        verbose_name='Изображение',
+    )
+
+    def admin_photo(self):
+        if self.image:
+            return mark_safe(
+                '<img src="{}" width="100" />'.format(self.image.url)
+                )
+        missing_image_url = "icons/missing_image.jpg"
+        return mark_safe(
+            '<img src="{}" width="100" />'.format(missing_image_url)
+            )
+
+    admin_photo.short_description = 'Image'
+    admin_photo.allow_tags = True
 
     class Meta:
         verbose_name = 'ресторан'

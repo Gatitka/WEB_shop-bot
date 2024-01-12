@@ -3,24 +3,26 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from pytils.translit import slugify
 from decimal import Decimal
+from django.utils.safestring import mark_safe
 
 
 class Category(models.Model):
     '''Модель категорий блюд.'''
     priority = models.PositiveSmallIntegerField(
-        verbose_name='Порядок отображения в меню',
+        verbose_name='№ п/п',
         validators=[MinValueValidator(1)],
-        blank=True
+        blank=True,
+        unique=True,
     )
     name_rus = models.CharField(
         max_length=200,
         verbose_name='Название RUS',
-        unique=True
+        unique=True,
     )
     name_srb = models.CharField(
         max_length=200,
         verbose_name='Название SRB',
-        unique=True
+        unique=True,
     )
     is_active = models.BooleanField(
         default=False,
@@ -35,7 +37,6 @@ class Category(models.Model):
             'латиницу, цифры, дефисы и знаки подчёркивания'
         )
     )
-    # category_image
 
     class Meta:
         verbose_name = 'категория'
@@ -45,8 +46,7 @@ class Category(models.Model):
     def clean(self) -> None:
         self.name_rus = self.name_rus.strip().lower()
         self.name_srb = self.name_srb.strip().lower()
-        if Category.objects.filter(name_rus=self.name_rus).exists():
-            raise ValidationError('Категория с таким названием уже есть')
+        # self.name_en = self.name_en.strip().lower()
         if not self.priority:
             max_position = Category.objects.all().order_by('-priority').values('priority').first()
             self.priority = max_position['priority'] + 1
@@ -64,14 +64,15 @@ class Category(models.Model):
 class Dish(models.Model):
     '''Модель блюда.'''
     priority = models.PositiveSmallIntegerField(
-        verbose_name='Порядок отображения в меню',
+        verbose_name='№ п/п',
         validators=[MinValueValidator(1)],
         blank=True,
     )
     article = models.CharField(
         max_length=6,
         verbose_name='артикул',
-        help_text='Добавьте артикул прим. 0101.'
+        help_text='Добавьте артикул прим. 0101.',
+        # unique=True,
         # валидация длинны от 4 до 6
     )
     is_active = models.BooleanField(
@@ -82,12 +83,14 @@ class Dish(models.Model):
     short_name_rus = models.CharField(
         max_length=200,
         db_index=True,
+        unique=True,
         verbose_name='Название РУС',
         help_text='Добавьте название блюда RUS.'
     )
     short_name_srb = models.CharField(
         max_length=200,
         db_index=True,
+        unique=True,
         verbose_name='Название SRB',
         help_text='Добавьте название блюда SRB.'
     )
@@ -101,6 +104,13 @@ class Dish(models.Model):
         verbose_name='Описание SRB',
         help_text='Добавьте описание блюда SRB.'
     )
+    image = models.ImageField(
+        upload_to='menu/dish_images/',
+        null=True,
+        default=None,
+        blank=True,
+        verbose_name='Изображение',
+        )
     category = models.ManyToManyField(
         Category,
         through='DishCategory',
@@ -136,8 +146,9 @@ class Dish(models.Model):
         verbose_name='объем в ед-це поз',
         help_text='Добавьте объем в единице позиции. Прим, 4 шт.'
     )
-    add_date = models.DateTimeField(
-        'Дата добавления', auto_now_add=True
+    created = models.DateTimeField(
+        'Дата добавления',
+        auto_now_add=True
     )
     vegan_icon = models.BooleanField(
         verbose_name='веган',
@@ -152,13 +163,8 @@ class Dish(models.Model):
         null=True, blank=True,
     )
 
-    # image = models.ImageField(
-    #     upload_to='recipe/images/',
-    #     help_text='Добавьте изображение готового блюда.'
-    # )
-
     class Meta:
-        ordering = ['article']
+        ordering = ['pk']
         verbose_name = 'блюдо'
         verbose_name_plural = 'блюда'
 
@@ -169,8 +175,6 @@ class Dish(models.Model):
         self.short_name_rus = self.short_name_rus.strip().lower()
         self.short_name_srb = self.short_name_srb.strip().lower()
         # self.short_name_en = self.short_name_en.strip().lower()
-        if Dish.objects.filter(short_name_rus=self.short_name_rus).exists():
-            raise ValidationError('Блюдо с таким названием уже есть')
         if not self.priority:
             max_position = Dish.objects.filter(category=self.category).all().order_by('-priority').values('priority').first()
             self.priority = max_position['priority'] + 1
@@ -183,12 +187,24 @@ class Dish(models.Model):
 
         return self.price
 
+    def admin_photo(self):
+        if self.image:
+            return mark_safe(
+                '<img src="{}" width="100" />'.format(self.image.url)
+                )
+        missing_image_url = "icons/missing_image.jpg"
+        return mark_safe(
+            '<img src="{}" width="100" />'.format(missing_image_url)
+            )
+
+    admin_photo.short_description = 'Image'
+    admin_photo.allow_tags = True
+
 
 class DishCategory(models.Model):
     """ Модель для сопоставления связи рецепта и тэгов."""
     dish = models.ForeignKey(
         Dish,
-
         on_delete=models.CASCADE,
         verbose_name='блюдо',
         # related_name='category'

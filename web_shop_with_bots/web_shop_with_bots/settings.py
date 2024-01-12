@@ -17,7 +17,7 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     '[::1]',
     'testserver', # для тестов
-    '81.19.141.98',
+    os.getenv('TEST_SERVER'), # тестовый сервер
 ]
 
 INSTALLED_APPS = [
@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     'shop.apps.ShopConfig',
     'users.apps.UsersConfig',
     'tm_bot.apps.TmBotConfig',
+    'promos.apps.PromosConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -40,7 +41,6 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'debug_toolbar',
     'django_summernote',   # HTML editable text in Admin section for promo
-    'promos.apps.PromosConfig',
     'delivery_contacts.apps.DeliveryContactsConfig',
     'django_filters',
 ]

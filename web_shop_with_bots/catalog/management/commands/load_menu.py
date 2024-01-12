@@ -8,6 +8,9 @@ from users.models import UserAddress, BaseProfile, WEBAccount
 from promos.models import PromoNews
 from delivery_contacts.models import Shop, Delivery
 from decimal import Decimal
+import os
+import re
+from web_shop_with_bots.settings import BASE_DIR
 
 
 User = get_user_model()
@@ -18,7 +21,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        with open('menu.csv', encoding='utf-8') as f:
+        def find_image_by_article(article):
+            # Укажите путь к директории с изображениями
+            image_directory = os.path.join(BASE_DIR, 'media', 'menu', 'dish_images')
+            # Формируем регулярное выражение для поиска файлов по артикулу
+            pattern = re.compile(rf"{article} .*\.jpg", re.IGNORECASE)
+
+            # Перебираем файлы в директории
+            for filename in os.listdir(image_directory):
+                if pattern.match(filename):
+                    # Найдено соответствие, возвращаем путь к файлу
+                    return os.path.join('menu', 'dish_images', filename)
+
+            # Если файл не найден
+            return os.path.join('icons', 'missing_image.jpg')
+
+        with open('docs/menu.csv', encoding='utf-8') as f:
             for row in DictReader(f, delimiter=';'):
                 if not any(row.values()):
                     continue
@@ -36,25 +54,32 @@ class Command(BaseCommand):
                         slug=row['slug'],
                         is_active=True,
                     )[0]
-                dish = Dish.objects.get_or_create(
-                    priority=row['пп блюд'],
-                    short_name_rus=row['Наименование'],
-                    short_name_srb=row['Наименование'],
-                    text_rus=row['Описание'],
-                    text_srb=row['Описание'],
-                    price=row['Цена'],
-                    weight=row['Вес'],
-                    article=row['Артикул'],
-                    uom=row['Ед. изм'],
-                    volume=row['Объем'],
-                    vegan_icon=row['vegan icon'],
-                    spicy_icon=row['hot icon'],
-                    is_active=True,
-                )[0]
-                cat = (category,)
-                if dish.vegan_icon == True:
-                    cat = (category, vegan_cat)
-                dish.category.set(cat)
+
+                article_number = row['Артикул']
+                image_path = find_image_by_article(article_number)
+
+                if not Dish.objects.filter(short_name_rus=row['Наименование']).exists():
+                    dish = Dish.objects.create(
+                        priority=row['пп блюд'],
+                        short_name_rus=row['Наименование'],
+                        short_name_srb=row['Наименование'],
+                        text_rus=row['Описание'],
+                        text_srb=row['Описание'],
+                        price=row['Цена'],
+                        weight=row['Вес'],
+                        article=row['Артикул'],
+                        uom=row['Ед. изм'],
+                        volume=row['Объем'],
+                        vegan_icon=row['vegan icon'],
+                        spicy_icon=row['hot icon'],
+                        is_active=True,
+                        image=image_path,
+                    )
+                    cat = (category,)
+                    if dish.vegan_icon == True:
+                        cat = (category, vegan_cat)
+                    dish.category.set(cat)
+
 
         admin = User.objects.get_or_create(
             email="a@a.ru",
@@ -102,6 +127,7 @@ class Command(BaseCommand):
             type="1",
             city='Белград',
             is_active=True,
+            image=os.path.join('contacts', 'delivery1.jpg'),
         )
         delivery2 = Delivery.objects.get_or_create(
             name_rus="самовывоз",
@@ -121,6 +147,7 @@ class Command(BaseCommand):
             phone="+381 61 271 4798",
             city='Белград',
             is_active=True,
+            image=os.path.join('contacts', 'shop1.jpg')
         )
         shop2 = Shop.objects.get_or_create(
             short_name='центр2',
@@ -131,6 +158,7 @@ class Command(BaseCommand):
             phone="+381 11 222 3333",
             city='Белград',
             is_active=True,
+            image=os.path.join('contacts', 'shop1.jpg')
         )
         shop3 = Shop.objects.get_or_create(
             short_name='НовиСад',
@@ -139,7 +167,8 @@ class Command(BaseCommand):
             address_en="ул.Хуливана Хуливановича 4",
             work_hours="9:00 - 22:00",
             phone="+381 22 222 3333",
-            city='Нови Сад'
+            city='Нови Сад',
+            image=os.path.join('contacts', 'shop1.jpg')
         )
 
         address1 = UserAddress.objects.get_or_create(
@@ -176,6 +205,9 @@ class Command(BaseCommand):
             full_text_rus='при заказе от 2500 самовывоз',
             city='Belgrade',
             is_active=True,
+            image_rus=os.path.join('promo', 'promo1.jpeg'),
+            image_srb=os.path.join('promo', 'promo1.jpeg'),
+            image_en=os.path.join('promo', 'promo1.jpeg'),
         )
 
         promo2 = PromoNews.objects.get_or_create(
@@ -183,9 +215,22 @@ class Command(BaseCommand):
             full_text_rus='новые суши с авокадо',
             city='Belgrade',
             is_active=True,
+            image_rus=os.path.join('promo', 'promo2.jpeg'),
+            image_srb=os.path.join('promo', 'promo2.jpeg'),
+            image_en=os.path.join('promo', 'promo2.jpeg'),
         )
 
-        with open('delivery_districts.csv', encoding='utf-8-sig') as f:
+        promo3 = PromoNews.objects.get_or_create(
+            title_rus='праздник',
+            full_text_rus='новые суши с авокадо',
+            city='Belgrade',
+            is_active=True,
+            image_rus=os.path.join('promo', 'promo3.jpeg'),
+            image_srb=os.path.join('promo', 'promo3.jpeg'),
+            image_en=os.path.join('promo', 'promo3.jpeg'),
+        )
+
+        with open('docs/delivery_districts.csv', encoding='utf-8-sig') as f:
             for row in DictReader(f, delimiter=';'):
                 if not any(row.values()):
                     continue

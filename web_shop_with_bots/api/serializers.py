@@ -7,6 +7,9 @@ from shop.models import ShoppingCart, CartDish, Order, OrderDish
 from delivery_contacts.models import Delivery, Shop
 from users.models import BaseProfile, UserAddress
 from promos.models import PromoNews
+from django.core.files.base import ContentFile
+import base64  # Модуль с функциями кодирования и декодирования base64
+
 
 User = get_user_model()
 
@@ -80,7 +83,6 @@ class DishShortSerializer(serializers.ModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
-    # image = Base64ImageField()
     category = CategorySerializer(many=True)
     is_in_shopping_cart = SerializerMethodField()
 
@@ -88,16 +90,18 @@ class DishShortSerializer(serializers.ModelSerializer):
         fields = ('id', 'priority',
                   'short_name_rus', 'text_rus',
                   'category',
-                  'price','final_price',
+                  'price', 'final_price',
                   'spicy_icon', 'vegan_icon',
-                  'is_in_shopping_cart',)  # 'image'
+                  'is_in_shopping_cart', 'image'
+                  )
         model = Dish
         read_only_fields = ('id', 'priority',
                             'short_name_rus', 'text_rus',
                             'category',
-                            'price','final_price',
+                            'price', 'final_price',
                             'spicy_icon', 'vegan_icon',
-                            'is_in_shopping_cart',)  # 'image'
+                            'is_in_shopping_cart', 'image',
+                            )
 
     def get_is_in_shopping_cart(self, dish: Dish) -> bool:
         """Получает булевое значение, если авторизованный пользователь имеет
@@ -127,11 +131,11 @@ class ShopSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ('id', 'short_name', 'address_rus', 'address_en',
                   'address_srb', 'work_hours',
-                  'phone', 'is_active')
+                  'phone', 'is_active', 'image')
         model = Shop
         read_only_fields = ('id', 'short_name', 'address_rus', 'address_en',
                             'address_srb', 'work_hours',
-                            'phone', 'is_active')
+                            'phone', 'is_active', 'image')
 
 
 class DeliverySerializer(serializers.ModelSerializer):
@@ -141,10 +145,10 @@ class DeliverySerializer(serializers.ModelSerializer):
 
     class Meta:
         fields = ('id', 'city', 'description_rus', 'description_en',
-                  'description_srb')
+                  'description_srb', 'image')
         model = Delivery
         read_only_fields = ('id', 'city', 'description_rus', 'description_en',
-                  'description_srb')
+                  'description_srb', 'image')
 
 
 class PromoNewsSerializer(serializers.ModelSerializer):
@@ -155,10 +159,12 @@ class PromoNewsSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ('id', 'city', 'created',
                   'title_rus', 'full_text_rus',
+                  'image_rus',
                   )
         model = PromoNews
         read_only_fields = ('id', 'city', 'created',
                             'title_rus', 'full_text_rus',
+                            'image_rus',
                             )
 
 
