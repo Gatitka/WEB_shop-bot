@@ -184,8 +184,6 @@ class ShoppingCartView(APIView):
     """
     Вьюсет модели ShoppingCart.
     """
-    permission_classes = [AllowAny,]
-
     def get(self, request, format=None):
         current_user = request.user
         if current_user.is_authenticated:

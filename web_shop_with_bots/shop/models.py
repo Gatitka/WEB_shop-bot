@@ -261,6 +261,7 @@ class Order(models.Model):
         max_length=100,
         blank=True, null=True
     )   # настроить форматирование вносимых данных
+    # на фронте дата на 1 мес вперед, а время ограничено 10:30 - 22:30, фронт передает это строкой
     comment = models.CharField(
         max_length=400,
         verbose_name='Комментарий',
