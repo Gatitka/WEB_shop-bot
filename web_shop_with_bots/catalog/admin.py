@@ -1,5 +1,7 @@
 from django.contrib import admin
-from parler.admin import TranslatableAdmin, TranslatableTabularInline, SortedRelatedFieldListFilter
+from parler.admin import (SortedRelatedFieldListFilter, TranslatableAdmin,
+                          TranslatableTabularInline)
+
 from .models import Category, Dish, DishCategory
 
 

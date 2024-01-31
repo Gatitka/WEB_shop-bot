@@ -1,9 +1,20 @@
 import base64  # Модуль с функциями кодирования и декодирования base64
-from django.conf import settings
+import re
+from datetime import date, datetime
 
+import phonenumbers
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
+from django.core.validators import EmailValidator
 from django.db.models import F, QuerySet
+from djoser.compat import get_user_email, get_user_email_field_name
+from parler_rest.fields import \
+    TranslatedFieldsField  # для переводов текста parler
+from parler_rest.serializers import \
+    TranslatableModelSerializer  # для переводов текста parler
+from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework.serializers import SerializerMethodField
 
@@ -11,17 +22,8 @@ from catalog.models import Category, Dish
 from delivery_contacts.models import Delivery, Shop
 from promos.models import PromoNews
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
-from users.models import BaseProfile, UserAddress
-from parler_rest.serializers import TranslatableModelSerializer   # для переводов текста parler
-from parler_rest.fields import TranslatedFieldsField    # для переводов текста parler
 from tm_bot.models import MessengerAccount
-from django.core.exceptions import ValidationError
-from djoser.compat import get_user_email, get_user_email_field_name
-import re
-from phonenumber_field.serializerfields import PhoneNumberField
-import phonenumbers
-from datetime import date, datetime
-from django.core.validators import EmailValidator
+from users.models import BaseProfile, UserAddress
 
 User = get_user_model()
 

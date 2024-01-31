@@ -6,15 +6,14 @@ from django.core.validators import (MaxValueValidator, MinLengthValidator,
                                     MinValueValidator)
 from django.db import models
 from django.db.models import Sum
+from django.db.models.signals import post_save, pre_save  # signals
+from django.dispatch import receiver  # signals
+from phonenumber_field.modelfields import PhoneNumberField
 
 from catalog.models import Dish
 from delivery_contacts.models import Delivery, DistrictDeliveryCost, Shop
 from promos.models import Promocode
 from users.models import BaseProfile
-from phonenumber_field.modelfields import PhoneNumberField
-
-from django.db.models.signals import post_save, pre_save   # signals
-from django.dispatch import receiver   # signals
 
 User = get_user_model()
 

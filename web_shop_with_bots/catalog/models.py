@@ -1,10 +1,11 @@
+from decimal import Decimal
+
 from django.core.validators import MinValueValidator
 from django.db import models
-from pytils.translit import slugify
-from decimal import Decimal
 from django.utils.safestring import mark_safe
-from parler.models import TranslatableModel, TranslatedFields
 from django.utils.translation import gettext_lazy as _
+from parler.models import TranslatableModel, TranslatedFields
+from pytils.translit import slugify
 
 
 class Category(TranslatableModel):

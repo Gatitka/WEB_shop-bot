@@ -1,9 +1,11 @@
 from decimal import Decimal
-import requests
 
+import requests
 from django.db import models
 from django.utils.safestring import mark_safe
+
 from web_shop_with_bots.settings import GOOGLE_API_KEY
+
 # from django.contrib.gis.geos import Polygon
 # from django.contrib.gis.db import models
 # from django.contrib.gis.db import models

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Any
+from typing import Any, Union
 
 from django import forms
 from django.contrib import admin
@@ -7,11 +7,11 @@ from django.db.models import Sum
 from django.db.models.query import QuerySet
 from django.http.request import HttpRequest
 from django.utils import formats
+from django.utils.html import format_html
 
+from tm_bot.models import MessengerAccount
 from users.models import BaseProfile
 from utils.utils import activ_actions
-from tm_bot.models import MessengerAccount
-from django.utils.html import format_html
 
 from .models import CartDish, Order, OrderDish, ShoppingCart
 
@@ -175,7 +175,7 @@ class OrderAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request).select_related('user', 'delivery', 'user__messenger_account')
         return qs
 
-    def get_object(self, request: HttpRequest, object_id: str, from_field: None = ...) -> Any | None:
+    def get_object(self, request: HttpRequest, object_id: str, from_field: None = ...) -> Union[Any, None]:
         queryset = super().get_queryset(request).select_related('delivery', 'promocode', 'shop', 'recipient_district').prefetch_related('user', 'user__messenger_account')
         return super().get_object(request, object_id, from_field)
 
