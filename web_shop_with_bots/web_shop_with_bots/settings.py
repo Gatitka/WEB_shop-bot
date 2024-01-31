@@ -365,3 +365,15 @@ SUMMERNOTE_CONFIG = {
 #     os.environ['GDAL_DATA'] = OSGEO4W + r"\share\gdal"
 #     os.environ['PROJ_LIB'] = OSGEO4W + r"\share\proj"
 #     os.environ['PATH'] = OSGEO4W + r"\bin;" + os.environ['PATH']
+
+
+# -------------------------------- SENTRY MISTAKES INFORMATION----------------------------
+
+
+# import sentry_sdk
+# from sentry_sdk.integrations.django import DjangoIntegration
+
+# sentry_sdk.init(
+#    dsn=os.getenv('SENTRY_DSN),
+#    integrations=[DjangoIntegration()],
+#)
