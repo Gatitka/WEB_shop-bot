@@ -316,15 +316,14 @@ default_internal_ips = [
     '127.0.0.1',
 ]
 
+internal_ips_origins = default_internal_ips.copy()
+
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        internal_ips_origins = default_internal_ips + TEST_SERVER
+        internal_ips_origins.append(str(TEST_SERVER))
     if SERVER:
-        internal_ips_originss = default_internal_ips + SERVER
-
-else:
-    internal_ips_origins = default_internal_ips
+        internal_ips_origins.append(str(SERVER))
 
 INTERNAL_IPS = internal_ips_origins
 
