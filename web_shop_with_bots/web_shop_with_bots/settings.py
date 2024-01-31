@@ -25,15 +25,13 @@ default_allowed_hosts = [
     'testserver',  # для тестов
 ]
 
+allowed_hosts = default_allowed_hosts.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        allowed_hosts = default_allowed_hosts + [f"http://{TEST_SERVER}"]
+        allowed_hosts.append(str(TEST_SERVER))
     if SERVER:
-        allowed_hosts = default_allowed_hosts + [f"http://{SERVER}"]
-
-else:
-    allowed_hosts = default_allowed_hosts
+        allowed_hosts.append(str(SERVER))
 
 ALLOWED_HOSTS = allowed_hosts
 
@@ -264,15 +262,13 @@ default_cors_allowed_origins = [
     "http://127.0.0.1",
 ]
 
+cors_allowed_origins = default_cors_allowed_origins.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        cors_allowed_origins = default_cors_allowed_origins + [f"http://{TEST_SERVER}"]
+        cors_allowed_origins.append(str(f"http://{TEST_SERVER}"))
     if SERVER:
-        cors_allowed_origins = default_cors_allowed_origins + [f"http://{SERVER}"]
-
-else:
-    CORS_ALLOWED_ORIGINS = default_cors_allowed_origins
+        cors_allowed_origins.append(str(f"http://{SERVER}"))
 
 CORS_ALLOWED_ORIGINS = cors_allowed_origins
 
@@ -296,15 +292,14 @@ default_csrf_trusted_origins = [
     "http://127.0.0.1",
 ]
 
+csrf_trusted_origins = default_csrf_trusted_origins.copy()
+
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        csrf_trusted_origins = default_csrf_trusted_origins + [f"http://{TEST_SERVER}"]
+        csrf_trusted_origins.append(str(f"http://{TEST_SERVER}"))
     if SERVER:
-        csrf_trusted_origins = default_csrf_trusted_origins + [f"http://{SERVER}"]
-
-else:
-    csrf_trusted_origins = default_csrf_trusted_origins
+        csrf_trusted_origins.append(str(f"http://{SERVER}"))
 
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
 
@@ -321,9 +316,9 @@ internal_ips_origins = default_internal_ips.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        internal_ips_origins.append(str(TEST_SERVER))
+        internal_ips_origins.append(str(f"http://{TEST_SERVER}"))
     if SERVER:
-        internal_ips_origins.append(str(SERVER))
+        internal_ips_origins.append(str(f"http://{SERVER}"))
 
 INTERNAL_IPS = internal_ips_origins
 
@@ -374,6 +369,6 @@ SUMMERNOTE_CONFIG = {
 # from sentry_sdk.integrations.django import DjangoIntegration
 
 # sentry_sdk.init(
-#    dsn=os.getenv('SENTRY_DSN),
+#    dsn=os.getenv('SENTRY_DSN'),
 #    integrations=[DjangoIntegration()],
 #)

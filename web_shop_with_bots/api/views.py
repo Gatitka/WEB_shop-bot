@@ -224,7 +224,7 @@ class ShoppingCartView(APIView):
         else:
             # Если пользователь не авторизован, возвращаем пустой ответ
             # т.к. корзина будет отобржаться из фронта
-            return Response({})
+            return Response(serializer.data)
 
 # class ShoppingCartViewSet(mixins.RetrieveModelMixin,
 #                           mixins.CreateModelMixin,
