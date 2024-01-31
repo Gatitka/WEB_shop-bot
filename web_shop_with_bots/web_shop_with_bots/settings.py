@@ -62,7 +62,7 @@ INSTALLED_APPS = [
     'django_summernote',   # HTML editable text in Admin section for promo
     'delivery_contacts.apps.DeliveryContactsConfig',
     'django_filters',
-    'parler',
+    'parler',   # language
 ]
 
 MIDDLEWARE = [
@@ -76,7 +76,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # 'debug_toolbar.middleware.DebugToolbarMiddleware',
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
 ]
 
 ROOT_URLCONF = 'web_shop_with_bots.urls'
@@ -196,16 +196,17 @@ DJOSER = {
 }
 
 
-
-
-
 TIME_ZONE = 'Europe/Belgrade'
 
 USE_TZ = True
 
 DATE_INPUT_FORMATS = ["%d.%m.%Y"]
 
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+AUTH_USER_MODEL = 'users.WEBAccount'
+
+SESSION_COOKIE_AGE = 3600
 
 
 STATIC_URL = 'static/'
@@ -215,11 +216,6 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-AUTH_USER_MODEL = 'users.WEBAccount'
-
-SESSION_COOKIE_AGE = 3600
 
 # -------------------------------- LANGUAGES ------------------------------------------
 
@@ -316,9 +312,22 @@ REST_USE_JWT = True
 
 # -------------------------------- DEBUG TOOL BAR --------------------------------------------
 
-INTERNAL_IPS = [
+default_internal_ips = [
     '127.0.0.1',
-]  # debug tool bar
+]
+
+# Insert the TEST_SERVER and SERVER into the list if available
+if TEST_SERVER or SERVER:
+    if TEST_SERVER:
+        internal_ips_origins = default_internal_ips + TEST_SERVER
+    if SERVER:
+        internal_ips_originss = default_internal_ips + SERVER
+
+else:
+    internal_ips_origins = default_internal_ips
+
+INTERNAL_IPS = internal_ips_origins
+
 
 # -------------------------------- SUMMERNOTE --------------------------------------------
 # settings for HTML text editing in admin
