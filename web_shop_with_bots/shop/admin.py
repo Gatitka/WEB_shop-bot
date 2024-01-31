@@ -1,16 +1,22 @@
+from decimal import Decimal
 from typing import Any
+
+from django import forms
 from django.contrib import admin
+from django.db.models import Sum
+from django.db.models.query import QuerySet
+from django.http.request import HttpRequest
 from django.utils import formats
-from .models import ShoppingCart, CartDish, Order, OrderDish
+
 from users.models import BaseProfile
 from utils.utils import activ_actions
-from django.db.models import Sum
-from decimal import Decimal
-from django import forms
+from tm_bot.models import MessengerAccount
+from django.utils.html import format_html
 
+from .models import CartDish, Order, OrderDish, ShoppingCart
 
-# admin.site.register(OrderDish)
-# admin.site.register(CartDish)
+admin.site.register(OrderDish)
+admin.site.register(CartDish)
 
 
 # @admin.register(BaseProfile)
@@ -29,9 +35,14 @@ class CartDishInline(admin.TabularInline):
     model = CartDish
     min_num = 0
     extra = 0   # чтобы не добавлялись путые поля
-    readonly_fields = ['amount']
+    readonly_fields = ['amount', 'unit_price']
+    autocomplete_fields = ['dish']
+
     verbose_name = 'товары корзины'
     verbose_name_plural = 'товары корзин'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('dish__translations', 'cart__user__messenger_account')
 
 
 @admin.register(ShoppingCart)
@@ -39,19 +50,21 @@ class ShoppingCartAdmin(admin.ModelAdmin):
     """Настройки админ панели карзины.
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
     list_display = ('pk', 'complited', 'user',
-                    'formatted_created', 'num_of_items', 'final_amount')
+                    'formatted_created', 'final_amount')
     readonly_fields = ['formatted_created', 'final_amount',
-                       'num_of_items', 'device_id', 'amount']
+                       'device_id', 'amount']
     list_filter = ('created', 'complited')
-    # raw_id_fields = ['user', ]
+    raw_id_fields = ['user', ]
     inlines = (CartDishInline,)
     fields = (('formatted_created', 'complited'),
               ('user', 'device_id'),
-              ('num_of_items', 'amount'),
+              ('items_qty', 'amount'),
               ('promocode', 'discount'),
               ('final_amount'),
               )
 
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
+        return super().get_queryset(request).prefetch_related('user')
 
 
 # ------ настройки для формата даты -----
@@ -107,12 +120,10 @@ class ShoppingCartAdmin(admin.ModelAdmin):
                         deleted_object.delete()
 
         shopping_cart = form.instance
-        total_amount = Decimal(
-            CartDish.objects.filter(
+        total_amount = CartDish.objects.filter(
                 cart=shopping_cart
-                    ).aggregate(ta=Sum('amount'))['ta']
-            )
-        shopping_cart.amount = (total_amount if total_amount is not None
+                    ).aggregate(ta=Sum('amount'))
+        shopping_cart.amount = (Decimal(total_amount['ta']) if total_amount['ta'] is not None
                                 else Decimal(0))
         shopping_cart.save(update_fields=['amount', 'final_amount'])
 
@@ -125,10 +136,14 @@ class OrderDishInline(admin.TabularInline):
     model = OrderDish
     min_num = 0
     extra = 0   # чтобы не добавлялись путые поля
-    readonly_fields = ['amount']
+    readonly_fields = ['amount', 'unit_price',]
     verbose_name = 'заказ'
     verbose_name_plural = 'заказы'
+    # raw_id_fields = ['dish',]
+    autocomplete_fields = ['dish']
 
+    # def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
+    #     return super().get_queryset(request).select_related('dish').prefetch_related('dish__translations')
 
 class OrderAdminForm(forms.ModelForm):
     class Meta:
@@ -141,48 +156,67 @@ class OrderAdmin(admin.ModelAdmin):
     """Настройки админ панели заказов.
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
     list_display = ('pk', 'status',
-                    'recipient_name', 'recipient_phone',
+                    'recipient_name', 'recipient_phone', 'get_msngr_link',
                     'formatted_created', 'delivery',
                     'discounted_amount', 'final_amount_with_shipping')
     readonly_fields = ['pk', 'formatted_created', 'discounted_amount',
-                       'num_of_items', 'device_id', 'amount',
-                       'final_amount_with_shipping']
+                       'items_qty', 'device_id', 'amount',
+                       'final_amount_with_shipping',
+                       'get_msngr_link',]
     list_filter = ('created', 'status') # user_groups, paid
     search_fields = ('user', 'pk')
     inlines = (OrderDishInline,)
+    raw_id_fields = ['user',]
+    actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
+    list_per_page = 10
 
-    # def user_phone(self, obj):
-    #     return BaseProfile.objects.get(id=obj.user_id).phone
-    # user_phone.short_description = 'Телефон'
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request).select_related('user', 'delivery', 'user__messenger_account')
+        return qs
+
+    def get_object(self, request: HttpRequest, object_id: str, from_field: None = ...) -> Any | None:
+        queryset = super().get_queryset(request).select_related('delivery', 'promocode', 'shop', 'recipient_district').prefetch_related('user', 'user__messenger_account')
+        return super().get_object(request, object_id, from_field)
+
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        if db_field.db_type == 'text':
+            kwargs['widget'] = admin.widgets.AdminTextareaWidget(attrs={'rows': 3, 'cols': 40})
+        return super().formfield_for_dbfield(db_field, **kwargs)
+
     fieldsets = (
-        ('Данные заказа',{
+        ('Данные заказа', {
             'fields': (
                 ('pk', 'formatted_created'),
                 ('status'),
                 ('user', 'device_id'),
                 ('shop', 'delivery'),
-                ('recipient_name', 'recipient_phone'),
+                ('recipient_name', 'recipient_phone', 'get_msngr_link'),
                 ('time', 'persons_qty'),
             )
         }),
-        ('Доставка',{
+        ('Доставка', {
             'fields':
                 ('recipient_district', 'recipient_address')
         }),
-        ('Сумма заказа',{
+        ('Расчет суммы заказа', {
             'fields': (
                 ('amount'),
                 ('promocode', 'discount'),
-                ( 'discounted_amount'),
+                ('discounted_amount'),
                 ('delivery_cost'),
-                ('final_amount_with_shipping', 'num_of_items'),
             )
         }),
-        ('Комментарий',{
+        ('ИТОГО', {
+            'fields': (
+                ('final_amount_with_shipping'),
+                ('items_qty'),
+            )
+        }),
+        ('Комментарий', {
             'fields': ('comment',),
         })
     )
-
 
     form = OrderAdminForm
 
@@ -201,8 +235,8 @@ class OrderAdmin(admin.ModelAdmin):
 
         return form
 
-
 # ------ настройки для формата даты -----
+
     def formatted_created(self, obj):
         # Форматируем дату в нужный вид
         formatted_date = formats.date_format(obj.created, "j F Y, H:i")
@@ -219,3 +253,18 @@ class OrderAdmin(admin.ModelAdmin):
             'formatted_created': "j F Y, H:i"
             }
         return super().changeform_view(request, object_id, form_url, extra_context)
+
+# ------ ОТОБРАЖЕНИЕ ССЫЛКИ НА ЧАТ С КЛИЕНТОМ -----
+
+    def get_msngr_link(self, instance):
+        try:
+            return format_html(instance.user.messenger_account.msngr_link)
+        except:
+            return None
+
+        if MessengerAccount.objects.filter(profile=instance.user).exists():
+            return format_html(instance.user.messenger_account.msngr_link)
+
+
+    get_msngr_link.allow_tags = True
+    get_msngr_link.short_description = 'Ссылка в Telegram'

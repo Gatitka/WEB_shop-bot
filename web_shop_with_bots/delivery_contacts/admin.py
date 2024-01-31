@@ -1,6 +1,8 @@
 from django.contrib import admin
-from .models import Delivery, Shop, DistrictDeliveryCost
+
 from utils.utils import activ_actions
+
+from .models import Delivery, DistrictDeliveryCost, Shop
 
 
 @admin.register(Delivery)

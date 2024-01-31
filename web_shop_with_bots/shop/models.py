@@ -1,13 +1,20 @@
-from django.db import models
-from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator, MinLengthValidator, MaxValueValidator
-from catalog.models import Dish
-from users.models import BaseProfile
-from django.db.models import Sum
-from django.conf import settings # для импорта валюты
-from delivery_contacts.models import Delivery, Shop, DistrictDeliveryCost
-from promos.models import Promocode
 from decimal import Decimal
+
+from django.conf import settings  # для импорта валюты
+from django.contrib.auth import get_user_model
+from django.core.validators import (MaxValueValidator, MinLengthValidator,
+                                    MinValueValidator)
+from django.db import models
+from django.db.models import Sum
+
+from catalog.models import Dish
+from delivery_contacts.models import Delivery, DistrictDeliveryCost, Shop
+from promos.models import Promocode
+from users.models import BaseProfile
+from phonenumber_field.modelfields import PhoneNumberField
+
+from django.db.models.signals import post_save, pre_save   # signals
+from django.dispatch import receiver   # signals
 
 User = get_user_model()
 
@@ -94,12 +101,11 @@ class ShoppingCart(models.Model):
         max_digits=10, decimal_places=2
     )
 
-    @property
-    def num_of_items(self):
-        itemsqty = self.cart_dishes.aggregate(qty=Sum('quantity'))
-        items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
-        return items_qty
-    num_of_items.fget.short_description = 'Кол-во ед-ц тов, шт'
+    items_qty = models.PositiveSmallIntegerField(
+        verbose_name='Кол-во порций, шт',
+        default=0,
+        blank=True
+    )
 
     class Meta:
         ordering = ['-created']
@@ -130,6 +136,9 @@ class ShoppingCart(models.Model):
         Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
         """
         self.calculate_final_amount()
+
+        itemsqty = self.cart_dishes.aggregate(qty=Sum('quantity'))
+        self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
         super().save(*args, **kwargs)
 
 
@@ -151,6 +160,11 @@ class CartDish(models.Model):
         verbose_name='Кол-во',
         validators=[MinValueValidator(1)],
         default=1
+    )
+    unit_price = models.DecimalField(
+        default=0.00,
+        null=True, blank=True,
+        max_digits=6, decimal_places=2
     )
     amount = models.DecimalField(
         default=0.00,
@@ -174,6 +188,7 @@ class CartDish(models.Model):
 
     def save(self, *args, **kwargs):
         self.amount = self.dish.final_price * self.quantity
+        self.unit_price = self.dish.final_price
         super(CartDish, self).save(*args, **kwargs)
         total_amount = CartDish.objects.filter(cart=self.cart).aggregate(ta=Sum('amount'))['ta']
         self.cart.amount = total_amount if total_amount is not None else Decimal(0)
@@ -237,13 +252,11 @@ class Order(models.Model):
         max_length=400,
         verbose_name='получатель'
     )
-    recipient_phone = models.CharField(
-        verbose_name='Телефон',
-        max_length=100,
-        # validators=[MinLengthValidator(8)],
-        # blank=True,
-        # null=True,
-        # default=None
+    recipient_phone = PhoneNumberField(
+        verbose_name='телефон',
+        unique=True,
+        blank=True, null=True,
+        help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
     )
     recipient_address = models.CharField(
         verbose_name='Адрес',
@@ -262,7 +275,7 @@ class Order(models.Model):
         blank=True, null=True
     )   # настроить форматирование вносимых данных
     # на фронте дата на 1 мес вперед, а время ограничено 10:30 - 22:30, фронт передает это строкой
-    comment = models.CharField(
+    comment = models.TextField(
         max_length=400,
         verbose_name='Комментарий',
         help_text='Комментарий к заказу.',
@@ -312,11 +325,11 @@ class Order(models.Model):
         max_digits=6, decimal_places=2
     )
 
-    @property
-    def num_of_items(self):
-        itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
-        return itemsqty['qty']
-    num_of_items.fget.short_description = 'Кол-во ед-ц тов, шт'
+    items_qty = models.PositiveSmallIntegerField(
+        verbose_name='Кол-во ед-ц заказа, шт',
+        default=0,
+        blank=True,
+    )
 
     class Meta:
         ordering = ['-created']
@@ -352,6 +365,9 @@ class Order(models.Model):
                 self.discounted_amount,
                 self.recipient_district
             )
+            dc = self.recipient_district.get_delivery_cost2(
+                self.recipient_address, self.discounted_amount)
+            print(dc)
         else:
             if self.delivery.discount:
                 delivery_discount = (
@@ -373,6 +389,8 @@ class Order(models.Model):
         """
         self.calculate_discontinued_amount()
         self.calculate_final_amount_with_shipping()
+        itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
+        self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
         super().save(*args, **kwargs)
 
 
@@ -418,6 +436,7 @@ class OrderDish(models.Model):
 
     def save(self, *args, **kwargs):
         self.amount = self.dish.final_price * self.quantity
+        self.unit_price = self.dish.final_price
         super(OrderDish, self).save(*args, **kwargs)
         total_amount = OrderDish.objects.filter(
             order=self.order
@@ -443,3 +462,14 @@ class OrderDish(models.Model):
             'final_amount_with_shipping',
             'delivery_cost',
             ])
+
+
+# ------    сигналы для создания cart при создании base_profile
+@receiver(post_save, sender=BaseProfile)
+def create_cart(sender, instance, created, **kwargs):
+    if created:
+        if not ShoppingCart.objects.filter(user=instance).exists():
+            cart = ShoppingCart(
+                user=instance
+            )
+        cart.save()

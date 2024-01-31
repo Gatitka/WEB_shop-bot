@@ -1,4 +1,5 @@
 from django.contrib import admin
+from parler.admin import TranslatableAdmin, TranslatableTabularInline, SortedRelatedFieldListFilter
 from .models import Category, Dish, DishCategory
 
 
@@ -22,21 +23,24 @@ class DishCategoryAdmin(admin.TabularInline):
     model = DishCategory
     min_num = 0
     extra = 0
-    verbose_name = 'категория'
-    verbose_name_plural = 'категории'
+
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('dish__translations')
 
 
 @admin.register(Dish)
-class DishAdmin(admin.ModelAdmin):
+class DishAdmin(TranslatableAdmin):
     """Настройки админ панели блюд."""
-    readonly_fields = ('final_price_display', 'admin_photo', 'created')
-    list_display = ('article', 'is_active', 'priority', 'short_name_rus',
-                    'price', 'discount', 'final_price_display',
+    readonly_fields = ('final_price', 'admin_photo', 'created')
+    list_display = ('article', 'is_active', 'priority', 'short_name',
+                    'price', 'discount', 'final_price',
                     'spicy_icon', 'vegan_icon', 'admin_photo')
-    list_filter = ('category', 'is_active',)
+    list_filter = ('is_active', 'category__slug',)
     list_per_page = 10
 
-    search_fields = ('short_name_rus', 'text_rus')
+    search_fields = ('translations__short_name__icontains',
+                     'translations__text__icontains')
     inlines = (DishCategoryAdmin,)
     actions = [make_active, make_deactive]
 
@@ -50,16 +54,14 @@ class DishAdmin(admin.ModelAdmin):
         }),
         ('Описание', {
             'fields': (
-                ('short_name_rus'),
-                ('short_name_srb'),
-                ('text_rus'),
-                ('text_srb'),
+                ('short_name'),
+                ('text'),
             )
         }),
         ('Цена', {
             'fields': (
                 ('price', 'discount'),
-                ('final_price_display'),
+                ('final_price'),
             )
         }),
         ('Характеристики', {
@@ -72,28 +74,39 @@ class DishAdmin(admin.ModelAdmin):
         })
     )
 
-    def final_price_display(self, obj):
-        return obj.final_price
-    final_price_display.short_description = 'Итоговая цена, DIN'
-    final_price_display.admin_order_field = 'Итоговая цена, DIN'
-
     # надстройка для увеличения размера текстового поля
+    # def formfield_for_dbfield(self, db_field, **kwargs):
+    #     if db_field.name == 'text':
+    #         kwargs['widget'] = admin.widgets.AdminTextareaWidget(
+    #             attrs={'rows': 3, 'cols': 40}
+    #             )
+    #     return super().formfield_for_dbfield(db_field, **kwargs)
+
     def formfield_for_dbfield(self, db_field, **kwargs):
-        if db_field.name == 'text_rus':
-            kwargs['widget'] = admin.widgets.AdminTextareaWidget(
-                attrs={'rows': 3, 'cols': 40}
-                )
-        if db_field.name == 'text_srb':
-            kwargs['widget'] = admin.widgets.AdminTextareaWidget(
-                attrs={'rows': 3, 'cols': 40}
-                )
+        if db_field.db_type == 'text':
+            kwargs['widget'] = admin.widgets.AdminTextareaWidget(attrs={'rows': 3, 'cols': 40})
         return super().formfield_for_dbfield(db_field, **kwargs)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('translations')
 
 
 @admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
+class CategoryAdmin(TranslatableAdmin):
     """Настройки админ панели категорий."""
-    list_display = ('pk', 'priority', 'is_active', 'name_rus', 'slug')
-    search_fields = ('name_rus', 'slug')
+    list_display = ('pk', 'priority', 'is_active', 'name', 'slug')
+    search_fields = ('translations__name__icontains', 'slug')
     list_filter = ('is_active',)
     actions = [make_active, make_deactive]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('translations')
+
+
+# @admin.register(Category)
+# class CategoryAdmin(admin.ModelAdmin):
+#     """Настройки админ панели категорий."""
+#     list_display = ('pk', 'priority', 'is_active', 'name_rus', 'slug')
+#     search_fields = ('name_rus', 'slug')
+#     list_filter = ('is_active',)
+#     actions = [make_active, make_deactive]

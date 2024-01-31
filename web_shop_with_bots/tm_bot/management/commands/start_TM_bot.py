@@ -1,10 +1,11 @@
-from ...handlers import other
-
-import sys
-import logging
 import asyncio
-from .bot import dp, bot
+import logging
+import sys
+
 from django.core.management import BaseCommand
+
+from ...handlers import other
+from .bot import bot, dp
 
 
 class Command(BaseCommand):

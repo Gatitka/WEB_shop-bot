@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django_summernote.admin import SummernoteModelAdmin
+
 from utils.utils import activ_actions
-from .models import PromoNews, Promocode
+
+from .models import Promocode, PromoNews
 
 # @admin.register(PromoNews)
 # class PromoNewsAdmin(admin.ModelAdmin):

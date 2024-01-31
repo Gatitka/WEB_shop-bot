@@ -1,6 +1,7 @@
 # from pathlib import Path
 import os
 from datetime import timedelta
+from django.utils.translation import gettext_lazy as _   # for translation
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,6 +14,8 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 DEBUG = os.getenv('DEBUG')
 TEST_SERVER = os.getenv('TEST_SERVER')
 SERVER = os.getenv('SERVER')
+
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 
 default_allowed_hosts = [
     'localhost',
@@ -58,19 +61,21 @@ INSTALLED_APPS = [
     'django_summernote',   # HTML editable text in Admin section for promo
     'delivery_contacts.apps.DeliveryContactsConfig',
     'django_filters',
+    'parler',
 ]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'debug_toolbar.middleware.DebugToolbarMiddleware',
+    # 'debug_toolbar.middleware.DebugToolbarMiddleware',
 ]
 
 ROOT_URLCONF = 'web_shop_with_bots.urls'
@@ -96,9 +101,17 @@ WSGI_APPLICATION = 'web_shop_with_bots.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, os.getenv('DB_FILE')),    # os.environ.get('DB_FILE')),
+        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.sqlite3'),
+        'NAME': os.environ.get('POSTGRES_DB', os.path.join(BASE_DIR, 'db.sqlite3')),
+        'USER': os.environ.get('POSTGRES_USER'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
+        'HOST': os.environ.get('DB_HOST'),
+        'PORT': os.environ.get('DB_PORT'),
     }
+    # 'default': {
+    #     'ENGINE': 'django.db.backends.sqlite3',
+    #     'NAME': os.path.join(BASE_DIR, os.getenv('DB_FILE')),
+    # }
 }
 
 
@@ -128,7 +141,7 @@ REST_FRAMEWORK = {
 
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        # 'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
 }
 
@@ -141,6 +154,8 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+TOKEN_MODEL = None
 
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -163,9 +178,11 @@ DJOSER = {
     'SEND_CONFIRMATION_EMAIL': True,
     'PASSWORD_RESET_CONFIRM_URL': 'api/v1/reset_password_confirm/{uid}/{token}',
     'ACTIVATION_URL': 'api/v1/auth/users/activation/{uid}/{token}',
-    'SERIALIZERS': {},
+    'SERIALIZERS': {
+        'current_user': 'api.serializers.MyUserSerializer',
+    },
     'EMAIL': {
-        'activation': 'djoser.email.ActivationEmail',
+        'activation': 'api.utils.CustomActivationEmail',
         'confirmation': 'djoser.email.ConfirmationEmail',
         'password_reset': 'djoser.email.PasswordResetEmail',
         'password_changed_confirmation': 'djoser.email.PasswordChangedConfirmationEmail',
@@ -176,34 +193,19 @@ DJOSER = {
         # т.к. кастомный метод удаления, делая юзера неактивным
     },
 }
-TOKEN_MODEL = None
 
 
 
-SERIALIZERS: {
-    # [...]
-    # 'current_user': 'djoser.serializers.UserSerializer',
-    'current_user': '',
-    # [...]
-}
 
-LANGUAGE_CODE = 'ru'
 
 TIME_ZONE = 'Europe/Belgrade'
-
-USE_I18N = True
 
 USE_TZ = True
 
 DATE_INPUT_FORMATS = ["%d.%m.%Y"]
 
-USE_L10N = False
 
-LANGUAGE_CHOICES = (
-    ("EN", "English"),
-    ("RUS", "Русский"),
-    ("SRB", "Српски")
-)
+
 
 STATIC_URL = 'static/'
 # STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static/')]
@@ -217,6 +219,40 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.WEBAccount'
 
 SESSION_COOKIE_AGE = 3600
+
+# -------------------------------- LANGUAGES ------------------------------------------
+
+USE_L10N = False
+
+# Включаем поддержку мультиязычности
+USE_I18N = True
+
+# Выбор языка по умолчанию
+# LANGUAGE_CODE = 'en'
+LANGUAGE_CODE = 'ru'
+
+# Список поддерживаемых языков
+LANGUAGES = [
+    ('en', _('English')),
+    ('ru', _('Russian')),
+    ('sr-latn', _('Serbian')),
+    # Добавьте другие языки, если необходимо
+]
+
+PARLER_DEFAULT_LANGUAGE_CODE = 'ru'  # By default, the fallback languages are the same as: [LANGUAGE_CODE]
+# PARLER_DEFAULT_LANGUAGE_CODE = 'en'
+
+PARLER_LANGUAGES = {
+    None: (
+        {'code': 'en',},
+        {'code': 'ru',},
+        {'code': 'sr-latn',},
+    ),
+    'default': {
+        'fallbacks': ['en'],          # defaults to PARLER_DEFAULT_LANGUAGE_CODE
+        'hide_untranslated': False,   # the default; let .active_translations() return fallbacks too.
+    }
+}
 
 # -------------------------------- CORS ------------------------------------------
 
@@ -257,7 +293,24 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
 # CSRF_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
-CSRF_TRUSTED_ORIGINS = ['http://81.19.141.98']
+
+default_csrf_trusted_origins = [
+    "http://localhost",
+    "http://127.0.0.1",
+]
+
+# Insert the TEST_SERVER and SERVER into the list if available
+if TEST_SERVER or SERVER:
+    if TEST_SERVER:
+        csrf_trusted_origins = default_csrf_trusted_origins + [f"http://{TEST_SERVER}"]
+    if SERVER:
+        csrf_trusted_origins = default_csrf_trusted_origins + [f"http://{SERVER}"]
+
+else:
+    csrf_trusted_origins = default_csrf_trusted_origins
+
+CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
+
 REST_USE_JWT = True
 
 # -------------------------------- DEBUG TOOL BAR --------------------------------------------
@@ -290,3 +343,16 @@ SUMMERNOTE_CONFIG = {
     'width': '80%',
     'height': '200',
 }
+
+# -------------------------------- GEOCODING --------------------------------------------
+
+# if os.name == 'nt':
+#     import platform
+#     OSGEO4W = (r"C:\Users\gatit\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OSGeo4W")
+#     if '64' in platform.architecture()[0]:
+#         OSGEO4W += "64"
+#     assert os.path.isdir(OSGEO4W), "Directory does not exist: " + OSGEO4W
+#     os.environ['OSGEO4W_ROOT'] = OSGEO4W
+#     os.environ['GDAL_DATA'] = OSGEO4W + r"\share\gdal"
+#     os.environ['PROJ_LIB'] = OSGEO4W + r"\share\proj"
+#     os.environ['PATH'] = OSGEO4W + r"\bin;" + os.environ['PATH']

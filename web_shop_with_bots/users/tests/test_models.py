@@ -1,10 +1,12 @@
-from users.models import WEBAccount, BaseProfile
-from django.test import TestCase
-from django.db.utils import IntegrityError
-from django.db.models.deletion import ProtectedError
-from django.core.exceptions import ValidationError
 from datetime import datetime
+
+from django.core.exceptions import ValidationError
+from django.db.models.deletion import ProtectedError
+from django.db.utils import IntegrityError
 from django.shortcuts import get_object_or_404
+from django.test import TestCase
+
+from users.models import BaseProfile, WEBAccount
 
 
 class WEBAccountModelTest(TestCase):

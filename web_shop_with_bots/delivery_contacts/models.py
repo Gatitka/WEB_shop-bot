@@ -1,7 +1,12 @@
-from django.db import models
 from decimal import Decimal
-from django.utils.safestring import mark_safe
+import requests
 
+from django.db import models
+from django.utils.safestring import mark_safe
+from web_shop_with_bots.settings import GOOGLE_API_KEY
+# from django.contrib.gis.geos import Polygon
+# from django.contrib.gis.db import models
+# from django.contrib.gis.db import models
 
 DELIVERY_CHOICES = (
     ("1", "Доставка"),
@@ -12,6 +17,8 @@ CITY_CHOICES = [
     ('Белград', 'Белград'),
     ('Нови_Сад', 'Нови_Сад'),
 ]
+
+ad='Milovana Milovanovića 4'
 
 
 class Delivery(models.Model):
@@ -135,6 +142,12 @@ class DistrictDeliveryCost(models.Model):
         blank=True,
         max_digits=10, decimal_places=2
     )
+    # district_pol = models.PolygonField(
+    #     max_length=20,
+    #     verbose_name="полигон",
+    #     unique=True,
+    #     blank=True, null=True
+    # )
 
     def get_delivery_cost(self, discontinued_amount, recipient_district):
         """
@@ -147,12 +160,34 @@ class DistrictDeliveryCost(models.Model):
             return Decimal(0)
         return recipient_district.delivery_cost
 
+    def get_delivery_cost2(self, address, discounted_amount):
+        params = {
+            'key': GOOGLE_API_KEY,
+            'address': address
+        }
+
+        base_url = 'https://maps.googleapis.com/maps/api/geocode/json?'
+        responce = requests.get(base_url, params=params).json()
+        print(responce)
+        responce.keys()
+
+        if responce['status'] == 'OK':
+            geometry = responce['results'][0]['geometry']
+            lat = geometry['location']['lat']
+            lon = geometry['location']['lng']
+        print(lat,lon)
+
+
     class Meta:
         verbose_name = 'район доставки'
         verbose_name_plural = 'районы доставки'
 
     def __str__(self):
         return f'{self.district}'
+
+
+# polygon = Polygon(((0, 0), (0, 1), (1, 1), (1, 0), (0, 0)))
+# DistrictDeliveryCost.objects.create(polygon=polygon)
 
 
 class Shop(models.Model):

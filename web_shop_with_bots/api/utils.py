@@ -40,3 +40,14 @@ def check_existance_create_delete(model, method, response,
 
 if __name__ == '__main__':
     pass
+
+
+
+from djoser.email import ActivationEmail
+
+
+class CustomActivationEmail(ActivationEmail):
+    def send(self, to, *args, **kwargs):
+        user = self.context['user']
+        if not user.is_active:
+            super().send(to, *args, **kwargs)

@@ -1,17 +1,17 @@
+import os
+import re
 from csv import DictReader
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.core.management import BaseCommand
 
-from catalog.models import Dish, Category
-from shop.models import Delivery, Shop, DistrictDeliveryCost
-from users.models import UserAddress, BaseProfile, WEBAccount
+from catalog.models import Category, Dish
+from delivery_contacts.models import Delivery, Shop
 from promos.models import PromoNews
-from delivery_contacts.models import Shop, Delivery
-from decimal import Decimal
-import os
-import re
+from shop.models import Delivery, DistrictDeliveryCost, Shop
+from users.models import BaseProfile, UserAddress, WEBAccount
 from web_shop_with_bots.settings import BASE_DIR
-
 
 User = get_user_model()
 

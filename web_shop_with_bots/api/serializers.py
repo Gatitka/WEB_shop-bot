@@ -1,20 +1,272 @@
-from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from rest_framework.serializers import SerializerMethodField
-from django.db.models import F, QuerySet
-from catalog.models import Dish, Category
-from shop.models import ShoppingCart, CartDish, Order, OrderDish
-from delivery_contacts.models import Delivery, Shop
-from users.models import BaseProfile, UserAddress
-from promos.models import PromoNews
-from django.core.files.base import ContentFile
 import base64  # Модуль с функциями кодирования и декодирования base64
+from django.conf import settings
 
+from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
+from django.db.models import F, QuerySet
+from rest_framework import serializers
+from rest_framework.serializers import SerializerMethodField
+
+from catalog.models import Category, Dish
+from delivery_contacts.models import Delivery, Shop
+from promos.models import PromoNews
+from shop.models import CartDish, Order, OrderDish, ShoppingCart
+from users.models import BaseProfile, UserAddress
+from parler_rest.serializers import TranslatableModelSerializer   # для переводов текста parler
+from parler_rest.fields import TranslatedFieldsField    # для переводов текста parler
+from tm_bot.models import MessengerAccount
+from django.core.exceptions import ValidationError
+from djoser.compat import get_user_email, get_user_email_field_name
+import re
+from phonenumber_field.serializerfields import PhoneNumberField
+import phonenumbers
+from datetime import date, datetime
+from django.core.validators import EmailValidator
 
 User = get_user_model()
 
 
 # ---------------- ЛИЧНЫЙ КАБИНЕТ --------------------
+class MessengerAccountSerializer(serializers.ModelSerializer):
+    msngr_phone = PhoneNumberField
+
+    class Meta:
+        model = MessengerAccount
+        fields = ('msngr_username', 'msngr_type', 'msngr_phone')
+
+    def validate_msngr_phone(self, value):
+        """
+        Пользовательская валидация для номера телефона.
+        """
+        if value:
+            try:
+                parsed_phone = phonenumbers.parse(value, None)
+                if not phonenumbers.is_valid_number(parsed_phone):
+                    raise serializers.ValidationError(
+                        "Неверный формат номера телефона.")
+            except Exception:
+                raise serializers.ValidationError(
+                    "Неверный формат номера телефона.")
+
+        return value
+
+    def validate(self, data: dict) -> dict:
+        """
+        Проверка данных в поле Messenger_account.
+        Если телеграмм, то ID wbahjdjt
+        """
+        msngr_type = data.get('msngr_type')
+        msngr_username = data.get('msngr_username')
+
+        if msngr_type:
+            if msngr_username:
+
+                if msngr_type == 'tm':
+                    # Проверка на допустимые символы
+                    # (A-z, 0-9, и подчеркивания)
+                    if not re.match("^@[A-Za-z0-9_]+$", msngr_username):
+                        raise serializers.ValidationError(
+                            "Недопустимые символы в Telegram username."
+                            " Username должен начинаться с @ и содержать "
+                            "только цифры и буквы."
+                        )
+
+                    # Проверка длины (5-32 символа)
+                    if not (5 <= len(msngr_username) <= 32):
+                        raise serializers.ValidationError(
+                            "Длина Telegram username должна быть"
+                            " от 5 до 32 символов."
+                        )
+
+                elif msngr_type == 'wts':
+                    # метод validate наступает после метода
+                    # validate_msngr_phone. Раз на том этапе не было ошибок
+                    # валидации, то номер телефона корректен и его можно
+                    # сохранить в username WtsApp.
+                    pass
+
+                else:
+                    raise ValidationError("Сейчас присоединяем только tm, wts.")
+
+        return data
+
+
+class MyUserSerializer(serializers.ModelSerializer):
+    date_of_birth = SerializerMethodField(required=False)
+    messenger = SerializerMethodField(required=False)
+
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name',
+                  'email', 'phone',
+                  'date_of_birth',
+                  'web_language',
+                  'messenger',
+                  )
+        read_only_fields = ('email',)
+
+    def get_date_of_birth(self, user: User):
+        """Получает значение, если авторизованный пользователь имеет
+        этот рецепт в корзине покупок.
+        Args:
+            dish (Dish): Запрошенное блюдо.
+        Returns:
+            bool: в корзине покупок или нет.
+        """
+        if user.is_authenticated:
+            return user.base_profile.date_of_birth
+        return None
+
+    def get_messenger(self, user: User) -> MessengerAccount:
+        """Получаем значение аккаунта мессенджера
+        Args:
+            user (User): Запрошенный пользователь.
+        Returns:
+            MessengerAccount: данные мессенджер-аккаунта (username, type).
+        """
+        if user.is_authenticated:
+
+            try:
+                messenger_account = MessengerAccount.objects.get(
+                    profile=user.base_profile
+                )
+                serializer = MessengerAccountSerializer(messenger_account)
+                return serializer.data
+
+            except MessengerAccount.DoesNotExist:
+                messenger_account = None
+                return None
+
+    def validate(self, data: dict) -> dict:
+        """
+        Проверка данных в поле Messenger_account.
+        Если т
+        """
+        if 'messenger' in self.initial_data:
+            messenger = self.initial_data.get('messenger')
+
+            if messenger:
+                if isinstance(messenger, dict):
+                    if 'msngr_type' not in messenger:
+                        raise serializers.ValidationError(
+                            "Ключа msngr_type нет в передаваемом словаре messenger.")
+                    if 'msngr_username' not in messenger:
+                        raise serializers.ValidationError(
+                            "Ключа msngr_username нет в передаваемом словаре messenger.")
+
+                    if (messenger['msngr_type'] is not None
+                            and messenger['msngr_username'] is not None):
+
+                        if messenger['msngr_type'] == 'tm':
+                            messenger['msngr_phone'] = None
+                        elif messenger['msngr_type'] == 'wts':
+                            messenger['msngr_phone'] = messenger['msngr_username']
+                        else:
+                            raise serializers.ValidationError(
+                                "msngr_type принимается только 'tm', 'wts'."
+                            )
+
+                        serializer = MessengerAccountSerializer(data=messenger)
+                        if not serializer.is_valid():
+                        # Если данные не прошли валидацию, обработайте ошибки, если нужно
+                            raise serializers.ValidationError(serializer.errors)
+                    else:
+                        messenger = None
+
+                else:
+                    raise serializers.ValidationError(
+                        "объект messenger не является словарем")
+
+            data['messenger'] = messenger
+
+        if 'date_of_birth' in self.initial_data:
+            date_of_birth = self.initial_data.get('date_of_birth')
+
+            if date_of_birth:
+                try:
+                    date_obj = datetime.strptime(date_of_birth, "%d-%m-%Y").date()
+                    today = date.today()
+                    if date_obj > today:
+                        raise serializers.ValidationError(
+                            "Дата рождения не может быть в будущем.")
+                    data['date_of_birth'] = date_obj
+                except ValueError:
+                    raise serializers.ValidationError({
+                            "date_of_birth": "Проверьте формат даты: день-месяц-год."
+                            })
+
+            else:
+                data['date_of_birth'] = date_of_birth
+
+        if 'email' in self.initial_data:
+            email = self.initial_data.get('email')
+            email_validator = EmailValidator(
+                message={
+                        "email": "Введите корректный email."
+                        }
+                )
+            email_validator(email)
+            data['email'] = email
+
+        return data
+
+    def update(self, instance: User, validated_data: dict) -> User:
+        """
+        Метод для редакции данных пользователя.
+        Args:
+            instance (User): изменяемый рецепт
+            validated_data (dict): проверенные данные из запроса.
+        Returns:
+            User: созданный рецепт.
+        """
+        if 'messenger' in validated_data:
+            messenger = validated_data.pop('messenger')
+
+            try:
+                messenger_account, created = MessengerAccount.objects.get_or_create(
+                    profile=instance.base_profile
+                )
+                if messenger:
+                    messenger_account.msngr_type = messenger['msngr_type']
+                    messenger_account.msngr_username = messenger.get('msngr_username')
+                    messenger_account.msngr_phone = messenger['msngr_phone']
+                    messenger_account.language = instance.web_language
+                    messenger_account.save()
+                    instance.base_profile.messenger_account = messenger_account
+                    instance.base_profile.save(
+                        update_fields=['messenger_account']
+                    )
+
+                else:
+                    instance.base_profile.messenger_account = None
+                    instance.base_profile.save(
+                        update_fields=['messenger_account']
+                    )
+                    messenger_account.delete()
+
+            except MessengerAccount.DoesNotExist:
+                messenger_account = None
+
+        if 'date_of_birth' in validated_data:
+            date_of_birth = validated_data.pop('date_of_birth')
+
+            instance.base_profile.date_of_birth = date_of_birth
+
+            instance.base_profile.save(
+                update_fields=['date_of_birth']
+            )
+
+        email_field = get_user_email_field_name(User)
+        if email_field in validated_data:
+            if settings.DJOSER['SEND_ACTIVATION_EMAIL']:
+                instance_email = get_user_email(instance)
+                if instance_email != validated_data[email_field]:
+                    instance.is_active = False
+                    instance.save(update_fields=["is_active"])
+
+        return super().update(instance, validated_data)
+
+
 # --------       история заказов   ---------
 
 class UserOrdersSerializer(serializers.ModelSerializer):
@@ -54,9 +306,8 @@ class UserAddressSerializer(serializers.ModelSerializer):
     Возможно создание, редактирование, удаление автором.
     """
     class Meta:
-        fields = ('id', 'city', 'short_name', 'full_address', 'type')
+        fields = ('id', 'city', 'short_name', 'full_address')
         model = UserAddress
-        read_only_fields = ('id',)
 
     # если не писать кастомной валидации, то по умолчанию и так просиходит валидация обязательных полей
     # def validate(self, data: dict) -> dict:
@@ -67,28 +318,36 @@ class UserAddressSerializer(serializers.ModelSerializer):
     #         )
     #     return data
 
+# --------       свои купоны   ---------
+#
+#
+#
+
 
 # ---------------- МЕНЮ: БЛЮДА и КАТЕГОРИИ --------------------
 
 
-class CategorySerializer(serializers.ModelSerializer):
+class CategorySerializer(TranslatableModelSerializer):
     """ Базовый сериализатор для категории."""
+    translations = TranslatedFieldsField(shared_model=Category)
+
     class Meta:
-        fields = ('id', 'priority', 'name_rus', 'slug')
+        fields = ('id', 'priority', 'translations', 'slug')
         model = Category
-        read_only_fields = ('id', 'priority', 'name_rus', 'slug')
+        read_only_fields = ('id', 'priority', 'translations', 'slug')
 
 
-class DishShortSerializer(serializers.ModelSerializer):
+class DishMenuSerializer(TranslatableModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
     category = CategorySerializer(many=True)
     is_in_shopping_cart = SerializerMethodField()
+    translations = TranslatedFieldsField(shared_model=Dish)
 
     class Meta:
         fields = ('id', 'priority',
-                  'short_name_rus', 'text_rus',
+                  'translations',
                   'category',
                   'price', 'final_price',
                   'spicy_icon', 'vegan_icon',
@@ -96,7 +355,7 @@ class DishShortSerializer(serializers.ModelSerializer):
                   )
         model = Dish
         read_only_fields = ('id', 'priority',
-                            'short_name_rus', 'text_rus',
+                            'translations',
                             'category',
                             'price', 'final_price',
                             'spicy_icon', 'vegan_icon',
@@ -118,6 +377,9 @@ class DishShortSerializer(serializers.ModelSerializer):
                 dish=dish.id
             ).exists()
         return False
+
+
+
 
 
 # ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
@@ -173,16 +435,15 @@ class CartItemDishSerializer(serializers.ModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
-    # image = Base64ImageField()
 
     class Meta:
         fields = ('id',
-                  'short_name_rus', 'text_rus',
+                  'short_name', 'text_rus',
                   'price','final_price',
                   'spicy_icon', 'vegan_icon',)  # 'image'
         model = Dish
         read_only_fields = ('id',
-                            'short_name_rus', 'text_rus',
+                            'short_name', 'text_rus',
                             'price','final_price',
                             'spicy_icon', 'vegan_icon',)  # 'image'
 

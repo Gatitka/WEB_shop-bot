@@ -1,10 +1,9 @@
 import os
-from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-
+from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(

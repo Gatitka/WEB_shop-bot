@@ -1,9 +1,10 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import (MenuViewSet, UserAddressViewSet,
-                    ContactsDeliveryViewSet, UserOrdersViewSet,
-                    DeleteUserViewSet, PromoNewsViewSet,
-                    ShoppingCartView)
+from django.conf import settings
+
+from .views import (ContactsDeliveryViewSet, DeleteUserViewSet, MenuViewSet,
+                    PromoNewsViewSet, ShoppingCartView, UserAddressViewSet,
+                    UserOrdersViewSet)
 
 app_name = 'api'
 
@@ -41,6 +42,7 @@ v1_router.register(
     PromoNewsViewSet,
     basename='promonews'
 )
+
 # v1_router.register('auth/users/me/delete', DeleteUserViewSet.as_view({'delete': 'destroy'}), basename='users')
 
 # v1_router.register('auth/users', CustomUserViewSet)
@@ -64,6 +66,11 @@ urlpatterns = [
     # JWT-эндпоинты, для управления JWT-токенами:
     path('v1/auth/', include('djoser.urls.jwt')),
 ]
+
+if settings.DEBUG:
+
+    import debug_toolbar
+    urlpatterns += (path('__debug__/', include(debug_toolbar.urls)),)
 
 #######----------------------------------------------------------########
 

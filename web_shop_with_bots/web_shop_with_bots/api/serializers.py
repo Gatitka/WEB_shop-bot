@@ -1,15 +1,16 @@
-from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from rest_framework.serializers import SerializerMethodField
-from django.db.models import F, QuerySet
-from catalog.models import Dish, Category
-from shop.models import ShoppingCart, CartDish, Order, OrderDish
-from delivery_contacts.models import Delivery, Shop
-from users.models import BaseProfile, UserAddress
-from promos.models import PromoNews
-from django.core.files.base import ContentFile
 import base64  # Модуль с функциями кодирования и декодирования base64
 
+from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
+from django.db.models import F, QuerySet
+from rest_framework import serializers
+from rest_framework.serializers import SerializerMethodField
+
+from catalog.models import Category, Dish
+from delivery_contacts.models import Delivery, Shop
+from promos.models import PromoNews
+from shop.models import CartDish, Order, OrderDish, ShoppingCart
+from users.models import BaseProfile, UserAddress
 
 User = get_user_model()
 

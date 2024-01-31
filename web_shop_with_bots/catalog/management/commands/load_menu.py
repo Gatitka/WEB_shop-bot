@@ -1,17 +1,17 @@
+import os
+import re
 from csv import DictReader
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.core.management import BaseCommand
 
-from catalog.models import Dish, Category
-from shop.models import Delivery, Shop, DistrictDeliveryCost
-from users.models import UserAddress, BaseProfile, WEBAccount
+from catalog.models import Category, Dish
+from delivery_contacts.models import Delivery, Shop
 from promos.models import PromoNews
-from delivery_contacts.models import Shop, Delivery
-from decimal import Decimal
-import os
-import re
+from shop.models import Delivery, DistrictDeliveryCost, Shop
+from users.models import BaseProfile, UserAddress, WEBAccount
 from web_shop_with_bots.settings import BASE_DIR
-
 
 User = get_user_model()
 
@@ -37,34 +37,55 @@ class Command(BaseCommand):
             return os.path.join('icons', 'missing_image.jpg')
 
         with open('docs/menu.csv', encoding='utf-8') as f:
+            vegan_cat, created = Category.objects.get_or_create(
+                priority=20,
+                # name_rus='Веган',
+                # name_srb='Веган',
+                slug='vegan',
+                is_active=True,
+                )
+            vegan_cat.name = 'веган'
+            vegan_cat.save()
+            vegan_cat.set_current_language('en')
+            vegan_cat.name = 'vegan'
+            vegan_cat.save()
+            vegan_cat.set_current_language('sr-latn')       # Only switches
+            vegan_cat.name = 'ЋћŽžLjljNjnjĆćČčDždžŠš vegan'
+            vegan_cat.save()
+
             for row in DictReader(f, delimiter=';'):
                 if not any(row.values()):
                     continue
-                vegan_cat = Category.objects.get_or_create(
-                        priority=20,
-                        name_rus='Веган',
-                        name_srb='Веган',
-                        slug='vegan',
-                        is_active=True,
-                    )[0]
-                category = Category.objects.get_or_create(
+                category, created = Category.objects.get_or_create(
                         priority=row['пп кат'],
-                        name_rus=row['Раздел 1'][4:],
-                        name_srb=row['Раздел 1'][4:],
+                        # name=row['Раздел 1'][4:],
+                        # name_rus=row['Раздел 1'][4:],
+                        # name_srb=row['Раздел 1'][4:],
                         slug=row['slug'],
                         is_active=True,
-                    )[0]
+                    )
+                category.set_current_language('ru')
+                category.name = row['Раздел 1'][4:]
+                category.save()
+                category.set_current_language('en')
+                category.name = f"ENGLISH {row['Раздел 1'][4:]}"
+                category.save()
+                category.set_current_language('sr-latn')       # Only switches
+                category.name = f"ЋћŽžLjljNjnjĆćČčDždžŠš {row['Раздел 1'][4:]}"
+                category.save()
 
                 article_number = row['Артикул']
                 image_path = find_image_by_article(article_number)
 
-                if not Dish.objects.filter(short_name_rus=row['Наименование']).exists():
+                if not Dish.objects.filter(translations__short_name=row['Наименование']).exists():
                     dish = Dish.objects.create(
                         priority=row['пп блюд'],
-                        short_name_rus=row['Наименование'],
-                        short_name_srb=row['Наименование'],
-                        text_rus=row['Описание'],
-                        text_srb=row['Описание'],
+                        # short_name=row['Наименование'],
+                        # text=row['Описание'],
+                        # short_name_rus=row['Наименование'],
+                        # short_name_srb=row['Наименование'],
+                        # text_rus=row['Описание'],
+                        # text_srb=row['Описание'],
                         price=row['Цена'],
                         weight=row['Вес'],
                         article=row['Артикул'],
@@ -75,10 +96,21 @@ class Command(BaseCommand):
                         is_active=True,
                         image=image_path,
                     )
-                    cat = (category,)
-                    if dish.vegan_icon == True:
-                        cat = (category, vegan_cat)
-                    dish.category.set(cat)
+                    if dish.vegan_icon == '1':
+                        dish.category.set([category, vegan_cat])
+                    else:
+                        dish.category.set([category])
+                    dish.set_current_language('ru')
+                    dish.short_name = {row['Наименование']}
+                    dish.text = row['Описание']
+                    dish.set_current_language('en')
+                    dish.short_name = f"ENGLISH {row['Наименование']}"
+                    dish.text = f"ENGLISH {row['Описание']}"
+                    dish.save()
+                    dish.set_current_language('sr-latn')       # Only switches
+                    dish.short_name = f"ЋћŽžLjljNjnjĆćČčDždžŠš {row['Наименование']}"
+                    dish.text = f"ЋћŽžLjljNjnjĆćČčDždžŠš {row['Описание']}"
+                    dish.save()
 
 
         admin = User.objects.get_or_create(
@@ -87,7 +119,7 @@ class Command(BaseCommand):
             is_superuser=True,
             is_staff=1,
             first_name='admin',
-            phone='+79055969166'
+            phone='+79055969166',
         )
         admin=admin[0]
         admin.set_password("admin")
@@ -176,28 +208,24 @@ class Command(BaseCommand):
             short_name="адрес1",
             city='Belgrade',
             full_address="ул.Милована Миловановича 1",
-            type="1"
         )
         address2 = UserAddress.objects.get_or_create(
             base_profile=user1.base_profile,
             short_name="адрес2",
             city='Belgrade',
             full_address="ул.Милована Миловановича 2",
-            type="2"
         )
         address3 = UserAddress.objects.get_or_create(
             base_profile=user2.base_profile,
             short_name="адрес3",
             city='Belgrade',
             full_address="ул.Милована Миловановича 3",
-            type="1"
         )
         address4 = UserAddress.objects.get_or_create(
             base_profile=user2.base_profile,
             short_name="адрес4",
             city='Belgrade',
             full_address="ул.Милована Миловановича 4",
-            type="1"
         )
 
         promo1 = PromoNews.objects.get_or_create(

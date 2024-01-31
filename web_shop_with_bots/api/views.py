@@ -1,32 +1,29 @@
+from django.contrib import messages
 from django.contrib.auth import get_user_model
-from catalog.models import Dish
-from shop.models import ShoppingCart, CartDish, Order, OrderDish
-from delivery_contacts.models import Shop, Delivery
-from users.models import BaseProfile, UserAddress
 from django.shortcuts import get_object_or_404, redirect
-from api.utils import check_existance_create_delete
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
+from django_filters.rest_framework import DjangoFilterBackend
+from djoser.serializers import UserSerializer
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from .serializers import (UserOrdersSerializer, DishShortSerializer,
-                          ShopSerializer, DeliverySerializer,
-                          UserAddressSerializer, PromoNewsSerializer,
-                          CartDishSerializer, ShoppingCartReadSerializer)
+from rest_framework.generics import DestroyAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import mixins, status, viewsets
 from rest_framework.views import APIView
-from rest_framework.decorators import api_view
-from django.contrib import messages
-from djoser.views import UserViewSet
-from django.views.decorators.csrf import csrf_protect
-from django.utils.decorators import method_decorator
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.generics import DestroyAPIView
-from djoser.serializers import UserSerializer
-from promos.models import PromoNews
-from drf_yasg.utils import swagger_auto_schema
-from django_filters.rest_framework import DjangoFilterBackend
-from .filters import CategoryFilter
 
+from catalog.models import Dish
+from delivery_contacts.models import Delivery, Shop
+from promos.models import PromoNews
+from shop.models import CartDish, Order, OrderDish, ShoppingCart
+from users.models import BaseProfile, UserAddress
+
+from .filters import CategoryFilter
+from .serializers import (CartDishSerializer, DeliverySerializer,
+                          DishMenuSerializer, PromoNewsSerializer,
+                          ShoppingCartReadSerializer, ShopSerializer,
+                          UserAddressSerializer, UserOrdersSerializer)
 
 User = get_user_model()
 
@@ -41,7 +38,7 @@ class DeleteUserViewSet(DestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.request.user
-        instance.is_active = False
+        instance.is_deleted = False
         instance.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -126,19 +123,49 @@ class MenuViewSet(mixins.ListModelMixin,
     Queryset фильтруется кастомным фильтром RecipeFilter по параметрам запроса
     и выдает список всех рецептов/нахоядщихся в корзине.
     """
-    permission_classes = [AllowAny,] #[IsAuthorAdminOrReadOnly]
-    serializer_class = DishShortSerializer
+    permission_classes = [AllowAny,]
+    serializer_class = DishMenuSerializer
     filter_backends = (DjangoFilterBackend,)
     filterset_class = CategoryFilter
-    queryset = Dish.objects.filter(is_active=True).prefetch_related('category').all().exclude(category__slug='extra')
+    queryset = Dish.objects.filter(
+        is_active=True,
+        category__is_active=True
+    ).all().prefetch_related(
+        'translations',
+        'category', 'category__translations'
+    ).exclude(category__slug='extra')
 
-    # def get_queryset(self):
-    #     return Order.objects.filter(
-    #         user=self.request.user.profile
-    #     ).all()[:5]
+    http_method_names = ['get', 'post']
+
+    def list(self, request, *args, **kwargs):
+        user = request.user
+        dish_serializer = self.get_serializer(self.get_queryset(), many=True)
+
+        # response_data = {
+        #         'dishes': dish_serializer.data,
+        #         'cart': None,
+        #     }
+        # response_data = {dish_serializer.data}
+
+        # if user.is_authenticated:
+        #     shopping_cart = ShoppingCart.objects.get(user=user.base_profile)
+        #     num_of_cartitems = shopping_cart.num_of_items
+
+        #     # Добавим данные из другого сериализатора
+        #     cart_data = {'num_of_cartitems': num_of_cartitems}
+
+        #     # Объединим данные из обоих сериализаторов в один словарь
+        #     response_data['cart'] = cart_data
+
+        return Response(dish_serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     @action(detail=True,
-            methods=['post'])   #, 'delete'])
+            methods=['post'])   # , 'delete'])
     def add_to_shopping_cart(self, request, pk=None):
         """
         Добавляет блюдо в `корзину`.
@@ -177,7 +204,7 @@ class MenuViewSet(mixins.ListModelMixin,
             # else:
             #     CartDish.objects.create(cart=cart, dish=dish)
             return redirect('api:menu-list')
-            #pk=author.id   # нужно сохранить предвыбор ноавной страницы, т.к. в противном случаебудет скидываться
+            # pk=author.id   # нужно сохранить предвыбор ноавной страницы, т.к. в противном случаебудет скидываться
 
 
 class ShoppingCartView(APIView):
@@ -192,9 +219,12 @@ class ShoppingCartView(APIView):
             cart, created = ShoppingCart.objects.get_or_create(
                 user=current_user.base_profile
                 )
-        serializer = ShoppingCartReadSerializer(cart)
-        return Response(serializer.data)
-
+            serializer = ShoppingCartReadSerializer(cart)
+            return Response(serializer.data)
+        else:
+            # Если пользователь не авторизован, возвращаем пустой ответ
+            # т.к. корзина будет отобржаться из фронта
+            return Response({})
 
 # class ShoppingCartViewSet(mixins.RetrieveModelMixin,
 #                           mixins.CreateModelMixin,
@@ -222,7 +252,6 @@ class ShoppingCartView(APIView):
 #         return Response({'detail': 'Method "GET" not allowed for this endpoint.'}, status=HTTP_405_METHOD_NOT_ALLOWED)
 
 
-
 class ShopViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Вьюсет для отображения ресторанов.
@@ -241,10 +270,6 @@ class DeliveryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Delivery.objects.filter(is_active=True).all()
     serializer_class = DeliverySerializer
     pagination_class = None
-
-
-
-
 
 
 

@@ -1,9 +1,10 @@
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
-from pytils.translit import slugify
-from decimal import Decimal
 from django.utils.safestring import mark_safe
+from pytils.translit import slugify
 
 
 class Category(models.Model):

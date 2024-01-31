@@ -1,32 +1,32 @@
+from django.contrib import messages
 from django.contrib.auth import get_user_model
-from catalog.models import Dish
-from shop.models import ShoppingCart, CartDish, Order, OrderDish
-from delivery_contacts.models import Shop, Delivery
-from users.models import BaseProfile, UserAddress
 from django.shortcuts import get_object_or_404, redirect
-from api.utils import check_existance_create_delete
-from rest_framework.decorators import action
-from .serializers import (UserOrdersSerializer, DishShortSerializer,
-                          ShopSerializer, DeliverySerializer,
-                          UserAddressSerializer, PromoNewsSerializer,
-                          CartDishSerializer, ShoppingCartReadSerializer)
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
+from django_filters.rest_framework import DjangoFilterBackend
+from djoser.serializers import UserSerializer
+from djoser.views import UserViewSet
+from drf_yasg.utils import swagger_auto_schema
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action, api_view
+from rest_framework.generics import DestroyAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import mixins, status, viewsets
 from rest_framework.views import APIView
-from rest_framework.decorators import api_view
-from django.contrib import messages
-from djoser.views import UserViewSet
-from django.views.decorators.csrf import csrf_protect
-from django.utils.decorators import method_decorator
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.generics import DestroyAPIView
-from djoser.serializers import UserSerializer
-from promos.models import PromoNews
-from drf_yasg.utils import swagger_auto_schema
-from django_filters.rest_framework import DjangoFilterBackend
-from .filters import CategoryFilter
 
+from api.utils import check_existance_create_delete
+from catalog.models import Dish
+from delivery_contacts.models import Delivery, Shop
+from promos.models import PromoNews
+from shop.models import CartDish, Order, OrderDish, ShoppingCart
+from users.models import BaseProfile, UserAddress
+
+from .filters import CategoryFilter
+from .serializers import (CartDishSerializer, DeliverySerializer,
+                          DishShortSerializer, PromoNewsSerializer,
+                          ShoppingCartReadSerializer, ShopSerializer,
+                          UserAddressSerializer, UserOrdersSerializer)
 
 User = get_user_model()
 

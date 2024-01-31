@@ -1,22 +1,15 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
-from tm_bot.models import TelegramAccount
+from django.core.exceptions import ValidationError
 # from django.core.exceptions import ValidationError
 from django.core.validators import MinLengthValidator
 from django.db import models
-from django.conf import settings
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from phonenumber_field.modelfields import PhoneNumberField
-from django.core.exceptions import ValidationError
+from django.core.validators import EmailValidator
 
-# UserRoles (models.TextChoices):
-#     ADMIN = ('admin', 'Администратор')
-#     USER = ('user', 'Пользователь')
-
-ADDRESS_TYPE_CHOICES = (
-    ("1", "Дом"),
-    ("2", "Работа")
-)
+from tm_bot.models import MessengerAccount
 
 
 class UserAddress(models.Model):
@@ -33,11 +26,6 @@ class UserAddress(models.Model):
         'адрес полный',
         max_length=100
     )
-    type = models.CharField(
-        'тип',
-        max_length=100,
-        choices=ADDRESS_TYPE_CHOICES
-    )
     base_profile = models.ForeignKey(
         'BaseProfile',
         on_delete=models.CASCADE,
@@ -45,7 +33,6 @@ class UserAddress(models.Model):
     )   # НЕ УДАЛЯТЬ! нужен для правильного отображения админки
 
     class Meta:
-        ordering = ['-id']
         verbose_name = 'Мой адрес'
         verbose_name_plural = 'Мои адреса'
 
@@ -62,14 +49,34 @@ class BaseProfile(models.Model):
         'WEBAccount',
         on_delete=models.PROTECT,
         related_name='profile',
-        verbose_name='Базовый профиль',
+        verbose_name='Аккаунт на сайте (web_account)',
         blank=True, null=True
         )
     messenger_account = models.OneToOneField(
-        TelegramAccount,
+        MessengerAccount,
         on_delete=models.PROTECT,
         related_name='profile',
         verbose_name='Мессенджер',
+        blank=True, null=True
+        )
+    first_name = models.CharField(
+        'Имя',
+        max_length=150,
+        blank=True, null=True
+        )
+    last_name = models.CharField(
+        'Фамилия',
+        max_length=150,
+        blank=True, null=True
+        )
+    phone = PhoneNumberField(
+        verbose_name='телефон',
+        unique=True,
+        blank=True, null=True,
+        help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
+        )
+    email = models.EmailField(
+        'email',
         blank=True, null=True
         )
     my_addresses = models.ForeignKey(
@@ -102,20 +109,14 @@ class BaseProfile(models.Model):
     is_active = models.BooleanField(
         'Активный',
         default=True
-    ) # instead of deleting user switch to inactive
+    )  # instead of deleting user switch to inactive
 
-    # создать метод очистки сохряняемых данных
-    # невозможность удаления пользователя
     base_language = models.CharField(
         'Язык',
-        max_length=3,
-        choices=settings.LANGUAGE_CHOICES,
+        max_length=10,
+        choices=settings.LANGUAGES,
         default="RUS"
     )
-
-    @property
-    def email(self):
-        return self.email
 
     class Meta:
         ordering = ['-id']
@@ -179,13 +180,14 @@ class WEBAccount(AbstractUser):
     )
     web_language = models.CharField(
         'Язык сайта',
-        max_length=3,
-        choices=settings.LANGUAGE_CHOICES,
+        max_length=10,
+        choices=settings.LANGUAGES,
         default="RUS"
     )
     phone = PhoneNumberField(
         verbose_name='телефон',
-        unique=True
+        unique=True,
+        null=True
     )
     notes = models.CharField(
         'Пометки',
@@ -197,7 +199,7 @@ class WEBAccount(AbstractUser):
         on_delete=models.PROTECT,
         verbose_name='базовый профиль',
         blank=True, null=True
-        )
+    )
     # role = models.CharField(
     #     'Роль',
     #     max_length=9,
@@ -208,9 +210,14 @@ class WEBAccount(AbstractUser):
         ('active'),
         default=False,
         help_text=(
-            'Designates whether this user should be treated as active. '
-            'Unselect this instead of deleting accounts.'
+            'Аккаунт активирован.'
+            'Пользователь перешел по ссылке из письма для активации аккаунта.'
         ),
+    )
+    is_deleted = models.BooleanField(
+        'deleted',
+        default=False,
+        help_text='Был ли аккаунт удален.'
     )
 
     class Meta:
@@ -240,11 +247,26 @@ class WEBAccount(AbstractUser):
     REQUIRED_FIELDS = ['first_name', 'last_name', 'phone']
 
 
-# ------    сигналы для создания базового профиля при создании web account
+
+# ------    сигналы для создания base_profile при создании web account
 @receiver(post_save, sender=WEBAccount)
 def create_base_profile(sender, instance, created, **kwargs):
     if created:
-        base_profile = BaseProfile(web_account=instance)
+        if not (BaseProfile.objects.filter(web_account=instance).exists() and
+                BaseProfile.objects.filter(phone=instance.phone).exists() and
+                BaseProfile.objects.filter(email=instance.email).exists()):
+            base_profile = BaseProfile(
+                web_account=instance,
+                first_name=instance.first_name,
+                last_name=instance.last_name,
+                phone=instance.phone,
+                email=instance.email
+            )
+        else:
+            base_profile = BaseProfile.objects.filter(
+                                    phone=instance.phone,
+                                    )
+            base_profile.web_account = instance
         base_profile.save()
         instance.base_profile = base_profile
         instance.save(update_fields=['base_profile'])
@@ -259,6 +281,9 @@ def create_web_account(sender, instance, **kwargs):
     if not instance.first_name or instance.first_name in ['me', 'я', 'ja', 'и']:
         raise ValidationError(
             {'first_name': "Please provide first_name"})
+
+    email_validator = EmailValidator(message='Enter a valid email address.')
+    email_validator(instance.email)
 
 
 # @receiver(post_save, sender=WEBAccount)
