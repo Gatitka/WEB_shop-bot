@@ -1,36 +1,21 @@
 from django.db import models
 from django.utils.safestring import mark_safe
+from parler.models import TranslatableModel, TranslatedFields
 
 
-class PromoNews(models.Model):
+class PromoNews(TranslatableModel):
     """ Модель для промо новостей."""
-    title_rus = models.CharField(
-        max_length=100,
-        verbose_name='заголовок рус'
-    )
-    full_text_rus = models.TextField(
-        max_length=600,
-        verbose_name='описание рус'
-    )
-    title_en = models.CharField(
-        max_length=100,
-        verbose_name='заголовок en',
-        blank=True, null=True
-    )
-    full_text_en = models.TextField(
-        max_length=600,
-        verbose_name='описание en',
-        blank=True, null=True
-    )
-    title_srb = models.CharField(
-        max_length=100,
-        verbose_name='заголовок srb',
-        blank=True, null=True
-    )
-    full_text_srb = models.TextField(
-        max_length=600,
-        verbose_name='описание srb',
-        blank=True, null=True
+    translations = TranslatedFields(
+        title=models.CharField(
+            max_length=100,
+            verbose_name='заголовок',
+            blank=True, null=True
+        ),
+        full_text=models.TextField(
+            max_length=600,
+            verbose_name='описание',
+            blank=True, null=True
+        ),
     )
     is_active = models.BooleanField(
         default=False,
@@ -45,49 +30,33 @@ class PromoNews(models.Model):
     created = models.DateField(
         'Дата добавления', auto_now_add=True
     )
-    image_rus = models.ImageField(
-        upload_to='promo/',
-        null=True,
-        default=None,
-        blank=True,
-        verbose_name='Изображение',
-        )
+    image_ru = models.ImageField(
+            upload_to='promo/',
+            verbose_name='изображение ru',
+            blank=True, null=True
+    )
     image_en = models.ImageField(
-        upload_to='promo/',
-        null=True,
-        default=None,
-        blank=True,
-        verbose_name='Изображение',
-        )
-    image_srb = models.ImageField(
-        upload_to='promo/',
-        null=True,
-        default=None,
-        blank=True,
-        verbose_name='Изображение',
-        )
+            upload_to='promo/',
+            verbose_name='изображение en',
+            blank=True, null=True
+    )
+    image_sr = models.ImageField(
+            upload_to='promo/',
+            verbose_name='изображение sr',
+            blank=True, null=True
+    )
 
-    def admin_photo_rus(self):
-        if self.image_rus:
+    def admin_image_ru(self):
+        if self.image_ru:
             return mark_safe(
-                '<img src="{}" width="100" />'.format(self.image_rus.url)
+                '<img src="{}" width="100" />'.format(self.image_ru.url)
                 )
         missing_image_url = "icons/missing_image.jpg"
         return mark_safe(
             '<img src="{}" width="100" />'.format(missing_image_url)
             )
 
-    def admin_photo_srb(self):
-        if self.image_srb:
-            return mark_safe(
-                '<img src="{}" width="100" />'.format(self.image_srb.url)
-                )
-        missing_image_url = "icons/missing_image.jpg"
-        return mark_safe(
-            '<img src="{}" width="100" />'.format(missing_image_url)
-            )
-
-    def admin_photo_en(self):
+    def admin_image_en(self):
         if self.image_en:
             return mark_safe(
                 '<img src="{}" width="100" />'.format(self.image_en.url)
@@ -97,12 +66,15 @@ class PromoNews(models.Model):
             '<img src="{}" width="100" />'.format(missing_image_url)
             )
 
-    admin_photo_rus.short_description = 'Image_rus'
-    admin_photo_rus.allow_tags = True
-    admin_photo_srb.short_description = 'Image_srb'
-    admin_photo_srb.allow_tags = True
-    admin_photo_en.short_description = 'Image_EN'
-    admin_photo_en.allow_tags = True
+    def admin_image_sr(self):
+        if self.image_sr:
+            return mark_safe(
+                '<img src="{}" width="100" />'.format(self.image_sr.url)
+                )
+        missing_image_url = "icons/missing_image.jpg"
+        return mark_safe(
+            '<img src="{}" width="100" />'.format(missing_image_url)
+            )
 
     class Meta:
         ordering = ['-created']
@@ -110,7 +82,9 @@ class PromoNews(models.Model):
         verbose_name_plural = 'промо-новости'
 
     def __str__(self):
-        return f'{self.title_rus}'
+        # Use the `safe_translation_getter` to retrieve the translated title
+        title = self.safe_translation_getter('title', language_code='ru')
+        return title or f'PromoNews #{self.pk}'
 
 
 class Promocode(models.Model):

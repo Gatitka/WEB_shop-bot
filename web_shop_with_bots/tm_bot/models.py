@@ -4,6 +4,9 @@ from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinLengthValidator
 from django.db import models
 from phonenumber_field.modelfields import PhoneNumberField
+import requests
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 # from users.models import BaseProfile
 
@@ -15,7 +18,7 @@ MESSENGERS = [
 
 
 class MessengerAccount(models.Model):
-    # создать метод очистки сохряняемых данных
+    # создать метод очистки сохраняемых данных
     msngr_type = models.CharField(
         'Тип мессенджера',
         max_length=3,  # Устанавливаем максимальную длину, соответствующую максимальной длине кодов мессенджеров
@@ -23,6 +26,12 @@ class MessengerAccount(models.Model):
     )
     msngr_id = models.CharField(
         'ID',
+        max_length=100,
+        validators=[MinLengthValidator(4)],
+        blank=True, null=True
+    )
+    tm_chat_id = models.CharField(
+        'Tm_chat_ID',
         max_length=100,
         validators=[MinLengthValidator(4)],
         blank=True, null=True
@@ -99,6 +108,24 @@ class MessengerAccount(models.Model):
                 f" target='_blank'>Открыть чат (Wts)</a>"
             )
 
+    def send_message_to_telegram(self, username, message):
+        # Получаем chat_id пользователя по его юзернейму
+        token = settings.BOT_TOKEN
+        url = f'https://api.telegram.org/bot{token}/getChat'
+        params = {'chat_id': username}
+        response = requests.get(url, params=params)
+        data = response.json()
+        chat_id = data['result']['id']  # Получаем chat_id пользователя
+        # chat_id = '194602954'
+        # Отправляем сообщение пользователю
+        url = f'https://api.telegram.org/bot{token}/sendMessage'
+        payload = {
+            'chat_id': chat_id,
+            'text': message
+        }
+        response = requests.post(url, data=payload)
+        return response.json()
+
 
 class Message(models.Model):
     profile = models.ForeignKey(
@@ -121,6 +148,11 @@ class Message(models.Model):
         verbose_name = 'Сообщение'
         verbose_name_plural = 'Сообщения'
 
+
+@receiver(post_save, sender=MessengerAccount)
+def create_messenger_account(sender, instance, **kwargs):
+    message = 'Спасибо! теперь мы будем держать вас в курсе событий!'
+    instance.send_message_to_telegram(instance.msngr_username, message)
 
 
 # class MessengerAccount(models.Model):

@@ -1,18 +1,18 @@
 from django.contrib import admin
+from django.contrib.gis.admin import OSMGeoAdmin
 
 from utils.utils import activ_actions
 
-from .models import Delivery, DistrictDeliveryCost, Shop
-
+from .models import Delivery, DeliveryZone, Restaurant
+from parler.admin import TranslatableAdmin
 
 @admin.register(Delivery)
-class DeliveryAdmin(admin.ModelAdmin):
+class DeliveryAdmin(TranslatableAdmin):
     """Настройки админ панели доставки".
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
-    list_display = ('name_rus', 'type', 'city',
-                    'is_active', 'min_price', 'price', 'admin_photo')
+    list_display = ('type', 'city', 'type',
+                    'is_active', 'admin_photo')
     readonly_fields = ('admin_photo',)
-    search_fields = ('name_rus', 'city')
     list_filter = ('is_active', 'city', 'type')
     actions = [*activ_actions]
 
@@ -25,17 +25,12 @@ class DeliveryAdmin(admin.ModelAdmin):
         }),
         ('Описание', {
             'fields': (
-                ('name_rus'),
-                ('name_srb'),
-                ('name_en'),
-                ('description_rus'),
-                ('description_srb'),
-                ('description_en'),
+                ('description'),
             )
         }),
         ('Цена', {
             'fields': (
-                ('price', 'min_price'),
+                ('default_delivery_cost', 'min_order_price'),
                 ('discount'),
             )
         }),
@@ -45,30 +40,54 @@ class DeliveryAdmin(admin.ModelAdmin):
     )
 
 
-@admin.register(DistrictDeliveryCost)
-class DistrictDeliveryCostAdmin(admin.ModelAdmin):
+@admin.register(DeliveryZone)
+class DeliveryZoneAdmin(OSMGeoAdmin):
     """Настройки админ панели стоимости доставки по районам"."""
-    list_display = ('city', 'district', 'promo', 'min_order_amount', 'delivery_cost')
+    list_display = ('name', 'city', 'is_promo',
+                    'promo_min_order_amount', 'delivery_cost',
+                    )
     search_fields = ('district', 'city')
-    list_filter = ('city', 'promo')
+    list_filter = ('city', 'is_promo')
     actions = [*activ_actions]
+    fields = (
+        'city',
+        'name',
+        'polygon',
+        'is_promo',
+        'promo_min_order_amount',
+        'delivery_cost',
+        'polygon_coordinates'
+    )
+    readonly_fields = ('polygon_coordinates',)
+
+    def polygon_coordinates(self, obj):
+        # Здесь вы можете форматировать координаты как вам нужно
+        # Например, просто выводить их в строку
+        polygon_str = str(obj.polygon)
+        polygon_data = polygon_str.split("MULTIPOLYGON (((")[1]
+        return str("MULTIPOLYGON (((" + polygon_data)
+    polygon_coordinates.short_description = 'WKT координаты полигона'
 
 
-@admin.register(Shop)
-class ShopAdmin(admin.ModelAdmin):
-    """Настройки админ панели магазинов."""
+@admin.register(Restaurant)
+class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
+    """Настройки админ панели ресторанов."""
+    default_lat = 44.813366941787976
+    default_lon = 20.460647915161385
+    default_zoom = 5
+    # Beograd 44.813366941787976, 20.460647915161385
+
     list_display = ('pk', 'city', 'short_name',
-                    'is_active', 'phone', 'work_hours', 'admin_photo')
+                    'is_active', 'phone', 'work_hours',
+                    'is_overloaded', 'admin_photo')
     readonly_fields = ('admin_photo',)
-    search_fields = ('city', 'short_name', 'phone')
     list_filter = ('is_active', 'city')
     actions = [*activ_actions]
     fields = (
-        ('short_name', 'is_active'),
+        ('short_name', 'is_active', 'is_overloaded'),
         ('city'),
-        ('address_rus'),
-        ('address_end'),
-        ('address_srb'),
+        ('address'),
+        ('coordinates'),
         ('work_hours'),
         ('phone'),
         ('admin'),

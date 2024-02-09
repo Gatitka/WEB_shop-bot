@@ -18,9 +18,9 @@ from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework.serializers import SerializerMethodField
 
-from catalog.models import Category, Dish
-from delivery_contacts.models import Delivery, Shop
-from promos.models import PromoNews
+from catalog.models import Category, Dish, UOM
+from delivery_contacts.models import Delivery, Restaurant
+from promos.models import PromoNews, Promocode
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from tm_bot.models import MessengerAccount
 from users.models import BaseProfile, UserAddress
@@ -116,7 +116,9 @@ class MyUserSerializer(serializers.ModelSerializer):
             bool: в корзине покупок или нет.
         """
         if user.is_authenticated:
-            return user.base_profile.date_of_birth
+            date_of_birth = user.base_profile.date_of_birth
+        if date_of_birth:
+            return date_of_birth.strftime("%d-%m-%Y")
         return None
 
     def get_messenger(self, user: User) -> MessengerAccount:
@@ -224,30 +226,37 @@ class MyUserSerializer(serializers.ModelSerializer):
         if 'messenger' in validated_data:
             messenger = validated_data.pop('messenger')
 
-            try:
-                messenger_account, created = MessengerAccount.objects.get_or_create(
-                    profile=instance.base_profile
-                )
-                if messenger:
-                    messenger_account.msngr_type = messenger['msngr_type']
-                    messenger_account.msngr_username = messenger.get('msngr_username')
-                    messenger_account.msngr_phone = messenger['msngr_phone']
-                    messenger_account.language = instance.web_language
-                    messenger_account.save()
-                    instance.base_profile.messenger_account = messenger_account
-                    instance.base_profile.save(
-                        update_fields=['messenger_account']
-                    )
-
-                else:
+            if instance.base_profile.messenger_account:
+                if messenger is None:
+                    msngr_account = instance.base_profile.messenger_account
                     instance.base_profile.messenger_account = None
                     instance.base_profile.save(
                         update_fields=['messenger_account']
                     )
-                    messenger_account.delete()
+                    msngr_account.delete()
 
-            except MessengerAccount.DoesNotExist:
-                messenger_account = None
+                else:
+                    instance.base_profile.messenger_account.save(
+                        msngr_type=messenger['msngr_type'],
+                        msngr_username=messenger['msngr_username'],
+                        msngr_phone=messenger['msngr_phone'],
+                    )
+
+            else:
+                messenger_account, created = MessengerAccount.objects.get_or_create(
+                    msngr_type = messenger.get('msngr_type'),
+                    msngr_username = messenger.get('msngr_username'),
+                )
+                if created:
+                    messenger_account.msngr_phone = messenger.get('msngr_phone')
+                    messenger_account.language = instance.web_language
+                    messenger_account.save()
+
+
+                instance.base_profile.messenger_account = messenger_account
+                instance.base_profile.save(
+                    update_fields=['messenger_account']
+                )
 
         if 'date_of_birth' in validated_data:
             date_of_birth = validated_data.pop('date_of_birth')
@@ -327,6 +336,14 @@ class UserAddressSerializer(serializers.ModelSerializer):
 
 
 # ---------------- МЕНЮ: БЛЮДА и КАТЕГОРИИ --------------------
+class UOMSerializer(TranslatableModelSerializer):
+    """ Базовый сериализатор для ед-ц измерения."""
+    translations = TranslatedFieldsField(shared_model=UOM)
+
+    class Meta:
+        fields = ('translations',)
+        model = UOM
+        read_only_fields = ('translations',)
 
 
 class CategorySerializer(TranslatableModelSerializer):
@@ -334,9 +351,9 @@ class CategorySerializer(TranslatableModelSerializer):
     translations = TranslatedFieldsField(shared_model=Category)
 
     class Meta:
-        fields = ('id', 'priority', 'translations', 'slug')
+        fields = ('id', 'priority', 'translations', 'slug',)
         model = Category
-        read_only_fields = ('id', 'priority', 'translations', 'slug')
+        read_only_fields = ('id', 'priority', 'translations', 'slug',)
 
 
 class DishMenuSerializer(TranslatableModelSerializer):
@@ -347,13 +364,19 @@ class DishMenuSerializer(TranslatableModelSerializer):
     is_in_shopping_cart = SerializerMethodField()
     translations = TranslatedFieldsField(shared_model=Dish)
 
+    weight_volume_uom = UOMSerializer()
+    units_in_set_uom = UOMSerializer()
+
     class Meta:
         fields = ('id', 'priority',
                   'translations',
                   'category',
                   'price', 'final_price',
                   'spicy_icon', 'vegan_icon',
-                  'is_in_shopping_cart', 'image'
+                  'image',
+                  'weight_volume', 'weight_volume_uom',
+                  'units_in_set', 'units_in_set_uom',
+                  'is_in_shopping_cart',
                   )
         model = Dish
         read_only_fields = ('id', 'priority',
@@ -361,7 +384,10 @@ class DishMenuSerializer(TranslatableModelSerializer):
                             'category',
                             'price', 'final_price',
                             'spicy_icon', 'vegan_icon',
-                            'is_in_shopping_cart', 'image',
+                            'image',
+                            'weight_volume', 'weight_volume_uom',
+                            'units_in_set','units_in_set_uom',
+                            'is_in_shopping_cart',
                             )
 
     def get_is_in_shopping_cart(self, dish: Dish) -> bool:
@@ -372,82 +398,75 @@ class DishMenuSerializer(TranslatableModelSerializer):
         Returns:
             bool: в корзине покупок или нет.
         """
-        request = self.context['request']
-        if request.user.is_authenticated:
-            return CartDish.objects.filter(
-                cart=request.user.base_profile.shopping_cart.id,
-                dish=dish.id
-            ).exists()
-        return False
-
-
-
-
+        extra_kwargs = self.context.get('extra_kwargs', {})
+        if extra_kwargs:
+            cart_items = extra_kwargs.get('cart_items', None)
+            if cart_items:
+                return dish in cart_items
+        return None
 
 # ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
 
 
-class ShopSerializer(serializers.ModelSerializer):
+class RestaurantSerializer(serializers.ModelSerializer):
     """
-    Базовый сериализатор для модели Shop, только чтение!
+    Базовый сериализатор для модели Restaurant, только чтение!
     """
 
     class Meta:
-        fields = ('id', 'short_name', 'address_rus', 'address_en',
-                  'address_srb', 'work_hours',
+        fields = ('id', 'short_name', 'address',
+                  'work_hours', 'coordinates'
                   'phone', 'is_active', 'image')
-        model = Shop
-        read_only_fields = ('id', 'short_name', 'address_rus', 'address_en',
-                            'address_srb', 'work_hours',
+        model = Restaurant
+        read_only_fields = ('id', 'short_name', 'address',
+                            'coordinates', 'work_hours',
                             'phone', 'is_active', 'image')
 
 
-class DeliverySerializer(serializers.ModelSerializer):
+class DeliverySerializer(TranslatableModelSerializer):
     """
     Базовый сериализатор для модели Delivery, только чтение!
     """
+    translations = TranslatedFieldsField(shared_model=Delivery)
 
     class Meta:
-        fields = ('id', 'city', 'description_rus', 'description_en',
-                  'description_srb', 'image')
+        fields = ('id', 'city', 'type', 'translations', 'image')
         model = Delivery
-        read_only_fields = ('id', 'city', 'description_rus', 'description_en',
-                  'description_srb', 'image')
-
+        read_only_fields = ('id', 'city', 'type', 'translations', 'image')
+        # добавить данные по мин стоимостям и пр
 
 class PromoNewsSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели PromoNews, только чтение!
     """
+    translations = TranslatedFieldsField(shared_model=PromoNews)
 
     class Meta:
-        fields = ('id', 'city', 'created',
-                  'title_rus', 'full_text_rus',
-                  'image_rus',
-                  )
+        fields = ('id', 'city', 'translations', 'created',
+                  'image_ru', 'image_en', 'image_sr')
         model = PromoNews
-        read_only_fields = ('id', 'city', 'created',
-                            'title_rus', 'full_text_rus',
-                            'image_rus',
-                            )
+        read_only_fields = ('id', 'city', 'translations', 'created',
+                            'image_ru', 'image_en', 'image_sr')
 
 
 # --------------------------- КОРЗИНА ------------------------------
-class CartItemDishSerializer(serializers.ModelSerializer):
+
+
+class DishCartDishSerializer(serializers.ModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
+    translations = TranslatedFieldsField(shared_model=Dish)
 
     class Meta:
         fields = ('id',
-                  'short_name', 'text_rus',
-                  'price','final_price',
-                  'spicy_icon', 'vegan_icon',)  # 'image'
+                  'translations',
+                  'image')
         model = Dish
         read_only_fields = ('id',
-                            'short_name', 'text_rus',
-                            'price','final_price',
-                            'spicy_icon', 'vegan_icon',)  # 'image'
+                            'translations',
+                            'image'
+        )
 
 
 class CartDishSerializer(serializers.ModelSerializer):
@@ -455,11 +474,11 @@ class CartDishSerializer(serializers.ModelSerializer):
     Базовый сериализатор для модели CartDish.
     Все поля обязательны.
     """
-    dish = CartItemDishSerializer()
+    dish = DishCartDishSerializer()
 
     class Meta:
         fields = ('id', 'dish', 'quantity',
-                  'amount')
+                  'unit_price', 'amount')
         model = CartDish
 
 
@@ -468,55 +487,151 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
     Базовый сериализатор для модели ShoppingCart.
     Все поля обязательны.
     """
-    cart_dishes = serializers.SerializerMethodField()
+    cartdishes = CartDishSerializer(many=True)
+    promocode = serializers.CharField(required=False)
+    action = serializers.CharField(required=False)
+    cartdish_to_edit = CartDishSerializer(required=False)
 
     class Meta:
-        fields = ('id', 'cart_dishes', 'num_of_items',
+        fields = ('id', 'cartdishes', 'items_qty',
                   'amount', 'promocode',
-                  'discount', 'final_amount')
+                  'final_amount',
+                  'action')
         model = ShoppingCart
 
-    def to_representation(self, instance: ShoppingCart) -> dict:
+
+    def to_internal_value(self, data):
+        if 'promocode' in data:
+            if data['promocode'] is None:
+                return {'promocode': None}
+
+        #return super().to_internal_value(data)
+
+    def validate_promocode(self, value):
+        if value and not re.match("^[a-zA-Z0-9]{1,6}$", value):
+            raise serializers.ValidationError(
+                "Промокод должен содержать не более 6 символов и состоять из букв и цифр."
+            )
+        try:
+            promocode = Promocode.objects.get(promocode=value)
+        except Promocode.DoesNotExist:
+            raise serializers.ValidationError("Введен неверный промокод.")
+        return value
+
+    def validate_action(self, value):
+        action = value.split()
+        if action[0] not in ['plus', 'minus', 'del', 'edit']:
+            raise serializers.ValidationError(
+                "Выбрано неверное действие."
+            )
+
+        if action[1]:
+            try:
+                number = int(value)
+            except ValueError:
+                raise ValueError("Значение должно быть числом.")
+
+            if not (0 <= number <= 20):
+                raise ValueError("Значение должно быть числом и не превышать 20.")
+
+        return value
+
+    def validate(self, data: dict) -> dict:
+
+        return data
+
+    def update(self, instance: User, validated_data: dict) -> User:
         """
-        Метод для выбора RecipeReadSerializer сериализатором для
-        отображения созданного/измененного рецепта.
+        Метод для редакции данных пользователя.
+        Args:
+            instance (User): изменяемый рецепт
+            validated_data (dict): проверенные данные из запроса.
+        Returns:
+            User: созданный рецепт.
         """
-        serializer = ShoppingCartReadSerializer(instance)
-        # serializer.context['request'] = self.context['request']
-        return serializer.data
+        if 'promocode' in validated_data:
+            promocode = validated_data['promocode']
+            if promocode:
+                promocode = Promocode.objects.get(
+                        promocode=validated_data['promocode']
+                    )
+            else:
+                promocode = promocode   # None
+
+            instance.promocode = promocode
+            instance.save()
+
+        if 'action' in validated_data and 'cartdishes' in validated_data:
+            action = validated_data.pop['action']
+            cartdishes = validated_data.pop['cartdishes']
+            action_details = action.split()
+
+            if action_details[0] == 'del':
+                cartdish = instance.cartdishes.get(id=cartdishes)
+                cartdish.delete()
+
+            elif action_details[0] == 'plus':
+                cartdish = instance.cartdishes.get(id=cartdishes)
+                cartdish.quantity += 1
+                cartdish.save()
+
+            elif action_details[0] == 'minus':
+                cartdish = instance.cartdishes.get(id=cartdishes)
+                try:
+                    cartdish.quantity -= 1
+                except ValueError as e:
+                    cartdish.delete()
+
+            elif action_details[0] == 'edit':
+                cartdish = instance.cartdishes.get(id=cartdishes)
+                if action_details > 0:
+                    cartdish.quantity = action_details[1]
+                    cartdish.save()
+                else:
+                    cartdish.delete()
+
+
+
+
+
+            cartdish.save()
+
+
+        return instance
+        #return super().update(instance, validated_data)
 
 
 class ShoppingCartReadSerializer(serializers.ModelSerializer):
     """
     Сериализатор для чтения модели ShoppingCart.
     """
-    cart_dishes = serializers.SerializerMethodField()
-
+    cartdishes = CartDishSerializer(many=True)
+    promocode = serializers.CharField(source='promocode.promocode', required=False)
     class Meta:
-        fields = ('id', 'cart_dishes', 'num_of_items',
+        fields = ('id', 'cartdishes', 'items_qty',
                   'amount', 'promocode',
-                  'discount', 'final_amount')
+                  'final_amount')
         model = ShoppingCart
-        read_only_fields = ('id', 'cart_dishes', 'num_of_items',
-                  'amount', 'promocode',
-                  'discount', 'final_amount')
+        read_only_fields = ('id', 'cartdishes', 'num_of_items',
+                            'amount', 'promocode',
+                            'final_amount')
 
-    def get_cart_dishes(self, obj: ShoppingCart) -> dict:
-        """ Получает список блюд в корзине  автора,
+    # def get_cart_dishes(self, obj: ShoppingCart) -> dict:
+    #     """ Получает список блюд в корзине  автора,
 
-        #    на которого оформлена подписка
-        # и возвращает кол-во, переданное в параметр запроса recipes_limit,
-        # переданного в URL.
-        # Args:
-        #     user (User): Автор на которого подписан пользователь.
-        # Returns:
-        #     QuerySet: список рецептов автора из подписки.
-        """
-        serializer = CartDishSerializer(
-            obj.cart_dishes.all(),
-            many=True
-        )
-        return serializer.data
+    #     #    на которого оформлена подписка
+    #     # и возвращает кол-во, переданное в параметр запроса recipes_limit,
+    #     # переданного в URL.
+    #     # Args:
+    #     #     user (User): Автор на которого подписан пользователь.
+    #     # Returns:
+    #     #     QuerySet: список рецептов автора из подписки.
+    #     """
+    #     serializer = CartDishSerializer(
+    #         obj.cartdishes.all(),
+    #         many=True
+    #     )
+    #     return serializer.data
 
 
 

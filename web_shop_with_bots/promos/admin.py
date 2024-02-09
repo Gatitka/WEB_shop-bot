@@ -1,24 +1,24 @@
 from django.contrib import admin
 from django_summernote.admin import SummernoteModelAdmin
+from parler.admin import (SortedRelatedFieldListFilter, TranslatableAdmin,
+                          TranslatableTabularInline)
 
 from utils.utils import activ_actions
 
 from .models import Promocode, PromoNews
 
-# @admin.register(PromoNews)
-# class PromoNewsAdmin(admin.ModelAdmin):
-#     """Настройки админ панели промо-новостей."""
-#     list_display = [field.name for field in PromoNews._meta.get_fields()]   # show all fields
-#     actions = [*activ_actions]
 
-
-class SummerAdmin(SummernoteModelAdmin):
-    list_display = ['title_rus', 'is_active', 'city', 'created', 'admin_photo_rus']
-    readonly_fields = ('admin_photo_rus', 'admin_photo_en', 'admin_photo_srb', 'created')
+# class SummerAdmin(SummernoteModelAdmin):
+@admin.register(PromoNews)
+class PromoNewsAdmin(TranslatableAdmin):
+    """Настройки админ панели промо-новостей."""
+    list_display = ['title', 'is_active', 'city', 'created', 'admin_image_ru']
+    readonly_fields = ('admin_image_ru', 'created',
+                       'admin_image_en', 'admin_image_sr')
     actions = [*activ_actions]
-    search_fields = ('title_rus', 'city', 'text_rus')
+    search_fields = ('translations__title__icontains',
+                     'translations__full_text__icontains')
     list_filter = ('is_active', 'city')
-    summernote_fields = '__all__'
 
     fieldsets = (
         ('Основное', {
@@ -27,30 +27,25 @@ class SummerAdmin(SummernoteModelAdmin):
                 ('city',),
             )
         }),
-        ('Описание РУС', {
+        ('Описание', {
             'fields': (
-                ('title_rus'),
-                ('full_text_rus'),
-                ('admin_photo_rus', 'image_rus'),
+                ('title'),
+                ('full_text'),
             )
         }),
-        ('Описание SRB', {
+        ('Изображения', {
             'fields': (
-                ('title_srb'),
-                ('full_text_srb'),
-                ('admin_photo_srb', 'image_srb'),
-            )
-        }),
-        ('Описание EN', {
-            'fields': (
-                ('title_en'),
-                ('full_text_en'),
-                ('admin_photo_en', 'image_en'),
+                ('image_ru', 'admin_image_ru'),
+                ('image_en', 'admin_image_en'),
+                ('image_sr', 'admin_image_sr'),
             )
         }),
     )
 
+    # def get_queryset(self, request):
+    #     return super().get_queryset(request).prefetch_related('translations')
 
-admin.site.register(PromoNews, SummerAdmin)
+
+# admin.site.register(PromoNews, SummerAdmin)
 
 admin.site.register(Promocode, admin.ModelAdmin)

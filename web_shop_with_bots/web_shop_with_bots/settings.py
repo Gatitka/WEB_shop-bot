@@ -32,7 +32,7 @@ if TEST_SERVER or SERVER:
         allowed_hosts.append(str(TEST_SERVER))
     if SERVER:
         allowed_hosts.append(str(SERVER))
-
+print(allowed_hosts)
 ALLOWED_HOSTS = allowed_hosts
 
 
@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'delivery_contacts.apps.DeliveryContactsConfig',
     'django_filters',
     'parler',   # language
+    'django.contrib.gis'
 ]
 
 MIDDLEWARE = [
@@ -70,7 +71,6 @@ MIDDLEWARE = [
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -142,6 +142,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
+
+    'DATE_FORMAT': "%d-%m-%Y",
 }
 
 
@@ -170,6 +172,7 @@ EMAIL_ADMIN = EMAIL_HOST_USER
 
 PROTOCOL = "http"
 DOMAIN = "127.0.0.1:8000"
+
 DJOSER = {
     'LOGIN_FIELD': 'email',
     'PASSWORD_CHANGED_EMAIL_CONFIRMATION': True,
@@ -198,7 +201,9 @@ TIME_ZONE = 'Europe/Belgrade'
 
 USE_TZ = True
 
-DATE_INPUT_FORMATS = ["%d.%m.%Y"]
+DATE_FORMAT = "d.m.y"
+DATETIME_FORMAT = "d.m.y H:i"
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -266,10 +271,10 @@ cors_allowed_origins = default_cors_allowed_origins.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        cors_allowed_origins.append(str(f"http://{TEST_SERVER}"))
+        cors_allowed_origins.append(f"http://{TEST_SERVER}")
     if SERVER:
-        cors_allowed_origins.append(str(f"http://{SERVER}"))
-
+        cors_allowed_origins.append(f"http://{SERVER}")
+print(cors_allowed_origins)
 CORS_ALLOWED_ORIGINS = cors_allowed_origins
 
 CORS_ALLOW_CREDENTIALS = True
@@ -300,7 +305,7 @@ if TEST_SERVER or SERVER:
         csrf_trusted_origins.append(str(f"http://{TEST_SERVER}"))
     if SERVER:
         csrf_trusted_origins.append(str(f"http://{SERVER}"))
-
+print(csrf_trusted_origins)
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
 
 REST_USE_JWT = True
@@ -316,10 +321,10 @@ internal_ips_origins = default_internal_ips.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        internal_ips_origins.append(str(f"http://{TEST_SERVER}"))
+        internal_ips_origins.append(str(TEST_SERVER))
     if SERVER:
-        internal_ips_origins.append(str(f"http://{SERVER}"))
-
+        internal_ips_origins.append(str(SERVER))
+print(internal_ips_origins)
 INTERNAL_IPS = internal_ips_origins
 
 
@@ -350,6 +355,12 @@ SUMMERNOTE_CONFIG = {
 
 # -------------------------------- GEOCODING --------------------------------------------
 
+GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), 'Program Files', 'GDAL', 'gdal.dll')
+
+GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal308.dll'
+GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
+
+# '/путь/к/библиотеке/GDAL.dll'
 # if os.name == 'nt':
 #     import platform
 #     OSGEO4W = (r"C:\Users\gatit\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OSGeo4W")
@@ -364,7 +375,6 @@ SUMMERNOTE_CONFIG = {
 
 # -------------------------------- SENTRY MISTAKES INFORMATION----------------------------
 
-
 # import sentry_sdk
 # from sentry_sdk.integrations.django import DjangoIntegration
 
@@ -372,3 +382,10 @@ SUMMERNOTE_CONFIG = {
 #    dsn=os.getenv('SENTRY_DSN'),
 #    integrations=[DjangoIntegration()],
 #)
+
+
+
+CITY_CHOICES = [
+    ('Белград', 'Белград'),
+    ('Нови_Сад', 'Нови_Сад'),
+]

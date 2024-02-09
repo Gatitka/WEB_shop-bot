@@ -12,9 +12,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.utils.translation import get_language_from_request
 
 from catalog.models import Dish
-from delivery_contacts.models import Delivery, Shop
+from delivery_contacts.models import Delivery, Restaurant
 from promos.models import PromoNews
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
@@ -22,7 +23,9 @@ from users.models import BaseProfile, UserAddress
 from .filters import CategoryFilter
 from .serializers import (CartDishSerializer, DeliverySerializer,
                           DishMenuSerializer, PromoNewsSerializer,
-                          ShoppingCartReadSerializer, ShopSerializer,
+                          ShoppingCartSerializer,
+                          ShoppingCartReadSerializer,
+                          RestaurantSerializer,
                           UserAddressSerializer, UserOrdersSerializer)
 
 User = get_user_model()
@@ -51,14 +54,14 @@ class ContactsDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
     Доступно только чтение спика
     """
     permission_classes = [AllowAny,]
-    queryset = Shop.objects.filter(is_active=True).all()
+    queryset = Restaurant.objects.filter(is_active=True).all()
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
         delivery = Delivery.objects.filter(is_active=True, type="1").all()
 
         response_data = {}
-        response_data['shops'] = ShopSerializer(queryset, many=True).data
+        response_data['restaurants'] = RestaurantSerializer(queryset, many=True).data
         response_data['delivery'] = DeliverySerializer(delivery, many=True).data
         return Response(response_data)
 
@@ -92,7 +95,7 @@ class PromoNewsViewSet(viewsets.ReadOnlyModelViewSet):
     Вьюсет модели PromoNews доступен только для чтения.
     Отбираются только новости is_active=True.
     """
-    queryset = PromoNews.objects.filter(is_active=True).all()
+    queryset = PromoNews.objects.filter(is_active=True).all().prefetch_related('translations')
     serializer_class = PromoNewsSerializer
     permission_classes = [AllowAny,]
 
@@ -130,34 +133,52 @@ class MenuViewSet(mixins.ListModelMixin,
     queryset = Dish.objects.filter(
         is_active=True,
         category__is_active=True
-    ).all().prefetch_related(
+    ).all().select_related(
+        'units_in_set_uom',
+        'weight_volume_uom',
+        ).prefetch_related(
         'translations',
-        'category', 'category__translations'
-    ).exclude(category__slug='extra')
+        'category',
+        'category__translations',
+        'units_in_set_uom__translations',
+        'weight_volume_uom__translations',
+    ).exclude(category__slug='extra').distinct()
 
     http_method_names = ['get', 'post']
 
     def list(self, request, *args, **kwargs):
         user = request.user
-        dish_serializer = self.get_serializer(self.get_queryset(), many=True)
 
-        # response_data = {
-        #         'dishes': dish_serializer.data,
-        #         'cart': None,
-        #     }
-        # response_data = {dish_serializer.data}
+        response_data = {
+                'dishes': None,
+                'cart': None,
+            }
 
-        # if user.is_authenticated:
-        #     shopping_cart = ShoppingCart.objects.get(user=user.base_profile)
-        #     num_of_cartitems = shopping_cart.num_of_items
+        languages = get_language_from_request(request)
+        context = {'request': request}
 
-        #     # Добавим данные из другого сериализатора
-        #     cart_data = {'num_of_cartitems': num_of_cartitems}
+        if user.is_authenticated:
+            shopping_cart = ShoppingCart.objects.get(user=user.base_profile)
 
-        #     # Объединим данные из обоих сериализаторов в один словарь
-        #     response_data['cart'] = cart_data
+            context['extra_kwargs'] = {'cart_items':
+                                       shopping_cart.dishes.all()}
 
-        return Response(dish_serializer.data)
+            dish_serializer = self.get_serializer(self.get_queryset(),
+                                                  many=True,
+                                                  context=context,
+                                                  )
+
+            items_qty = shopping_cart.items_qty
+            response_data['cart'] = {'items_qty': items_qty}
+        else:
+            dish_serializer = self.get_serializer(self.get_queryset(),
+                                                  many=True,
+                                                  context=context)
+
+        response_data['dishes'] = dish_serializer.data
+
+        response_data = dish_serializer.data
+        return Response(response_data)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -179,13 +200,12 @@ class MenuViewSet(mixins.ListModelMixin,
             Responce: Статус подтверждающий/отклоняющий действие.
         """
         dish = get_object_or_404(Dish, id=pk)
-        method = request.method
+        method = request.META['REQUEST_METHOD']
         current_user = request.user
 
         if current_user.is_authenticated:
             cart, state = ShoppingCart.objects.get_or_create(user=current_user.base_profile)
-        else:
-            print('no_user')
+
             # try:
             #     cart = ShoppingCart.objects.get(session_id=request.session['hi'], completed=False)
             # except:
@@ -196,35 +216,80 @@ class MenuViewSet(mixins.ListModelMixin,
             cartitem, created = CartDish.objects.get_or_create(cart=cart, dish=dish)
             if not created:
                 cartitem.quantity += 1
-                cartitem.save(update_fields=['quantity',])
+                cartitem.save(update_fields=['quantity', 'amount'])
 
-            # if CartDish.objects.filter(cart=cart, dish=dish).exists():
-            #     return Response('Данное блюдо уже в корзине.',
-            #                     status=status.HTTP_400_BAD_REQUEST)
-            # else:
-            #     CartDish.objects.create(cart=cart, dish=dish)
             return redirect('api:menu-list')
-            # pk=author.id   # нужно сохранить предвыбор ноавной страницы, т.к. в противном случаебудет скидываться
 
 
-class ShoppingCartView(APIView):
+class ShoppingCartViewSet(# mixins.UpdateModelMixin,
+                          mixins.DestroyModelMixin,
+                          mixins.ListModelMixin,
+                          viewsets.GenericViewSet,
+                          ):
+
     """
     Вьюсет модели ShoppingCart.
     """
+    queryset = ShoppingCart.objects.all()
     permission_classes = [AllowAny,]
 
-    def get(self, request, format=None):
-        current_user = request.user
+    def get_queryset(self):
+        current_user = self.request.user
         if current_user.is_authenticated:
             cart, created = ShoppingCart.objects.get_or_create(
                 user=current_user.base_profile
                 )
-            serializer = ShoppingCartReadSerializer(cart)
+            return cart
+        return None
+
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+        if qs:
+            serializer = ShoppingCartReadSerializer(qs)
             return Response(serializer.data)
         else:
-            # Если пользователь не авторизован, возвращаем пустой ответ
-            # т.к. корзина будет отобржаться из фронта
-            return Response(serializer.data)
+            # Если пользователь не авторизован, возвращаем 204 No Content
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_queryset()
+        instance.dishes.clear()  # Очищаем связанные товары
+        instance.amount = 0.00
+        instance.promocode = None
+        instance.discount = 0.00
+        instance.final_amount = 0.00
+        instance.items_qty = 0
+        instance.save()
+
+        return Response({'detail': 'Корзина успешно очищена.'},
+                        status=status.HTTP_204_NO_CONTENT)
+
+    # def update(self, request, *args, **kwargs):
+    #     return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED, data={"detail": "Method 'PUT' not allowed."})
+
+    @action(detail=False,
+            methods=['patch'])
+    def edit_shopping_cart(self, request, *args, **kwargs):
+        """
+        Редакция корзину.
+
+        Args:
+            request (WSGIRequest): Объект запроса.
+            pk (int):
+                id блюда, которое нужно добавить в `корзину покупок`.
+
+        Returns:
+            Responce: Статус подтверждающий/отклоняющий действие.
+        """
+        instance = self.get_queryset()
+        serializer = ShoppingCartSerializer(instance,
+                                            data=request.data,
+                                            partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return redirect('api:shopping_cart-list')
+
+
 
 # class ShoppingCartViewSet(mixins.RetrieveModelMixin,
 #                           mixins.CreateModelMixin,
@@ -257,8 +322,8 @@ class ShopViewSet(viewsets.ReadOnlyModelViewSet):
     Вьюсет для отображения ресторанов.
     Изменение, создание, удаление ресторанов разрешено только через админку.
     """
-    queryset = Shop.objects.filter(is_active=True).all()
-    serializer_class = ShopSerializer
+    queryset = Restaurant.objects.filter(is_active=True).all()
+    serializer_class = RestaurantSerializer
     pagination_class = None
 
 

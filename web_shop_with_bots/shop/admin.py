@@ -50,9 +50,9 @@ class ShoppingCartAdmin(admin.ModelAdmin):
     """Настройки админ панели карзины.
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
     list_display = ('pk', 'complited', 'user',
-                    'formatted_created', 'final_amount')
-    readonly_fields = ['formatted_created', 'final_amount',
-                       'device_id', 'amount']
+                    'formatted_created', 'discounted_amount')
+    readonly_fields = ['formatted_created', 'discounted_amount',
+                       'device_id', 'amount', 'discount', 'items_qty']
     list_filter = ('created', 'complited')
     raw_id_fields = ['user', ]
     inlines = (CartDishInline,)
@@ -60,7 +60,7 @@ class ShoppingCartAdmin(admin.ModelAdmin):
               ('user', 'device_id'),
               ('items_qty', 'amount'),
               ('promocode', 'discount'),
-              ('final_amount'),
+              ('discounted_amount'),
               )
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
@@ -125,7 +125,7 @@ class ShoppingCartAdmin(admin.ModelAdmin):
                     ).aggregate(ta=Sum('amount'))
         shopping_cart.amount = (Decimal(total_amount['ta']) if total_amount['ta'] is not None
                                 else Decimal(0))
-        shopping_cart.save(update_fields=['amount', 'final_amount'])
+        shopping_cart.save(update_fields=['amount', 'discounted_amount'])
 
         formset.save_m2m()
 
@@ -157,9 +157,9 @@ class OrderAdmin(admin.ModelAdmin):
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
     list_display = ('pk', 'status',
                     'recipient_name', 'recipient_phone', 'get_msngr_link',
-                    'formatted_created', 'delivery',
-                    'discounted_amount', 'final_amount_with_shipping')
-    readonly_fields = ['pk', 'formatted_created', 'discounted_amount',
+                    'created', 'delivery', 'recipient_address',
+                    'final_amount_with_shipping')
+    readonly_fields = ['pk', 'created', 'discounted_amount',
                        'items_qty', 'device_id', 'amount',
                        'final_amount_with_shipping',
                        'get_msngr_link',]
@@ -176,7 +176,7 @@ class OrderAdmin(admin.ModelAdmin):
         return qs
 
     def get_object(self, request: HttpRequest, object_id: str, from_field: None = ...) -> Union[Any, None]:
-        queryset = super().get_queryset(request).select_related('delivery', 'promocode', 'shop', 'recipient_district').prefetch_related('user', 'user__messenger_account')
+        queryset = super().get_queryset(request).select_related('delivery', 'promocode', 'restaurant').prefetch_related('user', 'user__messenger_account')
         return super().get_object(request, object_id, from_field)
 
     def formfield_for_dbfield(self, db_field, **kwargs):
@@ -187,17 +187,17 @@ class OrderAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Данные заказа', {
             'fields': (
-                ('pk', 'formatted_created'),
+                ('pk', 'created'),
                 ('status'),
                 ('user', 'device_id'),
-                ('shop', 'delivery'),
+                ('restaurant', 'delivery'),
                 ('recipient_name', 'recipient_phone', 'get_msngr_link'),
                 ('time', 'persons_qty'),
             )
         }),
         ('Доставка', {
             'fields':
-                ('recipient_district', 'recipient_address')
+                ('city', 'recipient_address')
         }),
         ('Расчет суммы заказа', {
             'fields': (
@@ -223,36 +223,15 @@ class OrderAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
         form = super(OrderAdmin, self).get_form(request, obj, **kwargs)
 
-        # Динамически устанавливаем атрибут required для полей recipient_district и recipient_address
+        # Динамически устанавливаем атрибут required для recipient_address
         if 'delivery' in form.base_fields:
             delivery_value = request.POST.get('delivery') if request.method == 'POST' else getattr(obj, 'delivery', None)
-            if delivery_value == '1':
-                form.base_fields['recipient_district'].required = True
+            if delivery_value == 'delivery':
                 form.base_fields['recipient_address'].required = True
             else:
-                form.base_fields['recipient_district'].required = False
                 form.base_fields['recipient_address'].required = False
 
         return form
-
-# ------ настройки для формата даты -----
-
-    def formatted_created(self, obj):
-        # Форматируем дату в нужный вид
-        formatted_date = formats.date_format(obj.created, "j F Y, H:i")
-        return formatted_date
-
-    formatted_created.short_description = 'Дата добавления'
-    # Название колонки в админке
-
-    # Если нужно применить формат в деталях объекта
-    def changeform_view(self, request, object_id=None, form_url='',
-                        extra_context=None):
-        extra_context = extra_context or {}
-        extra_context['admin_date_formats'] = {
-            'formatted_created': "j F Y, H:i"
-            }
-        return super().changeform_view(request, object_id, form_url, extra_context)
 
 # ------ ОТОБРАЖЕНИЕ ССЫЛКИ НА ЧАТ С КЛИЕНТОМ -----
 
