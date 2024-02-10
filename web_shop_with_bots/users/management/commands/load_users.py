@@ -20,6 +20,7 @@ class Command(BaseCommand):
             is_staff=1,
             first_name='admin',
             phone='+79055969166',
+            language='ru',
         )
         admin.set_password("admin")
         admin.save()
@@ -27,7 +28,8 @@ class Command(BaseCommand):
         user1, created = User.objects.get_or_create(
             email="a1@a1.ru",
             first_name='Петя',
-            phone='+79055969160'
+            phone='+79055969160',
+            language='en',
         )
         user1.set_password("foreverlove")
         user1.save()
@@ -36,6 +38,7 @@ class Command(BaseCommand):
             email="a2@a2.ru",
             first_name='Вася',
             phone='+79055969161',
+            language='sr-latn'
         )
         user2.set_password("foreverlove")
         user2.save()

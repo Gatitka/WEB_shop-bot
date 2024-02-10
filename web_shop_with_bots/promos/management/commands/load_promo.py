@@ -20,7 +20,7 @@ class Command(BaseCommand):
                     is_active=row['активно'],
                     image_ru=os.path.join('promo', row['image_ru']),
                     image_en=os.path.join('promo', row['image_en']),
-                    image_sr=os.path.join('promo', row['image_sr_latn']),
+                    image_sr_latn=os.path.join('promo', row['image_sr_latn']),
                 )
                 promo.set_current_language('ru')
                 promo.title = row['заголовок_ru']

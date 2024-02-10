@@ -96,6 +96,8 @@ class MessengerAccountSerializer(serializers.ModelSerializer):
 class MyUserSerializer(serializers.ModelSerializer):
     date_of_birth = SerializerMethodField(required=False)
     messenger = SerializerMethodField(required=False)
+    email = serializers.EmailField(validators=[EmailValidator()])
+    phone = PhoneNumberField(required=True)
 
     class Meta:
         model = User
@@ -118,7 +120,7 @@ class MyUserSerializer(serializers.ModelSerializer):
         if user.is_authenticated:
             date_of_birth = user.base_profile.date_of_birth
         if date_of_birth:
-            return date_of_birth.strftime("%d-%m-%Y")
+            return date_of_birth.strftime("%d.%m.%Y")
         return None
 
     def get_messenger(self, user: User) -> MessengerAccount:
@@ -141,10 +143,19 @@ class MyUserSerializer(serializers.ModelSerializer):
                 messenger_account = None
                 return None
 
+    def validate_first_name(self, value):
+        if (not value
+            or value in ['me', 'i', 'я', 'ja', 'и']
+                or (value.isalpha() is not True)):
+
+            raise serializers.ValidationError(
+                {'first_name': ("Please provide first_name. "
+                                "Only letters are allowed.")})
+        return value
+
     def validate(self, data: dict) -> dict:
         """
-        Проверка данных в поле Messenger_account.
-        Если т
+        Проверка данных в поле Messenger_account, date_of_birth.
         """
         if 'messenger' in self.initial_data:
             messenger = self.initial_data.get('messenger')
@@ -181,36 +192,34 @@ class MyUserSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         "объект messenger не является словарем")
 
-            data['messenger'] = messenger
-
         if 'date_of_birth' in self.initial_data:
             date_of_birth = self.initial_data.get('date_of_birth')
 
             if date_of_birth:
                 try:
-                    date_obj = datetime.strptime(date_of_birth, "%d-%m-%Y").date()
+                    date_obj = datetime.strptime(
+                        date_of_birth, "%d.%m.%Y"
+                    ).date()
                     today = date.today()
+
                     if date_obj > today:
-                        raise serializers.ValidationError(
-                            "Дата рождения не может быть в будущем.")
+                        raise serializers.ValidationError({
+                            "date_of_birth": ("Дата рождения "
+                                              "не может быть в будущем.")
+                        })
                     data['date_of_birth'] = date_obj
+
                 except ValueError:
                     raise serializers.ValidationError({
-                            "date_of_birth": "Проверьте формат даты: день-месяц-год."
-                            })
+                        "date_of_birth": ("Проверьте корректность "
+                                          "и формат даты: ДД.ММ.ГГГГ.")
+                    })
 
             else:
-                data['date_of_birth'] = date_of_birth
+                data['date_of_birth'] = None
 
-        if 'email' in self.initial_data:
-            email = self.initial_data.get('email')
-            email_validator = EmailValidator(
-                message={
-                        "email": "Введите корректный email."
-                        }
-                )
-            email_validator(email)
-            data['email'] = email
+
+            data['messenger'] = messenger
 
         return data
 
@@ -243,20 +252,21 @@ class MyUserSerializer(serializers.ModelSerializer):
                     )
 
             else:
-                messenger_account, created = MessengerAccount.objects.get_or_create(
-                    msngr_type = messenger.get('msngr_type'),
-                    msngr_username = messenger.get('msngr_username'),
-                )
-                if created:
-                    messenger_account.msngr_phone = messenger.get('msngr_phone')
-                    messenger_account.language = instance.web_language
-                    messenger_account.save()
+                if messenger:
+                    messenger_account, created = MessengerAccount.objects.get_or_create(
+                        msngr_type = messenger.get('msngr_type'),
+                        msngr_username = messenger.get('msngr_username'),
+                    )
+                    if created:
+                        messenger_account.msngr_phone = messenger.get('msngr_phone')
+                        messenger_account.language = instance.web_language
+                        messenger_account.save()
 
 
-                instance.base_profile.messenger_account = messenger_account
-                instance.base_profile.save(
-                    update_fields=['messenger_account']
-                )
+                    instance.base_profile.messenger_account = messenger_account
+                    instance.base_profile.save(
+                        update_fields=['messenger_account']
+                    )
 
         if 'date_of_birth' in validated_data:
             date_of_birth = validated_data.pop('date_of_birth')

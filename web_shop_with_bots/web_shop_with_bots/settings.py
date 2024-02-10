@@ -144,6 +144,16 @@ REST_FRAMEWORK = {
     ],
 
     'DATE_FORMAT': "%d-%m-%Y",
+
+    'DATE_INPUT_FORMATS': [
+        "%d.%m.%Y",
+    ],
+
+    'DATETIME_FORMAT': 'd.m.Y H:i',
+
+    'DATETIME_INPUT_FORMATS': [
+        '%d.%m.%Y %H:%i',
+    ],
 }
 
 
@@ -201,8 +211,11 @@ TIME_ZONE = 'Europe/Belgrade'
 
 USE_TZ = True
 
-DATE_FORMAT = "d.m.y"
-DATETIME_FORMAT = "d.m.y H:i"
+DATE_FORMAT = "d.m.Y"
+DATE_INPUT_FORMATS = ["%d.%m.%Y",]
+
+DATETIME_FORMAT = "d.m.Y H:i"
+DATETIME_INPUT_FORMATS = ["%d.%m.%Y %H:%i",]
 
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -114,7 +114,7 @@ class BaseProfile(models.Model):
         'Язык',
         max_length=10,
         choices=settings.LANGUAGES,
-        default="RUS"
+        default="sr-latn"
     )
 
     class Meta:
@@ -276,15 +276,17 @@ def create_base_profile(sender, instance, created, **kwargs):
 def create_web_account(sender, instance, **kwargs):
     if not instance.phone:
         raise ValidationError(
-            {'phone': "Please provide phone"})
-    if not instance.first_name or instance.first_name in ['me', 'я', 'ja', 'и']:
+            {'phone': "Please provide phone."})
+
+    if (not instance.first_name
+        or instance.first_name in ['me', 'i', 'я', 'ja', 'и']
+            or (instance.first_name.isalpha() is not True)):
+
         raise ValidationError(
-            {'first_name': "Please provide first_name"})
+            {'first_name': ("Please provide first_name. "
+                            "Only letters are allowed.")})
+
+
 
     email_validator = EmailValidator(message='Enter a valid email address.')
     email_validator(instance.email)
-
-
-# @receiver(post_save, sender=WEBAccount)
-# def save_base_profile(sender, instance, **kwargs):
-#     instance.base_profile.save()

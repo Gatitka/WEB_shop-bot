@@ -21,7 +21,7 @@ from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
 
 from .filters import CategoryFilter
-from .serializers import (CartDishSerializer, DeliverySerializer,
+from.serializers import (CartDishSerializer, DeliverySerializer,
                           DishMenuSerializer, PromoNewsSerializer,
                           ShoppingCartSerializer,
                           ShoppingCartReadSerializer,

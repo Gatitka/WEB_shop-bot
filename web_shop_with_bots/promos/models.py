@@ -40,9 +40,9 @@ class PromoNews(TranslatableModel):
             verbose_name='изображение en',
             blank=True, null=True
     )
-    image_sr = models.ImageField(
+    image_sr_latn = models.ImageField(
             upload_to='promo/',
-            verbose_name='изображение sr',
+            verbose_name='изображение sr-latn',
             blank=True, null=True
     )
 
