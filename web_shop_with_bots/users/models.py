@@ -12,17 +12,12 @@ from tm_bot.models import MessengerAccount
 
 
 class UserAddress(models.Model):
-    short_name = models.CharField(
-        'адрес коротко',
-        max_length=20,
-        null=True, blank=True
-    )
     city = models.CharField(
         'город',
         max_length=20
     )
-    full_address = models.CharField(
-        'адрес полный',
+    address = models.CharField(
+        'адрес',
         max_length=100
     )
     base_profile = models.ForeignKey(
@@ -36,7 +31,7 @@ class UserAddress(models.Model):
         verbose_name_plural = 'Мои адреса'
 
     def __str__(self):
-        return f'Адрес {self.short_name}'
+        return f'Адрес {self.address}'
 
 
 class BaseProfile(models.Model):

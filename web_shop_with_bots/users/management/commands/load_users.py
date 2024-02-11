@@ -20,7 +20,7 @@ class Command(BaseCommand):
             is_staff=1,
             first_name='admin',
             phone='+79055969166',
-            language='ru',
+            web_language='ru',
         )
         admin.set_password("admin")
         admin.save()
@@ -29,7 +29,7 @@ class Command(BaseCommand):
             email="a1@a1.ru",
             first_name='Петя',
             phone='+79055969160',
-            language='en',
+            web_language='en',
         )
         user1.set_password("foreverlove")
         user1.save()
@@ -38,7 +38,7 @@ class Command(BaseCommand):
             email="a2@a2.ru",
             first_name='Вася',
             phone='+79055969161',
-            language='sr-latn'
+            web_language='sr-latn'
         )
         user2.set_password("foreverlove")
         user2.save()
@@ -53,27 +53,23 @@ class Command(BaseCommand):
 
         address1, created = UserAddress.objects.get_or_create(
             base_profile=user1.base_profile,
-            short_name="адрес1",
             city='Belgrade',
-            full_address="ул.Милована Миловановича 1",
+            address="ул.Милована Миловановича 1",
         )
         address2, created = UserAddress.objects.get_or_create(
             base_profile=user1.base_profile,
-            short_name="адрес2",
             city='Belgrade',
-            full_address="ул.Милована Миловановича 2",
+            address="ул.Милована Миловановича 2",
         )
         address3, created = UserAddress.objects.get_or_create(
             base_profile=user2.base_profile,
-            short_name="адрес3",
             city='Belgrade',
-            full_address="ул.Милована Миловановича 3",
+            address="ул.Милована Миловановича 3",
         )
         address4, created = UserAddress.objects.get_or_create(
             base_profile=user2.base_profile,
-            short_name="адрес4",
             city='Belgrade',
-            full_address="ул.Милована Миловановича 4",
+            address="ул.Милована Миловановича 4",
         )
 
         self.stdout.write(

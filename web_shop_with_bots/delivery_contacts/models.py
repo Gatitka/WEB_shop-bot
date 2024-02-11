@@ -14,6 +14,7 @@ from django.conf import settings  # для импорта городов
 from phonenumber_field.modelfields import PhoneNumberField
 from django.core.validators import MinValueValidator
 from django.contrib.gis.geos import Point
+from datetime import time
 
 
 
@@ -25,7 +26,7 @@ DELIVERY_CHOICES = (
 
 class Delivery(TranslatableModel):
     translations = TranslatedFields(
-        description=models.CharField(
+        description=models.TextField(
             max_length=400,
             verbose_name='Описание',
             null=True,
@@ -34,35 +35,49 @@ class Delivery(TranslatableModel):
     )
     city = models.CharField(
         max_length=20,
-        verbose_name="город",
+        verbose_name="Город *",
         choices=settings.CITY_CHOICES
     )
     type = models.CharField(
         max_length=8,
-        verbose_name="тип",
+        verbose_name="Тип *",
         choices=DELIVERY_CHOICES
     )
     is_active = models.BooleanField(
         default=False,
-        verbose_name='активен'
+        verbose_name='Активен *'
     )
-    min_order_price = models.FloatField(
-        verbose_name='min_цена_заказа',
-        # validators=[MinValueValidator(0.01)]
+    min_order_amount = models.DecimalField(
+        verbose_name='MIN сумма заказа, DIN',
+        validators=[MinValueValidator(0.01)],
+        max_digits=7, decimal_places=2,
+        help_text='Внесите цену в DIN. Формат 00000.00',
         null=True,
         blank=True
     )
     default_delivery_cost = models.DecimalField(
-        verbose_name='цена, DIN',
+        verbose_name='Стоимость доставки по-умолчанию, DIN',
         validators=[MinValueValidator(0.01)],
         help_text='Внесите цену в DIN. Формат 00000.00',
         max_digits=7, decimal_places=2,
-        default=Decimal('0'),
         null=True,
         blank=True
     )
+    min_time = models.TimeField(
+        verbose_name='MIN время заказа',
+        default=time(10, 30),
+        null=True,
+        blank=True
+        )
+    max_time = models.TimeField(
+        verbose_name='MAX время заказа',
+        default=time(21, 30),
+        null=True,
+        blank=True
+        )
     discount = models.FloatField(
-        verbose_name="Внесите скидку, прим. для 10% внесите '10,00'.",
+        verbose_name='Скидка на самовывоз',
+        help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
         null=True,
         blank=True,
     )

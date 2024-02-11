@@ -26,7 +26,9 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                           ShoppingCartSerializer,
                           ShoppingCartReadSerializer,
                           RestaurantSerializer,
-                          UserAddressSerializer, UserOrdersSerializer)
+                          UserAddressSerializer,
+                          UserOrdersSerializer,
+                          ContatsDeliverySerializer)
 
 User = get_user_model()
 
@@ -46,7 +48,8 @@ class DeleteUserViewSet(DestroyAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ContactsDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
+class ContactsDeliveryViewSet(mixins.ListModelMixin,
+                              viewsets.GenericViewSet):
     """
     Вьюсет для адреса /contacts.
     Отображает список всех активных ресторанов
@@ -54,14 +57,17 @@ class ContactsDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
     Доступно только чтение спика
     """
     permission_classes = [AllowAny,]
-    queryset = Restaurant.objects.filter(is_active=True).all()
+    serializer_class = ContatsDeliverySerializer
 
     def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        delivery = Delivery.objects.filter(is_active=True, type="1").all()
+        restaurants = Restaurant.objects.filter(is_active=True).all()
+
+        delivery = Delivery.objects.filter(
+            is_active=True,
+            ).all().prefetch_related('translations')
 
         response_data = {}
-        response_data['restaurants'] = RestaurantSerializer(queryset, many=True).data
+        response_data['restaurants'] = RestaurantSerializer(restaurants, many=True).data
         response_data['delivery'] = DeliverySerializer(delivery, many=True).data
         return Response(response_data)
 
@@ -189,11 +195,14 @@ class MenuViewSet(mixins.ListModelMixin,
             methods=['post'])   # , 'delete'])
     def add_to_shopping_cart(self, request, pk=None):
         """
-        Добавляет блюдо в `корзину`.
+        Добавление блюда в корзину из общего меню.\n
+        Payload должен быть пустым, т.е. "weight_volume_uom",
+        "units_in_set_uom" не нужны\n
+        ID блюда передается в строке запроса.
 
         Args:
             request (WSGIRequest): Объект запроса.
-            pk (int):
+            id (int):
                 id блюда, которое нужно добавить в `корзину покупок`.
 
         Returns:
@@ -242,7 +251,14 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
             return cart
         return None
 
+    def get_serializer(self, *args, **kwargs):
+        return super().get_serializer(*args, **kwargs)
+
+
     def list(self, request, *args, **kwargs):
+        """
+        Просмотр всех товаров(CartItems) в корзине.
+        """
         qs = self.get_queryset()
         if qs:
             serializer = ShoppingCartReadSerializer(qs)
@@ -252,6 +268,10 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
             return Response(status=status.HTTP_204_NO_CONTENT)
 
     def destroy(self, request, *args, **kwargs):
+        """
+        Все товары(CartItems) в корзине удаляются, сама корзина остается пустой
+        и не удаляется.
+        """
         instance = self.get_queryset()
         instance.dishes.clear()  # Очищаем связанные товары
         instance.amount = 0.00

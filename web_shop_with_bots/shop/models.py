@@ -15,6 +15,9 @@ from delivery_contacts.models import Delivery, DeliveryZone, Restaurant
 from promos.models import Promocode
 from users.models import BaseProfile
 from .validators import validate_delivery_time
+from exceptions import NoDeliveryDataException
+from django.core.exceptions import ValidationError
+
 
 User = get_user_model()
 
@@ -282,7 +285,6 @@ class Order(models.Model):
     time = models.DateTimeField(
         verbose_name='время доставки',
         blank=True, null=True,
-        validators=[validate_delivery_time]
     )
     comment = models.TextField(
         max_length=400,
@@ -390,10 +392,22 @@ class Order(models.Model):
             Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
         )
 
+    def clean(self):
+        super().clean()
+        # Проверяем, время доставки
+        try:
+            validate_delivery_time(self.time, self.delivery)
+        except Exception as e:
+            raise ValidationError(
+                f'{e}'
+            )
+
     def save(self, *args, **kwargs):
         """
         Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
         """
+        self.full_clean()
+
         self.calculate_discontinued_amount()
         self.calculate_final_amount_with_shipping()
         itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))

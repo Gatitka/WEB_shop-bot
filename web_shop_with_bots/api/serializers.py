@@ -314,7 +314,7 @@ class UserOrdersSerializer(serializers.ModelSerializer):
             'id',
             'short_name_rus',
             quantity=F('orders__quantity'),
-            # amount=F('orders__amount')
+            amount=F('orders__amount'),
         )
 
 
@@ -327,17 +327,8 @@ class UserAddressSerializer(serializers.ModelSerializer):
     Возможно создание, редактирование, удаление автором.
     """
     class Meta:
-        fields = ('id', 'city', 'short_name', 'full_address')
+        fields = ('id', 'city', 'address')
         model = UserAddress
-
-    # если не писать кастомной валидации, то по умолчанию и так просиходит валидация обязательных полей
-    # def validate(self, data: dict) -> dict:
-    #     city = data['city']
-    #     if city is None:
-    #         raise serializers.ValidationError(
-    #             "Выберите город."
-    #         )
-    #     return data
 
 # --------       свои купоны   ---------
 #
@@ -346,9 +337,11 @@ class UserAddressSerializer(serializers.ModelSerializer):
 
 
 # ---------------- МЕНЮ: БЛЮДА и КАТЕГОРИИ --------------------
+
 class UOMSerializer(TranslatableModelSerializer):
     """ Базовый сериализатор для ед-ц измерения."""
-    translations = TranslatedFieldsField(shared_model=UOM)
+    translations = TranslatedFieldsField(shared_model=UOM,
+                                         read_only=True)
 
     class Meta:
         fields = ('translations',)
@@ -358,7 +351,8 @@ class UOMSerializer(TranslatableModelSerializer):
 
 class CategorySerializer(TranslatableModelSerializer):
     """ Базовый сериализатор для категории."""
-    translations = TranslatedFieldsField(shared_model=Category)
+    translations = TranslatedFieldsField(shared_model=Category,
+                                         read_only=True)
 
     class Meta:
         fields = ('id', 'priority', 'translations', 'slug',)
@@ -370,12 +364,17 @@ class DishMenuSerializer(TranslatableModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
-    category = CategorySerializer(many=True)
-    is_in_shopping_cart = SerializerMethodField()
-    translations = TranslatedFieldsField(shared_model=Dish)
+    category = CategorySerializer(many=True,
+                                  read_only=True)
 
-    weight_volume_uom = UOMSerializer()
-    units_in_set_uom = UOMSerializer()
+    is_in_shopping_cart = SerializerMethodField(read_only=True)
+
+    translations = TranslatedFieldsField(shared_model=Dish,
+                                         read_only=True)
+
+    weight_volume_uom = UOMSerializer(read_only=True)
+
+    units_in_set_uom = UOMSerializer(read_only=True)
 
     class Meta:
         fields = ('id', 'priority',
@@ -422,15 +421,28 @@ class RestaurantSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели Restaurant, только чтение!
     """
+    coordinates = serializers.SerializerMethodField()
 
     class Meta:
-        fields = ('id', 'short_name', 'address',
-                  'work_hours', 'coordinates'
-                  'phone', 'is_active', 'image')
+        fields = ('id', 'short_name',
+                  'city', 'address', 'coordinates',
+                  'work_hours', 'phone',
+                  'image')
         model = Restaurant
-        read_only_fields = ('id', 'short_name', 'address',
-                            'coordinates', 'work_hours',
-                            'phone', 'is_active', 'image')
+        read_only_fields = ('id', 'short_name',
+                            'city', 'address', 'coordinates',
+                            'work_hours', 'phone',
+                            'image')
+
+    def get_coordinates(self, obj):
+        # Извлекаем координаты из объекта модели и сериализуем их без SRID
+        if obj.coordinates:
+            return {
+                'longitude': obj.coordinates.x,
+                'latitude': obj.coordinates.y
+            }
+        else:
+            return None
 
 
 class DeliverySerializer(TranslatableModelSerializer):
@@ -445,6 +457,15 @@ class DeliverySerializer(TranslatableModelSerializer):
         read_only_fields = ('id', 'city', 'type', 'translations', 'image')
         # добавить данные по мин стоимостям и пр
 
+
+class ContatsDeliverySerializer(serializers.Serializer):
+    """
+    Базовый сериализатор для модели Delivery, только чтение!
+    """
+    restaurants = RestaurantSerializer(many=True)
+    delivery = DeliverySerializer(many=True)
+
+
 class PromoNewsSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели PromoNews, только чтение!
@@ -453,10 +474,10 @@ class PromoNewsSerializer(serializers.ModelSerializer):
 
     class Meta:
         fields = ('id', 'city', 'translations', 'created',
-                  'image_ru', 'image_en', 'image_sr')
+                  'image_ru', 'image_en', 'image_sr_latn')
         model = PromoNews
         read_only_fields = ('id', 'city', 'translations', 'created',
-                            'image_ru', 'image_en', 'image_sr')
+                            'image_ru', 'image_en', 'image_sr_latn')
 
 
 # --------------------------- КОРЗИНА ------------------------------

@@ -20,7 +20,19 @@ class DeliveryAdmin(TranslatableAdmin):
         ('Основное', {
             'fields': (
                 ('type', 'is_active'),
-                ('city')
+                ('city'),
+                ('min_order_amount'),
+                ('min_time', 'max_time'),
+            )
+        }),
+        ('Доставка', {
+            'fields': (
+                ('default_delivery_cost', ),
+            )
+        }),
+        ('Самовывоз', {
+            'fields': (
+                ('discount'),
             )
         }),
         ('Описание', {
@@ -28,16 +40,16 @@ class DeliveryAdmin(TranslatableAdmin):
                 ('description'),
             )
         }),
-        ('Цена', {
-            'fields': (
-                ('default_delivery_cost', 'min_order_price'),
-                ('discount'),
-            )
-        }),
         ('Изображение', {
             'fields': ('admin_photo', 'image'),
         })
     )
+
+    # надстройка для увеличения размера текстового поля
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        if db_field.db_type == 'text':
+            kwargs['widget'] = admin.widgets.AdminTextareaWidget(attrs={'rows': 1, 'cols': 40})
+        return super().formfield_for_dbfield(db_field, **kwargs)
 
 
 @admin.register(DeliveryZone)

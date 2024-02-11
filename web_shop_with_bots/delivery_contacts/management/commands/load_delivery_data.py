@@ -36,21 +36,21 @@ class Command(BaseCommand):
             image=os.path.join('contacts', 'delivery1.jpg'),
         )
         delivery1.set_current_language('ru')
-        delivery1.full_text = (
+        delivery1.description = (
             "Бесплатная доставка\n"
             "Стари Град, Дорчол, Врачар, Белград на Води - заказы от 2500 дин.\n"
             "Другие районы уточняйте у администратора."
             )
         delivery1.save()
         delivery1.set_current_language('en')
-        delivery1.full_text = (
+        delivery1.description = (
             "Free delivery\n"
             "Stari Grad, Dorchol, Vrachar, Begrade na vodi for orders from 2500 din.\n"
             "Ask our operator for other districts."
             )
         delivery1.save()
         delivery1.set_current_language('sr-latn')       # Only switches
-        delivery1.full_text = (
+        delivery1.description = (
             "Besplatna dostava\n"
             "Stari Grad, Dorćol, Vračar, Beograd na vodi za narudžbine od 2500 din.\n"
             "Pitajte našeg operatera za druge okruge."
@@ -64,13 +64,13 @@ class Command(BaseCommand):
             is_active=True,
         )
         delivery2.set_current_language('ru')
-        delivery2.full_text = 'при самовывозе скидка 10%'
+        delivery2.description = 'при самовывозе скидка 10%'
         delivery2.save()
         delivery2.set_current_language('en')
-        delivery2.full_text = 'discount for takeaway 10%'
+        delivery2.description = 'discount for takeaway 10%'
         delivery2.save()
         delivery2.set_current_language('sr-latn')       # Only switches
-        delivery2.full_text = 'popust za poneti 10%'
+        delivery2.description = 'popust za poneti 10%'
         delivery2.save()
 
         self.stdout.write(
