@@ -114,7 +114,7 @@ class BaseProfile(models.Model):
         verbose_name_plural = 'клиенты'
 
     def __str__(self):
-        return (f'{self.name}' if self.name is not None else f'Клиент id = {self.id}')
+        return (f'{self.first_name}' if self.first_name is not None else f'Клиент id = {self.id}')
 
 
 class CustomWEBAccountManager(BaseUserManager):

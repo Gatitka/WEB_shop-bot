@@ -327,7 +327,7 @@ class UserAddressSerializer(serializers.ModelSerializer):
     Возможно создание, редактирование, удаление автором.
     """
     class Meta:
-        fields = ('id', 'city', 'address')
+        fields = ('id', 'address')
         model = UserAddress
 
 # --------       свои купоны   ---------
@@ -526,10 +526,10 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ('id', 'cartdishes', 'items_qty',
                   'amount', 'promocode',
-                  'final_amount',
-                  'action')
+                  'discounted_amount',
+                  'action',
+                  'cartdish_to_edit')
         model = ShoppingCart
-
 
     def to_internal_value(self, data):
         if 'promocode' in data:
@@ -641,11 +641,11 @@ class ShoppingCartReadSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ('id', 'cartdishes', 'items_qty',
                   'amount', 'promocode',
-                  'final_amount')
+                  'discounted_amount')
         model = ShoppingCart
         read_only_fields = ('id', 'cartdishes', 'num_of_items',
                             'amount', 'promocode',
-                            'final_amount')
+                            'discounted_amount')
 
     # def get_cart_dishes(self, obj: ShoppingCart) -> dict:
     #     """ Получает список блюд в корзине  автора,
