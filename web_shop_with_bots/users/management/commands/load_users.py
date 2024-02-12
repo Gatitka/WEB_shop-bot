@@ -53,23 +53,19 @@ class Command(BaseCommand):
 
         address1, created = UserAddress.objects.get_or_create(
             base_profile=user1.base_profile,
-            city='Belgrade',
-            address="ул.Милована Миловановича 1",
+            address="Белград, ул.Милована Миловановича 1",
         )
         address2, created = UserAddress.objects.get_or_create(
             base_profile=user1.base_profile,
-            city='Belgrade',
-            address="ул.Милована Миловановича 2",
+            address="Belgrade, ул.Милована Миловановича 2",
         )
         address3, created = UserAddress.objects.get_or_create(
             base_profile=user2.base_profile,
-            city='Belgrade',
-            address="ул.Милована Миловановича 3",
+            address="Belgrade, ул.Милована Миловановича 3",
         )
         address4, created = UserAddress.objects.get_or_create(
             base_profile=user2.base_profile,
-            city='Belgrade',
-            address="ул.Милована Миловановича 4",
+            address="Белград, ул.Милована Миловановича 4",
         )
 
         self.stdout.write(

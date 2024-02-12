@@ -12,10 +12,6 @@ from tm_bot.models import MessengerAccount
 
 
 class UserAddress(models.Model):
-    city = models.CharField(
-        'город',
-        max_length=20
-    )
     address = models.CharField(
         'адрес',
         max_length=100
@@ -118,7 +114,7 @@ class BaseProfile(models.Model):
         verbose_name_plural = 'клиенты'
 
     def __str__(self):
-        return f'Клиент id = {self.id}'
+        return (f'{self.name}' if self.name is not None else f'Клиент id = {self.id}')
 
 
 class CustomWEBAccountManager(BaseUserManager):

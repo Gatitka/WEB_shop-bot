@@ -96,6 +96,27 @@ class UserAddressViewSet(mixins.ListModelMixin,
         serializer.save(base_profile=self.request.user.profile)
 
 
+class ClientAddressesViewSet(mixins.ListModelMixin,
+                             viewsets.GenericViewSet):
+    serializer_class = UserAddressSerializer
+    permission_classes = [AllowAny]
+
+    def list(self, request):
+        user_id = request.GET.get('user_id')
+        if user_id:
+            qs = UserAddress.objects.filter(
+                    base_profile=user_id
+                ).values('address')
+            serializer = self.get_serializer()
+
+            return Response(serializer(qs, many=True).data,
+                            status=200)
+
+        else:
+            return Response({'error': 'User ID is required'},
+                            status=400)
+
+
 class PromoNewsViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Вьюсет модели PromoNews доступен только для чтения.
@@ -251,9 +272,16 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
             return cart
         return None
 
-    def get_serializer(self, *args, **kwargs):
-        return super().get_serializer(*args, **kwargs)
-
+    def get_serializer_class(self):
+        """
+        Определение класса сериализатора в зависимости от метода запроса.
+        """
+        if self.action == 'list':
+            return ShoppingCartReadSerializer
+        elif self.action == 'retrieve':
+            return ShoppingCartSerializer
+        else:
+            return ShoppingCartSerializer
 
     def list(self, request, *args, **kwargs):
         """
@@ -308,8 +336,6 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return redirect('api:shopping_cart-list')
-
-
 
 # class ShoppingCartViewSet(mixins.RetrieveModelMixin,
 #                           mixins.CreateModelMixin,

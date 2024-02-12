@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (ContactsDeliveryViewSet, DeleteUserViewSet, MenuViewSet,
                     PromoNewsViewSet, ShoppingCartViewSet, UserAddressViewSet,
-                    UserOrdersViewSet)
+                    UserOrdersViewSet, ClientAddressesViewSet)
 
 app_name = 'api'
 
@@ -41,6 +41,12 @@ v1_router.register(
     r'promonews',
     PromoNewsViewSet,
     basename='promonews'
+)
+
+v1_router.register(
+    'get_client_addresses/<int:user_id>',
+    ClientAddressesViewSet,
+    basename='client-addresses'
 )
 
 # v1_router.register('auth/users/me/delete', DeleteUserViewSet.as_view({'delete': 'destroy'}), basename='users')

@@ -1,10 +1,13 @@
 from decimal import Decimal
-from typing import Any, Union
+from typing import Any, Mapping, Union
 
 from django import forms
 from django.contrib import admin
+from django.core.files.base import File
 from django.db.models import Sum
+from django.db.models.base import Model
 from django.db.models.query import QuerySet
+from django.forms.utils import ErrorList
 from django.http.request import HttpRequest
 from django.utils import formats
 from django.utils.html import format_html
@@ -14,10 +17,18 @@ from users.models import BaseProfile
 from utils.utils import activ_actions
 
 from .models import CartDish, Order, OrderDish, ShoppingCart
+from users.models import UserAddress
 
 admin.site.register(OrderDish)
 admin.site.register(CartDish)
 
+
+class ShopAdminArea(admin.AdminSite):
+    site_header = 'YUME Shop Admin'
+    login_template = 'shop/admin/login.html'
+
+shop_site = ShopAdminArea(name='ShopAdmin')
+shop_site.register(Order)
 
 # @admin.register(BaseProfile)
 # class BaseProfileFieldSearchAdmin(admin.ModelAdmin):
@@ -50,13 +61,13 @@ class ShoppingCartAdmin(admin.ModelAdmin):
     """Настройки админ панели карзины.
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
     list_display = ('pk', 'complited', 'user',
-                    'formatted_created', 'discounted_amount')
-    readonly_fields = ['formatted_created', 'discounted_amount',
+                    'created', 'discounted_amount')
+    readonly_fields = ['created', 'discounted_amount',
                        'device_id', 'amount', 'discount', 'items_qty']
     list_filter = ('created', 'complited')
     raw_id_fields = ['user', ]
     inlines = (CartDishInline,)
-    fields = (('formatted_created', 'complited'),
+    fields = (('created', 'complited'),
               ('user', 'device_id'),
               ('items_qty', 'amount'),
               ('promocode', 'discount'),
@@ -65,25 +76,6 @@ class ShoppingCartAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
         return super().get_queryset(request).prefetch_related('user')
-
-
-# ------ настройки для формата даты -----
-    def formatted_created(self, obj):
-        # Форматируем дату в нужный вид
-        formatted_date = formats.date_format(obj.created, "j F Y, H:i")
-        return formatted_date
-
-    formatted_created.short_description = 'Дата добавления'
-    # Название колонки в админке
-
-    # Если нужно применить формат в деталях объекта
-    def changeform_view(self, request, object_id=None, form_url='',
-                        extra_context=None):
-        extra_context = extra_context or {}
-        extra_context['admin_date_formats'] = {
-            'formatted_created': "j F Y, H:i"
-            }
-        return super().changeform_view(request, object_id, form_url, extra_context)
 
 # ------ настройки оптимизации сохранения CartDish из inline -----
     def save_related(self, request, form, formsets, change):
@@ -145,11 +137,26 @@ class OrderDishInline(admin.TabularInline):
     # def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
     #     return super().get_queryset(request).select_related('dish').prefetch_related('dish__translations')
 
+
 class OrderAdminForm(forms.ModelForm):
+
     class Meta:
         model = Order
         fields = '__all__'
 
+    def clean_recipient_address(self):
+        delivery_value = self.cleaned_data.get('delivery')
+        recipient_address = self.cleaned_data.get('recipient_address')
+        if delivery_value == 'delivery' and not recipient_address:
+            raise forms.ValidationError("Recipient address is required for delivery.")
+        return recipient_address
+
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        if db_field.db_type == 'text':
+            kwargs['widget'] = admin.widgets.AdminTextareaWidget(
+                attrs={'rows': 3, 'cols': 40}
+            )
+        return super().formfield_for_dbfield(db_field, **kwargs)
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
@@ -169,20 +176,6 @@ class OrderAdmin(admin.ModelAdmin):
     raw_id_fields = ['user',]
     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
     list_per_page = 10
-
-
-    def get_queryset(self, request):
-        qs = super().get_queryset(request).select_related('user', 'delivery', 'user__messenger_account')
-        return qs
-
-    def get_object(self, request: HttpRequest, object_id: str, from_field: None = ...) -> Union[Any, None]:
-        queryset = super().get_queryset(request).select_related('delivery', 'promocode', 'restaurant').prefetch_related('user', 'user__messenger_account')
-        return super().get_object(request, object_id, from_field)
-
-    def formfield_for_dbfield(self, db_field, **kwargs):
-        if db_field.db_type == 'text':
-            kwargs['widget'] = admin.widgets.AdminTextareaWidget(attrs={'rows': 3, 'cols': 40})
-        return super().formfield_for_dbfield(db_field, **kwargs)
 
     fieldsets = (
         ('Данные заказа', {
@@ -220,18 +213,68 @@ class OrderAdmin(admin.ModelAdmin):
 
     form = OrderAdminForm
 
-    def get_form(self, request, obj=None, **kwargs):
-        form = super(OrderAdmin, self).get_form(request, obj, **kwargs)
+    def get_queryset(self, request):
+        qs = super().get_queryset(
+            request
+            ).select_related(
+                'user',
+                'delivery',
+                'user__messenger_account')
 
-        # Динамически устанавливаем атрибут required для recipient_address
-        if 'delivery' in form.base_fields:
-            delivery_value = request.POST.get('delivery') if request.method == 'POST' else getattr(obj, 'delivery', None)
-            if delivery_value == 'delivery':
-                form.base_fields['recipient_address'].required = True
-            else:
-                form.base_fields['recipient_address'].required = False
+        return qs
 
-        return form
+    def get_object(self, request: HttpRequest, object_id: str, from_field: None = ...) -> Union[Any, None]:
+        queryset = super().get_queryset(
+            request
+            ).select_related(
+                'delivery',
+                'promocode',
+                'restaurant'
+            ).prefetch_related(
+                'user',
+                'user__messenger_account')
+        return super().get_object(request, object_id, from_field)
+
+    # def formfield_for_dbfield(self, db_field, **kwargs):
+    #     if db_field.db_type == 'text':
+    #         kwargs['widget'] = admin.widgets.AdminTextareaWidget(
+    #             attrs={'rows': 3, 'cols': 40}
+    #         )
+
+    #     return super().formfield_for_dbfield(db_field, **kwargs)
+
+
+    # def get_form(self, request, obj=None, **kwargs):
+    #     if obj is None:  # Если создается новый объект
+    #         kwargs['form'] = self.form  # Передаем форму, но без пользовательских данных
+    #     else:  # Если редактируется существующий объект
+    #         kwargs['form'] = self.form(user=obj.user)  # Передаем форму с информацией о пользователе
+    #     form = super().get_form(request, obj, **kwargs)
+
+    #     # form = super(OrderAdmin, self).get_form(request, obj, **kwargs)
+
+    #     # Динамически устанавливаем атрибут required для recipient_address
+    #     if 'delivery' in form.base_fields:
+    #         delivery_value = (
+    #             request.POST.get('delivery')
+    #             if request.method == 'POST' else getattr(obj, 'delivery', None)
+    #         )
+    #         if delivery_value == 'delivery':
+    #             form.base_fields['recipient_address'].required = True
+    #         else:
+    #             form.base_fields['recipient_address'].required = False
+
+    #     if 'recipient_address' in form.base_fields:
+    #         user = (
+    #             request.POST.get('user')
+    #             if request.method == 'POST' else getattr(obj, 'recipient_address', None)
+    #         )
+    #         if delivery_value == 'delivery':
+    #             form.base_fields['recipient_address'].required = True
+    #         else:
+    #             form.base_fields['recipient_address'].required = False
+
+    #     return form
 
 # ------ ОТОБРАЖЕНИЕ ССЫЛКИ НА ЧАТ С КЛИЕНТОМ -----
 
