@@ -276,17 +276,17 @@ CORS_ORIGIN_ALLOW_ALL = True  # True Разрешает обрабатывать
 # will be echoed back to the client in the access-control-allow-origin header.
 
 default_cors_allowed_origins = [
-    "http://localhost",
-    "http://127.0.0.1",
+    f"{DOMAIN}://localhost",
+    f"{DOMAIN}://127.0.0.1",
 ]
 
 cors_allowed_origins = default_cors_allowed_origins.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        cors_allowed_origins.append(f"http://{TEST_SERVER}")
+        cors_allowed_origins.append(f"{DOMAIN}://{TEST_SERVER}")
     if SERVER:
-        cors_allowed_origins.append(f"http://{SERVER}")
+        cors_allowed_origins.append(f"{DOMAIN}://{SERVER}")
 print(cors_allowed_origins)
 CORS_ALLOWED_ORIGINS = cors_allowed_origins
 
@@ -306,8 +306,8 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_USE_SESSIONS = True
 
 default_csrf_trusted_origins = [
-    "http://localhost",
-    "http://127.0.0.1",
+    f"{DOMAIN}://localhost",
+    f"{DOMAIN}://127.0.0.1",
 ]
 
 csrf_trusted_origins = default_csrf_trusted_origins.copy()
@@ -315,9 +315,9 @@ csrf_trusted_origins = default_csrf_trusted_origins.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
-        csrf_trusted_origins.append(str(f"http://{TEST_SERVER}"))
+        csrf_trusted_origins.append(str(f"{DOMAIN}://{TEST_SERVER}"))
     if SERVER:
-        csrf_trusted_origins.append(str(f"http://{SERVER}"))
+        csrf_trusted_origins.append(str(f"{DOMAIN}://{SERVER}"))
 print(csrf_trusted_origins)
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
 
