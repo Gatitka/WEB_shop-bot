@@ -170,3 +170,5 @@ notes.txt
 
 media/
 static/
+
+node_modules/

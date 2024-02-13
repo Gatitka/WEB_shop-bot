@@ -292,7 +292,7 @@ class Restaurant(models.Model):
     def __str__(self):
         return self.short_name
 
-    def save(self, force_insert: bool = ..., force_update: bool = ..., using: str | None = ..., update_fields: Iterable[str] | None = ...) -> None:
+    def save(self, *args, **kwargs):
         delivery = Delivery()
         lat, lon = delivery.get_coordinates(self.address)
         self.coordinates = Point(lon, lat)

@@ -131,9 +131,11 @@ class ShoppingCart(models.Model):
         Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
         """
         self.calculate_discounted_amount()
-
-        itemsqty = self.cartdishes.aggregate(qty=Sum('quantity'))
-        self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+        if self.pk is None:  # Создание нового объекта
+            self.items_qty = 0
+        else:
+            itemsqty = self.cartdishes.aggregate(qty=Sum('quantity'))
+            self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
         super().save(*args, **kwargs)
 
 
@@ -489,8 +491,4 @@ class OrderDish(models.Model):
 @receiver(post_save, sender=BaseProfile)
 def create_cart(sender, instance, created, **kwargs):
     if created:
-        if not ShoppingCart.objects.filter(user=instance).exists():
-            cart = ShoppingCart(
-                user=instance
-            )
-        cart.save()
+        cart, created = ShoppingCart.objects.get_or_create(user=instance)

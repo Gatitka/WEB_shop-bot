@@ -235,47 +235,6 @@ class OrderAdmin(admin.ModelAdmin):
                 'user__messenger_account')
         return super().get_object(request, object_id, from_field)
 
-    # def formfield_for_dbfield(self, db_field, **kwargs):
-    #     if db_field.db_type == 'text':
-    #         kwargs['widget'] = admin.widgets.AdminTextareaWidget(
-    #             attrs={'rows': 3, 'cols': 40}
-    #         )
-
-    #     return super().formfield_for_dbfield(db_field, **kwargs)
-
-
-    # def get_form(self, request, obj=None, **kwargs):
-    #     if obj is None:  # Если создается новый объект
-    #         kwargs['form'] = self.form  # Передаем форму, но без пользовательских данных
-    #     else:  # Если редактируется существующий объект
-    #         kwargs['form'] = self.form(user=obj.user)  # Передаем форму с информацией о пользователе
-    #     form = super().get_form(request, obj, **kwargs)
-
-    #     # form = super(OrderAdmin, self).get_form(request, obj, **kwargs)
-
-    #     # Динамически устанавливаем атрибут required для recipient_address
-    #     if 'delivery' in form.base_fields:
-    #         delivery_value = (
-    #             request.POST.get('delivery')
-    #             if request.method == 'POST' else getattr(obj, 'delivery', None)
-    #         )
-    #         if delivery_value == 'delivery':
-    #             form.base_fields['recipient_address'].required = True
-    #         else:
-    #             form.base_fields['recipient_address'].required = False
-
-    #     if 'recipient_address' in form.base_fields:
-    #         user = (
-    #             request.POST.get('user')
-    #             if request.method == 'POST' else getattr(obj, 'recipient_address', None)
-    #         )
-    #         if delivery_value == 'delivery':
-    #             form.base_fields['recipient_address'].required = True
-    #         else:
-    #             form.base_fields['recipient_address'].required = False
-
-    #     return form
-
 # ------ ОТОБРАЖЕНИЕ ССЫЛКИ НА ЧАТ С КЛИЕНТОМ -----
 
     def get_msngr_link(self, instance):

@@ -14,7 +14,7 @@ class PromoNewsAdmin(TranslatableAdmin):
     """Настройки админ панели промо-новостей."""
     list_display = ['title', 'is_active', 'city', 'created', 'admin_image_ru']
     readonly_fields = ('admin_image_ru', 'created',
-                       'admin_image_en', 'admin_image_sr')
+                       'admin_image_en', 'admin_image_sr_latn')
     actions = [*activ_actions]
     search_fields = ('translations__title__icontains',
                      'translations__full_text__icontains')
@@ -37,7 +37,7 @@ class PromoNewsAdmin(TranslatableAdmin):
             'fields': (
                 ('image_ru', 'admin_image_ru'),
                 ('image_en', 'admin_image_en'),
-                ('image_sr', 'admin_image_sr'),
+                ('image_sr_latn', 'admin_image_sr_latn'),
             )
         }),
     )

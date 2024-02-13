@@ -66,10 +66,10 @@ class PromoNews(TranslatableModel):
             '<img src="{}" width="100" />'.format(missing_image_url)
             )
 
-    def admin_image_sr(self):
-        if self.image_sr:
+    def admin_image_sr_latn(self):
+        if self.image_sr_latn:
             return mark_safe(
-                '<img src="{}" width="100" />'.format(self.image_sr.url)
+                '<img src="{}" width="100" />'.format(self.image_sr_latn.url)
                 )
         missing_image_url = "icons/missing_image.jpg"
         return mark_safe(

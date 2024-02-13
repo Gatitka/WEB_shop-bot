@@ -72,12 +72,12 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
         return Response(response_data)
 
 
-class UserAddressViewSet(mixins.ListModelMixin,
-                         mixins.RetrieveModelMixin,
-                         mixins.CreateModelMixin,
-                         mixins.UpdateModelMixin,
-                         mixins.DestroyModelMixin,
-                         viewsets.GenericViewSet):
+class MyAddressViewSet(mixins.ListModelMixin,
+                       mixins.RetrieveModelMixin,
+                       mixins.CreateModelMixin,
+                       mixins.UpdateModelMixin,
+                       mixins.DestroyModelMixin,
+                       viewsets.GenericViewSet):
     """
     Вьюсет модели UserAddresses для просмотра сохраненных адресов пользователя.
     """
@@ -101,20 +101,15 @@ class ClientAddressesViewSet(mixins.ListModelMixin,
     serializer_class = UserAddressSerializer
     permission_classes = [AllowAny]
 
-    def list(self, request):
-        user_id = request.GET.get('user_id')
-        if user_id:
-            qs = UserAddress.objects.filter(
-                    base_profile=user_id
-                ).values('address')
-            serializer = self.get_serializer()
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        if user_id is None or not user_id.isdigit():
+            return Response("User ID is required")
 
-            return Response(serializer(qs, many=True).data,
-                            status=200)
-
-        else:
-            return Response({'error': 'User ID is required'},
-                            status=400)
+        queryset = UserAddress.objects.filter(
+            base_profile=int(user_id)
+        ).values('address')
+        return queryset
 
 
 class PromoNewsViewSet(viewsets.ReadOnlyModelViewSet):

@@ -180,8 +180,8 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 SERVER_EMAIL = EMAIL_HOST_USER
 EMAIL_ADMIN = EMAIL_HOST_USER
 
-PROTOCOL = "http"
-DOMAIN = "127.0.0.1:8000"
+PROTOCOL = os.getenv('PROTOCOL')
+DOMAIN = os.getenv('DOMAIN')
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
@@ -189,7 +189,7 @@ DJOSER = {
     'SEND_ACTIVATION_EMAIL': True,
     'SEND_CONFIRMATION_EMAIL': True,
     'PASSWORD_RESET_CONFIRM_URL': 'api/v1/reset_password_confirm/{uid}/{token}',
-    'ACTIVATION_URL': 'api/v1/auth/users/activation/{uid}/{token}',
+    'ACTIVATION_URL': 'activation/{uid}/{token}',
     'SERIALIZERS': {
         'current_user': 'api.serializers.MyUserSerializer',
     },

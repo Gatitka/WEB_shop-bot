@@ -3,7 +3,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (ContactsDeliveryViewSet, DeleteUserViewSet, MenuViewSet,
-                    PromoNewsViewSet, ShoppingCartViewSet, UserAddressViewSet,
+                    PromoNewsViewSet, ShoppingCartViewSet, MyAddressViewSet,
                     UserOrdersViewSet, ClientAddressesViewSet)
 
 app_name = 'api'
@@ -29,7 +29,7 @@ v1_router.register(
 
 v1_router.register(
     'me/my_addresses',
-    UserAddressViewSet,
+    MyAddressViewSet,
     basename='user_addresses'
 )
 v1_router.register(
@@ -44,7 +44,7 @@ v1_router.register(
 )
 
 v1_router.register(
-    'get_client_addresses/<int:user_id>',
+    r'get_client_addresses/(?P<user_id>\d+)',
     ClientAddressesViewSet,
     basename='client-addresses'
 )
