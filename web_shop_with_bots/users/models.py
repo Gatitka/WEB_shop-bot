@@ -7,6 +7,7 @@ from django.db import models
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from phonenumber_field.modelfields import PhoneNumberField
+from .validators import validate_first_and_last_name
 
 from tm_bot.models import MessengerAccount
 
@@ -125,6 +126,7 @@ class CustomWEBAccountManager(BaseUserManager):
             raise ValueError('The given email must be set')
         email = self.normalize_email(email)
         web_account = self.model(email=email, **extra_fields)
+        web_account.clean()
         web_account.set_password(password)
         web_account.save()
         return web_account
@@ -158,6 +160,16 @@ class WEBAccount(AbstractUser):
     Для валидации созданы сигналы перед сохранением.
     '''
     username = None
+    first_name = models.CharField(
+        'Имя',
+        max_length=150,
+        validators=[validate_first_and_last_name,]
+    )
+    last_name = models.CharField(
+        'Фамилия',
+        max_length=150,
+        validators=[validate_first_and_last_name,]
+    )
     password = models.CharField(
         'Пароль',
         max_length=100,
@@ -224,12 +236,19 @@ class WEBAccount(AbstractUser):
         return f'{self.email}'
 
     def clean(self):
-        if not self.phone:
-            raise ValidationError(
-                {'phone': "Please provide phone"})
-        if not self.first_name or self.first_name in ['me', 'я', 'ja', 'и']:
-            raise ValidationError(
-                {'first_name': "Please provide first_name"})
+        # if not self.first_name or self.first_name in ['me', 'я', 'ja', 'и']:
+        #     raise ValidationError(
+        #         {'first_name': "Please provide first_name"})
+
+        # if (not self.last_name
+        #     or self.last_name in ['me', 'i', 'я', 'ja', 'и']
+        #         or (self.last_name.isalpha() is not True)):
+
+        #     raise ValidationError(
+        #         ("Please provide the last_name. "
+        #          "Only letters are allowed.")
+        #     )
+        pass
 
     objects = CustomWEBAccountManager()
 
@@ -262,22 +281,31 @@ def create_base_profile(sender, instance, created, **kwargs):
         instance.save(update_fields=['base_profile'])
 
 
-# ------    сигналы для валидации создания web_account если нет имени или phone
-@receiver(pre_save, sender=WEBAccount)
-def create_web_account(sender, instance, **kwargs):
-    if not instance.phone:
-        raise ValidationError(
-            {'phone': "Please provide phone."})
+# # ------    сигналы для валидации создания web_account если нет имени или phone
+# @receiver(pre_save, sender=WEBAccount)
+# def create_web_account(sender, instance, **kwargs):
+#     if not instance.phone:
+#         raise ValidationError(
+#             {'phone': "Please provide phone."})
 
-    if (not instance.first_name
-        or instance.first_name in ['me', 'i', 'я', 'ja', 'и']
-            or (instance.first_name.isalpha() is not True)):
+#     if (not instance.first_name
+#         or instance.first_name in ['me', 'i', 'я', 'ja', 'и']
+#             or (instance.first_name.isalpha() is not True)):
 
-        raise ValidationError(
-            {'first_name': ("Please provide first_name. "
-                            "Only letters are allowed.")})
+#         raise ValidationError(
+#             {'first_name': ("Please provide first_name. "
+#                             "Only letters are allowed.")})
+
+#     if (not instance.last_name
+#         or instance.last_name in ['me', 'i', 'я', 'ja', 'и']
+#             or (instance.last_name.isalpha() is not True)):
+
+#         raise ValidationError(
+#             ("Please provide the last_name. "
+#              "Only letters are allowed.")
+#         )
 
 
 
-    email_validator = EmailValidator(message='Enter a valid email address.')
-    email_validator(instance.email)
+#     email_validator = EmailValidator(message='Enter a valid email address.')
+#     email_validator(instance.email)
