@@ -122,16 +122,14 @@ class CustomWEBAccountManager(BaseUserManager):
 
     def _create_user(self, email, password=None, **extra_fields):
         """Create and save a User with the given email and password."""
-        if not email:
-            raise ValueError('The given email must be set')
         email = self.normalize_email(email)
         web_account = self.model(email=email, **extra_fields)
-        web_account.clean()
+        web_account.full_clean()
         web_account.set_password(password)
         web_account.save()
         return web_account
 
-    def create_user(self, email, password=None, **extra_fields):
+    def create(self, email, password=None, **extra_fields):
         extra_fields.setdefault('is_active', False)
         return self._create_user(email, password, **extra_fields)
 
@@ -163,7 +161,7 @@ class WEBAccount(AbstractUser):
     first_name = models.CharField(
         'Имя',
         max_length=150,
-        validators=[validate_first_and_last_name,]
+        validators=[validate_first_and_last_name,],
     )
     last_name = models.CharField(
         'Фамилия',
@@ -173,7 +171,8 @@ class WEBAccount(AbstractUser):
     password = models.CharField(
         'Пароль',
         max_length=100,
-        validators=[MinLengthValidator(8)]
+        validators=[MinLengthValidator(8)],
+        null=True, blank=True
     )
     email = models.EmailField(
         'Email',
@@ -184,12 +183,11 @@ class WEBAccount(AbstractUser):
         'Язык сайта',
         max_length=10,
         choices=settings.LANGUAGES,
-        default="RUS"
+        default="sr-latn"
     )
     phone = PhoneNumberField(
-        verbose_name='телефон',
+        verbose_name='Телефон',
         unique=True,
-        null=True
     )
     notes = models.CharField(
         'Пометки',
@@ -221,7 +219,6 @@ class WEBAccount(AbstractUser):
         default=False,
         help_text='Был ли аккаунт удален.'
     )
-
     class Meta:
         ordering = ['-date_joined']
         verbose_name = 'Аккаунт сайта'
@@ -230,31 +227,28 @@ class WEBAccount(AbstractUser):
     # def is_admin(self):
     #     return self.role == UserRoles.ADMIN or self.is_superuser
 
-    # создать метод очистки сохряняемых данных
-
     def __str__(self):
         return f'{self.email}'
 
     def clean(self):
-        # if not self.first_name or self.first_name in ['me', 'я', 'ja', 'и']:
-        #     raise ValidationError(
-        #         {'first_name': "Please provide first_name"})
+        super().clean()
+        if not self.first_name:
+            raise ValidationError({'first_name': 'Имя не может быть пустым'})
+        if not self.last_name:
+            raise ValidationError({'last_name': 'Фамилия не может быть пустой'})
+        if not self.email:
+            raise ValidationError({'email': 'email не может быть пустым'})
+        if not self.phone:
+            raise ValidationError({'phone': 'Телефон не может быть пустым'})
 
-        # if (not self.last_name
-        #     or self.last_name in ['me', 'i', 'я', 'ja', 'и']
-        #         or (self.last_name.isalpha() is not True)):
-
-        #     raise ValidationError(
-        #         ("Please provide the last_name. "
-        #          "Only letters are allowed.")
-        #     )
-        pass
+    def save(self, *args, **kwargs):
+        self.clean()  # Вызов метода clean перед сохранением
+        super().save(*args, **kwargs)
 
     objects = CustomWEBAccountManager()
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name', 'phone']
-
 
 
 # ------    сигналы для создания base_profile при создании web account
@@ -279,33 +273,3 @@ def create_base_profile(sender, instance, created, **kwargs):
         base_profile.save()
         instance.base_profile = base_profile
         instance.save(update_fields=['base_profile'])
-
-
-# # ------    сигналы для валидации создания web_account если нет имени или phone
-# @receiver(pre_save, sender=WEBAccount)
-# def create_web_account(sender, instance, **kwargs):
-#     if not instance.phone:
-#         raise ValidationError(
-#             {'phone': "Please provide phone."})
-
-#     if (not instance.first_name
-#         or instance.first_name in ['me', 'i', 'я', 'ja', 'и']
-#             or (instance.first_name.isalpha() is not True)):
-
-#         raise ValidationError(
-#             {'first_name': ("Please provide first_name. "
-#                             "Only letters are allowed.")})
-
-#     if (not instance.last_name
-#         or instance.last_name in ['me', 'i', 'я', 'ja', 'и']
-#             or (instance.last_name.isalpha() is not True)):
-
-#         raise ValidationError(
-#             ("Please provide the last_name. "
-#              "Only letters are allowed.")
-#         )
-
-
-
-#     email_validator = EmailValidator(message='Enter a valid email address.')
-#     email_validator(instance.email)

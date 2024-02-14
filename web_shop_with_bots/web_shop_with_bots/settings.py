@@ -143,13 +143,13 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
 
-    'DATE_FORMAT': "%d-%m-%Y",
+    'DATE_FORMAT': "%d.%m.%Y",
 
     'DATE_INPUT_FORMATS': [
         "%d.%m.%Y",
     ],
 
-    'DATETIME_FORMAT': 'd.m.Y H:i',
+    'DATETIME_FORMAT': '%d.%m.%Y %H:%M',
 
     'DATETIME_INPUT_FORMATS': [
         '%d.%m.%Y %H:%i',

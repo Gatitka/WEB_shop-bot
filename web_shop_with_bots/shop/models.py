@@ -166,7 +166,7 @@ class CartDish(models.Model):
     amount = models.DecimalField(
         default=0.00,
         blank=True,
-        max_digits=6, decimal_places=2
+        max_digits=7, decimal_places=2
     )
 
     class Meta:
@@ -231,7 +231,8 @@ class Order(models.Model):
         blank=True, null=True
     )
     created = models.DateTimeField(
-        'Дата добавления', auto_now_add=True
+        'Дата добавления',
+        auto_now_add=True
     )
     dishes = models.ManyToManyField(
         Dish,
@@ -261,7 +262,7 @@ class Order(models.Model):
     delivery_cost = models.DecimalField(
         verbose_name='стоимость доставки',
         default=0.00,
-        max_digits=6, decimal_places=2,
+        max_digits=7, decimal_places=2,
         blank=True, null=True,
     )
     # payment
@@ -310,7 +311,7 @@ class Order(models.Model):
     amount = models.DecimalField(
         default=0.00,
         blank=True,
-        max_digits=6, decimal_places=2,
+        max_digits=8, decimal_places=2,
         verbose_name='сумма заказа до скидки, DIN',
     )
     promocode = models.ForeignKey(
@@ -323,19 +324,19 @@ class Order(models.Model):
         verbose_name='Скидка, DIN',
         default=0.00,
         null=True,
-        max_digits=6, decimal_places=2
+        max_digits=8, decimal_places=2
     )
     discounted_amount = models.DecimalField(
         verbose_name='Сумма заказа после скидок, DIN',
         default=0.00,
         blank=True,
-        max_digits=6, decimal_places=2
+        max_digits=8, decimal_places=2
     )
     final_amount_with_shipping = models.DecimalField(
         verbose_name='Сумма заказа с учетом скидок и доставки, DIN',
         default=0.00,
         blank=True,
-        max_digits=6, decimal_places=2
+        max_digits=8, decimal_places=2
     )
 
     items_qty = models.PositiveSmallIntegerField(
@@ -373,13 +374,13 @@ class Order(models.Model):
         """
         Рассчитывает final_amount с учетом скидки от промокода.
         """
-        if self.delivery_id == 1:
+        if self.delivery.type == 'delivery':
             self.delivery_cost = self.delivery.get_delivery_cost(
                 self.city,
                 self.discounted_amount,
                 self.recipient_address
             )
-        if self.delivery_id == 2:
+        elif self.delivery_id == 'takeaway':
             if self.delivery.discount:
                 takeaway_discount = (
                     Decimal(self.discounted_amount)
@@ -390,6 +391,7 @@ class Order(models.Model):
                 )
             else:
                 self.delivery_cost = Decimal(0)
+        print(self.discounted_amount, self.delivery_cost)
         self.final_amount_with_shipping = (
             Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
         )
@@ -409,11 +411,14 @@ class Order(models.Model):
         Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
         """
         self.full_clean()
-
-        self.calculate_discontinued_amount()
-        self.calculate_final_amount_with_shipping()
-        itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
-        self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+        if self.pk is None:  # Если объект новый
+            self.items_qty = 0
+        else:
+            # Если объект уже существует, выполнить рассчеты и другие действия
+            self.calculate_discontinued_amount()
+            self.calculate_final_amount_with_shipping()
+            itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
+            self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
         super().save(*args, **kwargs)
 
 
@@ -443,7 +448,7 @@ class OrderDish(models.Model):
     amount = models.DecimalField(
         default=0.00,
         blank=True,
-        max_digits=6, decimal_places=2
+        max_digits=7, decimal_places=2
     )
 
     class Meta:

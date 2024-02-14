@@ -289,19 +289,58 @@ class MyUserSerializer(serializers.ModelSerializer):
 
 
 # --------       история заказов   ---------
+class DishShortSerializer(TranslatableModelSerializer):
+    """
+    Сериализатор для минимального отображения инфо о Dish:
+    картинка, описание - название и описание
+    Возможно только чтение.
+    """
+    translations = TranslatedFieldsField(shared_model=Dish,
+                                         read_only=True)
+
+    class Meta:
+        fields = ('translations', 'image')
+        model = Dish
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        translations = instance.translations.all()
+        translations_short_name = {}
+        for translation in translations:
+            if translation.short_name:
+                translations_short_name[f'{translation.language_code}'] = translation.short_name
+        rep['translations'] = translations_short_name
+        return rep
+
+
+class OrderDishesShortSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для Order_dishes.
+    Возможно только чтение.
+    """
+    dish = DishShortSerializer()
+
+    class Meta:
+        fields = ('dish', 'quantity', 'amount')
+        model = OrderDish
+
 
 class UserOrdersSerializer(serializers.ModelSerializer):
     """
-    Базовый сериализатор для сериализатора Orders.
-    Возможно только чтение создание.
+    Базовый сериализатор для Orders.
+    Возможно только чтение.
     """
-    dishes = SerializerMethodField()
+    order_dishes = OrderDishesShortSerializer(many=True)
+    status = serializers.CharField(source='get_status_display')
 
     class Meta:
-        fields = ('id', 'created', 'status', 'dishes', 'amount')
+        fields = ('id', 'created', 'status',
+                  'order_dishes', 'final_amount_with_shipping')
         model = Order
+        read_only_fields = ('id', 'created', 'status',
+                            'order_dishes', 'final_amount_with_shipping')
 
-    def get_dishes(self, order: Order) -> QuerySet[dict]:
+    def get_orer_dishes(self, order: Order) -> QuerySet[dict]:
         """Получает список блюд заказа.
 
         Args:
@@ -310,11 +349,10 @@ class UserOrdersSerializer(serializers.ModelSerializer):
         Returns:
             QuerySet[dict]: Список блюд в заказе.
         """
-        return order.dishes.values(
+        return order.order_dishes.values(
             'id',
-            'short_name_rus',
-            quantity=F('orders__quantity'),
-            amount=F('orders__amount'),
+            'translations',
+            'amount'
         )
 
 
@@ -487,20 +525,28 @@ class DishCartDishSerializer(serializers.ModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
-    translations = TranslatedFieldsField(shared_model=Dish)
+    translations = TranslatedFieldsField(shared_model=Dish,
+                                         read_only=True)
 
     class Meta:
-        fields = ('id',
-                  'translations',
+        fields = ('id', 'translations',
                   'image')
         model = Dish
-        read_only_fields = ('id',
-                            'translations',
-                            'image'
-        )
+        read_only_fields = ('id', 'translations',
+                            'image')
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        translations = instance.translations.all()
+        translations_short_name = {}
+        for translation in translations:
+            if translation.short_name:
+                translations_short_name[f'{translation.language_code}'] = translation.short_name
+        rep['translations'] = translations_short_name
+        return rep
 
 
-class CartDishSerializer(serializers.ModelSerializer):
+class CartDishReadSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели CartDish.
     Все поля обязательны.
@@ -513,156 +559,157 @@ class CartDishSerializer(serializers.ModelSerializer):
         model = CartDish
 
 
-class ShoppingCartSerializer(serializers.ModelSerializer):
-    """
-    Базовый сериализатор для модели ShoppingCart.
-    Все поля обязательны.
-    """
-    cartdishes = CartDishSerializer(many=True)
-    promocode = serializers.CharField(required=False)
-    action = serializers.CharField(required=False)
-    cartdish_to_edit = CartDishSerializer(required=False)
+# class ShoppingCartSerializer(serializers.ModelSerializer):
+#     """
+#     Базовый сериализатор для модели ShoppingCart.
+#     Все поля обязательны.
+#     """
+#     cartdishes = CartDishSerializer(many=True)
+#     promocode = serializers.CharField(required=False)
+#     action = serializers.CharField(required=False)
+#     cartdish_to_edit = CartDishSerializer(required=False)
 
-    class Meta:
-        fields = ('id', 'cartdishes', 'items_qty',
-                  'amount', 'promocode',
-                  'discounted_amount',
-                  'action',
-                  'cartdish_to_edit')
-        model = ShoppingCart
+#     class Meta:
+#         fields = ('id', 'cartdishes', 'items_qty',
+#                   'amount', 'promocode',
+#                   'discounted_amount',
+#                   'action',
+#                   'cartdish_to_edit')
+#         model = ShoppingCart
 
-    def to_internal_value(self, data):
-        if 'promocode' in data:
-            if data['promocode'] is None:
-                return {'promocode': None}
+#     def to_internal_value(self, data):
+#         if 'promocode' in data:
+#             if data['promocode'] is None:
+#                 return {'promocode': None}
 
-        #return super().to_internal_value(data)
+#         #return super().to_internal_value(data)
 
-    def validate_promocode(self, value):
-        if value and not re.match("^[a-zA-Z0-9]{1,6}$", value):
-            raise serializers.ValidationError(
-                "Промокод должен содержать не более 6 символов и состоять из букв и цифр."
-            )
-        try:
-            promocode = Promocode.objects.get(promocode=value)
-        except Promocode.DoesNotExist:
-            raise serializers.ValidationError("Введен неверный промокод.")
-        return value
+#     def validate_promocode(self, value):
+#         if value and not re.match("^[a-zA-Z0-9]{1,6}$", value):
+#             raise serializers.ValidationError(
+#                 "Промокод должен содержать не более 6 символов и состоять из букв и цифр."
+#             )
+#         try:
+#             promocode = Promocode.objects.get(promocode=value)
+#         except Promocode.DoesNotExist:
+#             raise serializers.ValidationError("Введен неверный промокод.")
+#         return value
 
-    def validate_action(self, value):
-        action = value.split()
-        if action[0] not in ['plus', 'minus', 'del', 'edit']:
-            raise serializers.ValidationError(
-                "Выбрано неверное действие."
-            )
+#     def validate_action(self, value):
+#         action = value.split()
+#         if action[0] not in ['plus', 'minus', 'del', 'edit']:
+#             raise serializers.ValidationError(
+#                 "Выбрано неверное действие."
+#             )
 
-        if action[1]:
-            try:
-                number = int(value)
-            except ValueError:
-                raise ValueError("Значение должно быть числом.")
+#         if action[1]:
+#             try:
+#                 number = int(value)
+#             except ValueError:
+#                 raise ValueError("Значение должно быть числом.")
 
-            if not (0 <= number <= 20):
-                raise ValueError("Значение должно быть числом и не превышать 20.")
+#             if not (0 <= number <= 20):
+#                 raise ValueError("Значение должно быть числом и не превышать 20.")
 
-        return value
+#         return value
 
-    def validate(self, data: dict) -> dict:
+#     def validate(self, data: dict) -> dict:
 
-        return data
+#         return data
 
-    def update(self, instance: User, validated_data: dict) -> User:
-        """
-        Метод для редакции данных пользователя.
-        Args:
-            instance (User): изменяемый рецепт
-            validated_data (dict): проверенные данные из запроса.
-        Returns:
-            User: созданный рецепт.
-        """
-        if 'promocode' in validated_data:
-            promocode = validated_data['promocode']
-            if promocode:
-                promocode = Promocode.objects.get(
-                        promocode=validated_data['promocode']
-                    )
-            else:
-                promocode = promocode   # None
+#     def update(self, instance: User, validated_data: dict) -> User:
+#         """
+#         Метод для редакции данных пользователя.
+#         Args:
+#             instance (User): изменяемый рецепт
+#             validated_data (dict): проверенные данные из запроса.
+#         Returns:
+#             User: созданный рецепт.
+#         """
+#         if 'promocode' in validated_data:
+#             promocode = validated_data['promocode']
+#             if promocode:
+#                 promocode = Promocode.objects.get(
+#                         promocode=validated_data['promocode']
+#                     )
+#             else:
+#                 promocode = promocode   # None
 
-            instance.promocode = promocode
-            instance.save()
+#             instance.promocode = promocode
+#             instance.save()
 
-        if 'action' in validated_data and 'cartdishes' in validated_data:
-            action = validated_data.pop['action']
-            cartdishes = validated_data.pop['cartdishes']
-            action_details = action.split()
+#         if 'action' in validated_data and 'cartdishes' in validated_data:
+#             action = validated_data.pop['action']
+#             cartdishes = validated_data.pop['cartdishes']
+#             action_details = action.split()
 
-            if action_details[0] == 'del':
-                cartdish = instance.cartdishes.get(id=cartdishes)
-                cartdish.delete()
+#             if action_details[0] == 'del':
+#                 cartdish = instance.cartdishes.get(id=cartdishes)
+#                 cartdish.delete()
 
-            elif action_details[0] == 'plus':
-                cartdish = instance.cartdishes.get(id=cartdishes)
-                cartdish.quantity += 1
-                cartdish.save()
+#             elif action_details[0] == 'plus':
+#                 cartdish = instance.cartdishes.get(id=cartdishes)
+#                 cartdish.quantity += 1
+#                 cartdish.save()
 
-            elif action_details[0] == 'minus':
-                cartdish = instance.cartdishes.get(id=cartdishes)
-                try:
-                    cartdish.quantity -= 1
-                except ValueError as e:
-                    cartdish.delete()
+#             elif action_details[0] == 'minus':
+#                 cartdish = instance.cartdishes.get(id=cartdishes)
+#                 try:
+#                     cartdish.quantity -= 1
+#                 except ValueError as e:
+#                     cartdish.delete()
 
-            elif action_details[0] == 'edit':
-                cartdish = instance.cartdishes.get(id=cartdishes)
-                if action_details > 0:
-                    cartdish.quantity = action_details[1]
-                    cartdish.save()
-                else:
-                    cartdish.delete()
-
-
+#             elif action_details[0] == 'edit':
+#                 cartdish = instance.cartdishes.get(id=cartdishes)
+#                 if action_details > 0:
+#                     cartdish.quantity = action_details[1]
+#                     cartdish.save()
+#                 else:
+#                     cartdish.delete()
 
 
 
-            cartdish.save()
 
 
-        return instance
-        #return super().update(instance, validated_data)
+#             cartdish.save()
 
+
+#         return instance
+#         #return super().update(instance, validated_data)
+
+
+# class ShoppingCartReadSerializer(serializers.ModelSerializer):
+#     """
+#     Сериализатор для чтения модели ShoppingCart.
+#     """
+#     cartdishes = CartDishSerializer(many=True)
+#     promocode = serializers.CharField(source='promocode.promocode',
+#                                       required=False)
+
+#     class Meta:
+#         fields = ('id', 'cartdishes', 'items_qty',
+#                   'amount', 'promocode',
+#                   'discounted_amount')
+#         model = ShoppingCart
+#         read_only_fields = ('id', 'cartdishes', 'num_of_items',
+#                             'amount', 'promocode',
+#                             'discounted_amount')
 
 class ShoppingCartReadSerializer(serializers.ModelSerializer):
     """
     Сериализатор для чтения модели ShoppingCart.
     """
-    cartdishes = CartDishSerializer(many=True)
-    promocode = serializers.CharField(source='promocode.promocode', required=False)
+    promocode = serializers.CharField(source='promocode.promocode',
+                                      required=False)
+
     class Meta:
-        fields = ('id', 'cartdishes', 'items_qty',
+        fields = ('id', 'items_qty',
                   'amount', 'promocode',
                   'discounted_amount')
         model = ShoppingCart
-        read_only_fields = ('id', 'cartdishes', 'num_of_items',
+        read_only_fields = ('id', 'num_of_items',
                             'amount', 'promocode',
                             'discounted_amount')
-
-    # def get_cart_dishes(self, obj: ShoppingCart) -> dict:
-    #     """ Получает список блюд в корзине  автора,
-
-    #     #    на которого оформлена подписка
-    #     # и возвращает кол-во, переданное в параметр запроса recipes_limit,
-    #     # переданного в URL.
-    #     # Args:
-    #     #     user (User): Автор на которого подписан пользователь.
-    #     # Returns:
-    #     #     QuerySet: список рецептов автора из подписки.
-    #     """
-    #     serializer = CartDishSerializer(
-    #         obj.cartdishes.all(),
-    #         many=True
-    #     )
-    #     return serializer.data
 
 
 

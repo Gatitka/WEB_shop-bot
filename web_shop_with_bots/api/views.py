@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils.translation import get_language_from_request
-
+from django.db.models import Prefetch
 from catalog.models import Dish
 from delivery_contacts.models import Delivery, Restaurant
 from promos.models import PromoNews
@@ -21,9 +21,9 @@ from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
 
 from .filters import CategoryFilter
-from.serializers import (CartDishSerializer, DeliverySerializer,
+from.serializers import (CartDishReadSerializer, DeliverySerializer,
                           DishMenuSerializer, PromoNewsSerializer,
-                          ShoppingCartSerializer,
+                          # ShoppingCartSerializer,
                           ShoppingCartReadSerializer,
                           RestaurantSerializer,
                           UserAddressSerializer,
@@ -132,7 +132,17 @@ class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         return Order.objects.filter(
             user=self.request.user.profile
-        ).all()[:5]
+        ).all().prefetch_related(
+            Prefetch('order_dishes',
+                queryset=OrderDish.objects.all().select_related(
+                    'dish'
+                ).only(
+                    'dish__image'
+                ).prefetch_related(
+                    'dish__translations'
+                )
+            )
+        )[:3]
 
 
 class MenuViewSet(mixins.ListModelMixin,
@@ -160,11 +170,10 @@ class MenuViewSet(mixins.ListModelMixin,
         'weight_volume_uom',
         ).prefetch_related(
         'translations',
-        'category',
         'category__translations',
         'units_in_set_uom__translations',
         'weight_volume_uom__translations',
-    ).exclude(category__slug='extra').distinct()
+    ).distinct()
 
     http_method_names = ['get', 'post']
 
@@ -253,18 +262,41 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
                           ):
 
     """
-    Вьюсет модели ShoppingCart.
+    Вьюсет для просмотра и редакции товаров в корзине.
+    Основная модель CartDish.
     """
-    queryset = ShoppingCart.objects.all()
+    queryset = CartDish.objects.all()
     permission_classes = [AllowAny,]
 
     def get_queryset(self):
         current_user = self.request.user
         if current_user.is_authenticated:
-            cart, created = ShoppingCart.objects.get_or_create(
+            cart = ShoppingCart.objects.filter(
                 user=current_user.base_profile
+                ).select_related(
+                    'promocode'
+                ).prefetch_related(
+
+                    Prefetch('cartdishes',
+                             queryset=CartDish.objects.all(
+                             ).select_related(
+                                'dish'
+                             ).only(
+                                'dish__image'
+                             ).prefetch_related(
+                                'dish__translations'
+                             )
+                             )
+
+                )[0]
+
+            if cart is None:
+                cart = ShoppingCart.objects.create(
+                    user=current_user.base_profile
                 )
+
             return cart
+
         return None
 
     def get_serializer_class(self):
@@ -280,12 +312,18 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
 
     def list(self, request, *args, **kwargs):
         """
-        Просмотр всех товаров(CartItems) в корзине.
+        Просмотр всех товаров CartItems в корзине.
         """
-        qs = self.get_queryset()
-        if qs:
-            serializer = ShoppingCartReadSerializer(qs)
-            return Response(serializer.data)
+        cart = self.get_queryset()
+        if cart:
+            cartdishes = cart.cartdishes.all()
+            cartdishes_serializer = CartDishReadSerializer(cartdishes, many=True)
+
+            cart_serializer = ShoppingCartReadSerializer(cart)
+            responce = {}
+            responce['cartdishes'] = cartdishes_serializer.data
+            responce['cart'] = cart_serializer.data
+            return Response(responce)
         else:
             # Если пользователь не авторизован, возвращаем 204 No Content
             return Response(status=status.HTTP_204_NO_CONTENT)

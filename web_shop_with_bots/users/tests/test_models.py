@@ -11,17 +11,20 @@ from users.models import BaseProfile, WEBAccount
 
 class WEBAccountModelTest(TestCase):
 
-    def setUp(self):
-        self.web_account = WEBAccount.objects.create(
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.web_account = WEBAccount.objects.create(
             first_name='Серж',
+            last_name='Вахин',
             email='test@test.ru',
-            password='test@test.rutest@test.ru',
-            phone="+3821452636987",
+            password='testpassword',  # Передайте значение пароля здесь
+            phone="+381612714798",
         )
 
     def test_instance(self):
         self.assertEqual(self.web_account.email, 'test@test.ru')
-        self.assertEqual(self.web_account.id, 1)
+        self.assertEqual(self.web_account.pk, 1)
 
     def test_added_date_automatically(self):
         """ Test that the date is automatically saved on creation"""
@@ -33,7 +36,7 @@ class WEBAccountModelTest(TestCase):
         self.assertFalse(self.web_account.is_active)
 
     def test_str(self):
-        """ Test the __str__ method"""
+        """ Test the __str__ method of web_account"""
         expected = 'test@test.ru'
         actual = str(self.web_account)
 
@@ -44,13 +47,15 @@ class WEBAccountModelTest(TestCase):
         Проверяем верификацию при создании пользователя на
         уникальность email.
         """
-        with self.assertRaises(IntegrityError):
-            web_account = WEBAccount.objects.create(
-                first_name='Серж',
+        with self.assertRaises(Exception) as raised:
+            web_account1 = WEBAccount.objects.create(
+                first_name='Сер',
+                last_name='Вахи',
                 email='test@test.ru',
                 password='test@test.rutest@test.ru',
-                phone="+3821452636986",
+                phone="+381612714797",
             )
+        self.assertEqual(ValidationError, type(raised.exception))
 
     def test_unique_phone_is_enforced(self):
         """
@@ -58,44 +63,50 @@ class WEBAccountModelTest(TestCase):
         уникальность номера телефона.
         """
         with self.assertRaises(Exception) as raised:
-            web_account = WEBAccount.objects.create(
-                first_name='Серж',
-                email='test1@test1.ru',
+            web_account1 = WEBAccount.objects.create(
+                first_name='Сер',
+                last_name='Вахи',
+                email='test1@test.ru',
                 password='test@test.rutest@test.ru',
-                phone="+3821452636987",
+                phone="+381612714798",
             )
-        print(type(raised.exception))
-        self.assertEqual(IntegrityError, type(raised.exception))
+        self.assertEqual(ValidationError, type(raised.exception))
 
     def test_phone_validation_is_enforced(self):
         """
         Проверяем верификацию создания web_account - телефон.
         """
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(Exception) as raised:
             web_account1 = WEBAccount.objects.create(
-                first_name='Серж',
-                email='test1@test1.ru',
-                password='test@test.rutest@test.ru',
-            )
+                    first_name='Серж',
+                    last_name='Вахин',
+                    email='test7@test.ru',
+                    password='test@test.rutest@test.ru',
+                )
+        self.assertEqual(ValidationError, type(raised.exception))
 
     def test_first_name_validation_is_enforced(self):
         """
         Проверяем верификацию создания web_account - имя.
         """
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(Exception) as raised:
             web_account1 = WEBAccount.objects.create(
-                email='test1@test1.ru',
+                last_name='Вахин',
+                email='te8st@test.ru',
                 password='test@test.rutest@test.ru',
-                phone="+3821452636986",
+                phone="+381612714797"
             )
+        self.assertEqual(ValidationError, type(raised.exception))
 
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(Exception) as raised:
             web_account3 = WEBAccount.objects.create(
                 first_name='ja',
-                email='test1@test1.ru',
+                last_name='Вахин',
+                email='test@te8st.ru',
                 password='test@test.rutest@test.ru',
-                phone="+3821452636985",
+                phone="+381612714797"
             )
+        self.assertEqual(ValidationError, type(raised.exception))
 
     def test_base_account_created_on_web_account(self):
         """
@@ -110,15 +121,22 @@ class WEBAccountModelTest(TestCase):
             web_account=self.web_account)
         self.assertEqual(base_profile.id, 1)
         self.assertEqual(base_profile.web_account_id, 1)
-
         self.assertEqual(self.web_account.base_profile_id, 1)
 
     def test_web_account_protected_if_related(self):
         """
         Проверка запрета на удаление объекта при привязке к web_account base_profile.
         """
-        with self.assertRaises(ProtectedError):
-            self.web_account.delete()
+        with self.assertRaises(Exception) as raised:
+            web_account = WEBAccount.objects.create(
+                first_name='Серж',
+                last_name='Вахин',
+                email='tes@est.ru',
+                password='testpassword',  # Передайте значение пароля здесь
+                phone="+381612714797",
+            )
+            web_account.delete()
+        self.assertEqual(ProtectedError, type(raised.exception))
 
     def test_web_account_no_protected_if_unrelated(self):
         """
