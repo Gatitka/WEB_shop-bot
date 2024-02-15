@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Collection
 
 from django.conf import settings  # для импорта валюты
 from django.contrib.auth import get_user_model
@@ -138,6 +139,14 @@ class ShoppingCart(models.Model):
             self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
         super().save(*args, **kwargs)
 
+    def empty_cart(self, *args, **kwargs):
+        self.dishes.clear()  # Очищаем связанные товары
+        self.amount = 0.00
+        self.promocode = None
+        self.discount = 0.00
+        self.discounted_amount = 0.00
+        self.items_qty = 0
+        self.save()
 
 class CartDish(models.Model):
     """ Модель для сопоставления связи корзины и блюд."""

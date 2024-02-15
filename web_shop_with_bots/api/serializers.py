@@ -304,12 +304,12 @@ class DishShortSerializer(TranslatableModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        translations = instance.translations.all()
-        translations_short_name = {}
-        for translation in translations:
-            if translation.short_name:
-                translations_short_name[f'{translation.language_code}'] = translation.short_name
-        rep['translations'] = translations_short_name
+        translations = rep['translations']
+        for lang, translation in translations["translations"].items():
+            if "msngr_short_name" in translation:
+                del translation["msngr_short_name"]
+            if "msngr_text" in translation:
+                del translation["msngr_text"]
         return rep
 
 
@@ -451,6 +451,16 @@ class DishMenuSerializer(TranslatableModelSerializer):
             if cart_items:
                 return dish in cart_items
         return None
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        translations = rep['translations']
+        for lang, translation in translations.items():
+            if "msngr_short_name" in translation:
+                del translation["msngr_short_name"]
+            if "msngr_text" in translation:
+                del translation["msngr_text"]
+        return rep
 
 # ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
 
@@ -700,16 +710,19 @@ class ShoppingCartReadSerializer(serializers.ModelSerializer):
     Сериализатор для чтения модели ShoppingCart.
     """
     promocode = serializers.CharField(source='promocode.promocode',
-                                      required=False)
+                                      allow_null=True)
+    cartdishes = CartDishReadSerializer(many=True)
 
     class Meta:
         fields = ('id', 'items_qty',
                   'amount', 'promocode',
-                  'discounted_amount')
+                  'discounted_amount',
+                  'cartdishes')
         model = ShoppingCart
         read_only_fields = ('id', 'num_of_items',
                             'amount', 'promocode',
-                            'discounted_amount')
+                            'discounted_amount',
+                            'cartdishes')
 
 
 

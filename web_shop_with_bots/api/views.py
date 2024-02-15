@@ -19,6 +19,7 @@ from delivery_contacts.models import Delivery, Restaurant
 from promos.models import PromoNews
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
+from django.urls import reverse
 
 from .filters import CategoryFilter
 from.serializers import (CartDishReadSerializer, DeliverySerializer,
@@ -184,22 +185,21 @@ class MenuViewSet(mixins.ListModelMixin,
                 'dishes': None,
                 'cart': None,
             }
-
-        languages = get_language_from_request(request)
         context = {'request': request}
 
         if user.is_authenticated:
-            shopping_cart = ShoppingCart.objects.get(user=user.base_profile)
+            base_profile = BaseProfile.objects.select_related('shopping_cart').get(web_account=request.user)
+
 
             context['extra_kwargs'] = {'cart_items':
-                                       shopping_cart.dishes.all()}
+                                       base_profile.shopping_cart.dishes.all()}
 
             dish_serializer = self.get_serializer(self.get_queryset(),
                                                   many=True,
                                                   context=context,
                                                   )
 
-            items_qty = shopping_cart.items_qty
+            items_qty = base_profile.shopping_cart.items_qty
             response_data['cart'] = {'items_qty': items_qty}
         else:
             dish_serializer = self.get_serializer(self.get_queryset(),
@@ -255,7 +255,7 @@ class MenuViewSet(mixins.ListModelMixin,
             return redirect('api:menu-list')
 
 
-class ShoppingCartViewSet(# mixins.UpdateModelMixin,
+class ShoppingCartViewSet(mixins.UpdateModelMixin,
                           mixins.DestroyModelMixin,
                           mixins.ListModelMixin,
                           viewsets.GenericViewSet,
@@ -281,14 +281,12 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
                              queryset=CartDish.objects.all(
                              ).select_related(
                                 'dish'
-                             ).only(
-                                'dish__image'
                              ).prefetch_related(
                                 'dish__translations'
                              )
                              )
-
-                )[0]
+                ).first()
+            # попробовать свернуть получение вместе с base_profile
 
             if cart is None:
                 cart = ShoppingCart.objects.create(
@@ -299,6 +297,13 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
 
         return None
 
+    def get_object(self):
+        cart = self.get_queryset()
+        cartdishes = cart.cartdishes.all()
+        cartdish_id = self.kwargs.get('pk')
+
+        return get_object_or_404(cartdishes, pk=cartdish_id)
+
     def get_serializer_class(self):
         """
         Определение класса сериализатора в зависимости от метода запроса.
@@ -306,9 +311,9 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
         if self.action == 'list':
             return ShoppingCartReadSerializer
         elif self.action == 'retrieve':
-            return ShoppingCartSerializer
-        else:
-            return ShoppingCartSerializer
+            return CartDishReadSerializer
+        elif self.action == 'update':
+            return CartDishReadSerializer
 
     def list(self, request, *args, **kwargs):
         """
@@ -316,43 +321,41 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
         """
         cart = self.get_queryset()
         if cart:
-            cartdishes = cart.cartdishes.all()
-            cartdishes_serializer = CartDishReadSerializer(cartdishes, many=True)
-
             cart_serializer = ShoppingCartReadSerializer(cart)
-            responce = {}
-            responce['cartdishes'] = cartdishes_serializer.data
-            responce['cart'] = cart_serializer.data
-            return Response(responce)
+            return Response(cart_serializer.data)
         else:
             # Если пользователь не авторизован, возвращаем 204 No Content
             return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def destroy(self, request, *args, **kwargs):
+    @action(detail=False,
+            methods=['get'])
+    def clean_cart(self, request, *args, **kwargs):
         """
         Все товары(CartItems) в корзине удаляются, сама корзина остается пустой
         и не удаляется.
         """
-        instance = self.get_queryset()
-        instance.dishes.clear()  # Очищаем связанные товары
-        instance.amount = 0.00
-        instance.promocode = None
-        instance.discount = 0.00
-        instance.final_amount = 0.00
-        instance.items_qty = 0
-        instance.save()
+        cart = self.get_queryset()
 
+        if cart:
+            cart.empty_cart()
+        else:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        redirect_url = reverse('api:shopping_cart-list')
         return Response({'detail': 'Корзина успешно очищена.'},
-                        status=status.HTTP_204_NO_CONTENT)
+                        status=status.HTTP_204_NO_CONTENT,
+                        headers={'Location': redirect_url})
 
     # def update(self, request, *args, **kwargs):
     #     return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED, data={"detail": "Method 'PUT' not allowed."})
 
-    @action(detail=False,
-            methods=['patch'])
-    def edit_shopping_cart(self, request, *args, **kwargs):
+    @action(detail=True,
+            methods=['get'],
+            )
+    def plus(self, request, pk=None):
         """
-        Редакция корзину.
+        Добавление одной единицы блюда в кол-во cartdish корзины.
+        id - id блюда, которое нужно добавить в `корзину покупок`.
 
         Args:
             request (WSGIRequest): Объект запроса.
@@ -362,38 +365,44 @@ class ShoppingCartViewSet(# mixins.UpdateModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
-        instance = self.get_queryset()
-        serializer = ShoppingCartSerializer(instance,
-                                            data=request.data,
-                                            partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return redirect('api:shopping_cart-list')
+        cartdish = self.get_object()
+        # cartdish = get_object_or_404(CartDish, pk=pk)
+        cartdish.quantity += 1
+        cartdish.save()
 
-# class ShoppingCartViewSet(mixins.RetrieveModelMixin,
-#                           mixins.CreateModelMixin,
-#                           mixins.UpdateModelMixin,
-#                           mixins.DestroyModelMixin,
-#                           # mixins.ListModelMixin,
-#                           viewsets.GenericViewSet):
-#     """
-#     Вьюсет модели ShoppingCart.
-#     """
-#     queryset = ShoppingCart.objects.all()
-#     serializer_class = ShoppingCartSerializer
-#     permission_classes = [AllowAny,]
+        redirect_url = reverse('api:shopping_cart-list')
+        return Response({'detail': 'Блюдо успешно добавлено.'},
+                        status=status.HTTP_200_OK,
+                        headers={'Location': redirect_url})
 
-#     def retrieve(self, request, *args, **kwargs):
-#         current_user = self.request.user
-#         if current_user.is_authenticated:
-#             cart, created = ShoppingCart.objects.get_or_create(
-#                 user=current_user.base_profile
-#                 )
-#         serializer = self.get_serializer(cart)
-#         return Response(serializer.data)
+    @action(detail=True,
+            methods=['get'],
+            )
+    def minus(self, request, pk=None):
+        """
+        Удаление одной единицы кол-ва блюда cartdish в корзине.
+        id - id блюда, которое нужно минусовать из корзины покупок.
 
-#     def list(self, request, *args, **kwargs):
-#         return Response({'detail': 'Method "GET" not allowed for this endpoint.'}, status=HTTP_405_METHOD_NOT_ALLOWED)
+        Args:
+            request (WSGIRequest): Объект запроса.
+            pk (int):
+                id блюда, которое нужно добавить в `корзину покупок`.
+
+        Returns:
+            Responce: Статус подтверждающий/отклоняющий действие.
+        """
+
+        cartdish = get_object_or_404(CartDish, pk=pk)
+        if cartdish.quantity > 1:
+            cartdish.quantity -= 1
+            cartdish.save()
+        else:
+            cartdish.delete()
+
+        redirect_url = reverse('api:shopping_cart-list')
+        return Response({'detail': 'Блюдо успешно убрано.'},
+                        status=status.HTTP_200_OK,
+                        headers={'Location': redirect_url})
 
 
 class ShopViewSet(viewsets.ReadOnlyModelViewSet):
