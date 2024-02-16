@@ -19,6 +19,7 @@ class Command(BaseCommand):
             is_superuser=True,
             is_staff=1,
             first_name='admin',
+            last_name='admin',
             phone='+79055969166',
             web_language='ru',
         )
@@ -28,6 +29,7 @@ class Command(BaseCommand):
         user1, created = User.objects.get_or_create(
             email="a1@a1.ru",
             first_name='Петя',
+            last_name='Петин',
             phone='+79055969160',
             web_language='en',
         )
@@ -37,6 +39,7 @@ class Command(BaseCommand):
         user2, created = User.objects.get_or_create(
             email="a2@a2.ru",
             first_name='Вася',
+            last_name='Васин',
             phone='+79055969161',
             web_language='sr-latn'
         )
@@ -46,6 +49,7 @@ class Command(BaseCommand):
         user3, created = User.objects.get_or_create(
             email="a3@a3.ru",
             first_name='Коля',
+            last_name='Колин',
             phone='+79055969162'
         )
         user3.set_password("foreverlove")
