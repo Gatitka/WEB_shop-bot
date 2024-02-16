@@ -556,162 +556,28 @@ class DishCartDishSerializer(serializers.ModelSerializer):
         return rep
 
 
-class CartDishReadSerializer(serializers.ModelSerializer):
+class CartDishSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели CartDish.
     Все поля обязательны.
     """
-    dish = DishCartDishSerializer()
+    dish = DishCartDishSerializer(required=False, read_only=True)
 
     class Meta:
         fields = ('id', 'dish', 'quantity',
                   'unit_price', 'amount')
         model = CartDish
+        read_only_fields = ('id', 'dish',
+                            'unit_price', 'amount')
 
 
-# class ShoppingCartSerializer(serializers.ModelSerializer):
-#     """
-#     Базовый сериализатор для модели ShoppingCart.
-#     Все поля обязательны.
-#     """
-#     cartdishes = CartDishSerializer(many=True)
-#     promocode = serializers.CharField(required=False)
-#     action = serializers.CharField(required=False)
-#     cartdish_to_edit = CartDishSerializer(required=False)
-
-#     class Meta:
-#         fields = ('id', 'cartdishes', 'items_qty',
-#                   'amount', 'promocode',
-#                   'discounted_amount',
-#                   'action',
-#                   'cartdish_to_edit')
-#         model = ShoppingCart
-
-#     def to_internal_value(self, data):
-#         if 'promocode' in data:
-#             if data['promocode'] is None:
-#                 return {'promocode': None}
-
-#         #return super().to_internal_value(data)
-
-#     def validate_promocode(self, value):
-#         if value and not re.match("^[a-zA-Z0-9]{1,6}$", value):
-#             raise serializers.ValidationError(
-#                 "Промокод должен содержать не более 6 символов и состоять из букв и цифр."
-#             )
-#         try:
-#             promocode = Promocode.objects.get(promocode=value)
-#         except Promocode.DoesNotExist:
-#             raise serializers.ValidationError("Введен неверный промокод.")
-#         return value
-
-#     def validate_action(self, value):
-#         action = value.split()
-#         if action[0] not in ['plus', 'minus', 'del', 'edit']:
-#             raise serializers.ValidationError(
-#                 "Выбрано неверное действие."
-#             )
-
-#         if action[1]:
-#             try:
-#                 number = int(value)
-#             except ValueError:
-#                 raise ValueError("Значение должно быть числом.")
-
-#             if not (0 <= number <= 20):
-#                 raise ValueError("Значение должно быть числом и не превышать 20.")
-
-#         return value
-
-#     def validate(self, data: dict) -> dict:
-
-#         return data
-
-#     def update(self, instance: User, validated_data: dict) -> User:
-#         """
-#         Метод для редакции данных пользователя.
-#         Args:
-#             instance (User): изменяемый рецепт
-#             validated_data (dict): проверенные данные из запроса.
-#         Returns:
-#             User: созданный рецепт.
-#         """
-#         if 'promocode' in validated_data:
-#             promocode = validated_data['promocode']
-#             if promocode:
-#                 promocode = Promocode.objects.get(
-#                         promocode=validated_data['promocode']
-#                     )
-#             else:
-#                 promocode = promocode   # None
-
-#             instance.promocode = promocode
-#             instance.save()
-
-#         if 'action' in validated_data and 'cartdishes' in validated_data:
-#             action = validated_data.pop['action']
-#             cartdishes = validated_data.pop['cartdishes']
-#             action_details = action.split()
-
-#             if action_details[0] == 'del':
-#                 cartdish = instance.cartdishes.get(id=cartdishes)
-#                 cartdish.delete()
-
-#             elif action_details[0] == 'plus':
-#                 cartdish = instance.cartdishes.get(id=cartdishes)
-#                 cartdish.quantity += 1
-#                 cartdish.save()
-
-#             elif action_details[0] == 'minus':
-#                 cartdish = instance.cartdishes.get(id=cartdishes)
-#                 try:
-#                     cartdish.quantity -= 1
-#                 except ValueError as e:
-#                     cartdish.delete()
-
-#             elif action_details[0] == 'edit':
-#                 cartdish = instance.cartdishes.get(id=cartdishes)
-#                 if action_details > 0:
-#                     cartdish.quantity = action_details[1]
-#                     cartdish.save()
-#                 else:
-#                     cartdish.delete()
-
-
-
-
-
-#             cartdish.save()
-
-
-#         return instance
-#         #return super().update(instance, validated_data)
-
-
-# class ShoppingCartReadSerializer(serializers.ModelSerializer):
-#     """
-#     Сериализатор для чтения модели ShoppingCart.
-#     """
-#     cartdishes = CartDishSerializer(many=True)
-#     promocode = serializers.CharField(source='promocode.promocode',
-#                                       required=False)
-
-#     class Meta:
-#         fields = ('id', 'cartdishes', 'items_qty',
-#                   'amount', 'promocode',
-#                   'discounted_amount')
-#         model = ShoppingCart
-#         read_only_fields = ('id', 'cartdishes', 'num_of_items',
-#                             'amount', 'promocode',
-#                             'discounted_amount')
-
-class ShoppingCartReadSerializer(serializers.ModelSerializer):
+class ShoppingCartSerializer(serializers.ModelSerializer):
     """
     Сериализатор для чтения модели ShoppingCart.
     """
-    promocode = serializers.CharField(source='promocode.promocode',
-                                      allow_null=True)
-    cartdishes = CartDishReadSerializer(many=True)
+    promocode = serializers.CharField(allow_null=True)
+    cartdishes = CartDishSerializer(many=True,
+                                    read_only=True)
 
     class Meta:
         fields = ('id', 'items_qty',
@@ -720,98 +586,32 @@ class ShoppingCartReadSerializer(serializers.ModelSerializer):
                   'cartdishes')
         model = ShoppingCart
         read_only_fields = ('id', 'num_of_items',
-                            'amount', 'promocode',
+                            'amount',
                             'discounted_amount',
-                            'cartdishes')
+                            'cartdishes',
+                            'items_qty')
 
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        if instance.promocode:
+            rep['promocode'] = instance.promocode.promocode
+        return rep
 
+    def validate_promocode(self, value):
+        if value is not None:
+            if not Promocode.is_valid(value):
+                raise serializers.ValidationError(
+                    {'promocode': ("Please check the promocode.")})
+        return value
 
-# class SignUpSerializer(WebAccauntSerializer):
-#     """
-#     Сериализатор для регистрации нового пользователя.
-#     Все поля обязательны.
-#     Валидация:
-#      - Если в БД есть пользователи с переданными email,
-#     вызывается ошибка.
-#      - Если имя пользователя - me, вызывается ошибка.
-#     """
-#     email = serializers.EmailField(
-#         max_length=254,
-#         required=True
-#     )
-#     password = serializers.CharField(
-#         write_only=True,
-#         required=True,
-#         max_length=150,
-#         min_length=8
-#     )   # забрать валидацию из стандарта django
-#     first_name = serializers.CharField(
-#         write_only=True,
-#         required=True,
-#         max_length=150,
-#         min_length=8
-#     )
-
-#     class Meta:
-#         fields = ('id', 'email', 'first_name',
-#                   'last_name', 'password')
-#         read_only_fields = ('id',)
-#         model = User
-
-#     def validate(self, data: dict) -> dict:
-#         email = data['email']
-#         password = data['password']
-#         if User.objects.filter(email=email).exists():
-#             raise serializers.ValidationError(
-#                 "Пользователь с таким email уже существует."
-#             )
-#         if password is None:
-#             raise serializers.ValidationError(
-#                 "Придумайте пароль."
-#             )
-#         return data
-
-#     def create(self, validated_data: dict) -> User:
-#         """ Создаёт нового пользователя с запрошенными полями.
-#         Args:
-#             validated_data (dict): Полученные проверенные данные.
-#         Returns:
-#             User: Созданный пользователь.
-#         """
-#         user = User(
-#             email=validated_data['email'],
-#             first_name=validated_data['first_name'],
-#             last_name=validated_data['last_name'],
-#         )
-#         user.set_password(validated_data['password'])
-#         user.save()
-#         return user
-
-
-# class PasswordSerializer(serializers.Serializer):
-#     """
-#     Сериалайзер для данных, получаемых для смены пароля
-#     актуального пользователя.
-#     """
-#     new_password = serializers.CharField(write_only=True)
-#     current_password = serializers.CharField(write_only=True)
-
-#     def validate_current_password(self, value: str) -> str:
-#         user = self.initial_data['user']
-#         if not user.check_password(value):
-#             raise serializers.ValidationError(
-#                 'Введен неверный текущий пароль.'
-#             )
-#         return value
-
-#     def validate_new_password(self, value: str) -> str:
-#         if value == self.initial_data['current_password']:
-#             raise serializers.ValidationError(
-#                 'Новый пароль должен отличаться от старого!'
-#             )
-#         return value
-
-
+    def update(self, instance, validated_data):
+        promocode = validated_data.get('promocode')
+        if promocode is not None:
+            instance.promocode = Promocode.objects.get(promocode=promocode)
+        else:
+            instance.promocode = None
+        instance.save()
+        return instance
 
 
 

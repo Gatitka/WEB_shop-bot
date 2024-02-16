@@ -373,18 +373,6 @@ GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname
 GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal308.dll'
 GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
 
-# '/путь/к/библиотеке/GDAL.dll'
-# if os.name == 'nt':
-#     import platform
-#     OSGEO4W = (r"C:\Users\gatit\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OSGeo4W")
-#     if '64' in platform.architecture()[0]:
-#         OSGEO4W += "64"
-#     assert os.path.isdir(OSGEO4W), "Directory does not exist: " + OSGEO4W
-#     os.environ['OSGEO4W_ROOT'] = OSGEO4W
-#     os.environ['GDAL_DATA'] = OSGEO4W + r"\share\gdal"
-#     os.environ['PROJ_LIB'] = OSGEO4W + r"\share\proj"
-#     os.environ['PATH'] = OSGEO4W + r"\bin;" + os.environ['PATH']
-
 
 # -------------------------------- SENTRY MISTAKES INFORMATION----------------------------
 
@@ -399,6 +387,6 @@ GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
 
 
 CITY_CHOICES = [
-    ('Белград', 'Белград'),
-    ('Нови_Сад', 'Нови_Сад'),
+    ('Beograd', 'Beograd'),
+    ('Novi_sad', 'Novi Sad'),
 ]

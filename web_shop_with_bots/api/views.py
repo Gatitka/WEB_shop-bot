@@ -22,10 +22,11 @@ from users.models import BaseProfile, UserAddress
 from django.urls import reverse
 
 from .filters import CategoryFilter
-from.serializers import (CartDishReadSerializer, DeliverySerializer,
+from.serializers import (CartDishSerializer, DeliverySerializer,
                           DishMenuSerializer, PromoNewsSerializer,
-                          # ShoppingCartSerializer,
-                          ShoppingCartReadSerializer,
+
+                          ShoppingCartSerializer,
+                          RestaurantSerializer,
                           RestaurantSerializer,
                           UserAddressSerializer,
                           UserOrdersSerializer,
@@ -263,7 +264,7 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
 
     """
     Вьюсет для просмотра и редакции товаров в корзине.
-    Основная модель CartDish.
+    PUT запросы запрещены.
     """
     queryset = CartDish.objects.all()
     permission_classes = [AllowAny,]
@@ -305,33 +306,66 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         return get_object_or_404(cartdishes, pk=cartdish_id)
 
     def get_serializer_class(self):
-        """
-        Определение класса сериализатора в зависимости от метода запроса.
-        """
         if self.action == 'list':
-            return ShoppingCartReadSerializer
-        elif self.action == 'retrieve':
-            return CartDishReadSerializer
-        elif self.action == 'update':
-            return CartDishReadSerializer
+            return ShoppingCartSerializer
+        elif self.action == 'promocode':
+            return ShoppingCartSerializer
+        elif self.action == 'partial_update':
+            return CartDishSerializer
 
     def list(self, request, *args, **kwargs):
         """
-        Просмотр всех товаров CartItems в корзине.
+        Просмотр всех товаров (cartdish) в корзине.
+        А так же информации о корзине: сумма, сумма с учетом скидки промокода,
+        промокод, кол-во позиций.
         """
         cart = self.get_queryset()
         if cart:
-            cart_serializer = ShoppingCartReadSerializer(cart)
+            cart_serializer = ShoppingCartSerializer(cart)
             return Response(cart_serializer.data)
         else:
             # Если пользователь не авторизован, возвращаем 204 No Content
             return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=False,
-            methods=['get'])
-    def clean_cart(self, request, *args, **kwargs):
+    def destroy(self, request, *args, **kwargs):
         """
-        Все товары(CartItems) в корзине удаляются, сама корзина остается пустой
+        Удаление всего блюда (cartdish) из корзины. Корзина пересохраняется.
+        id - id cartdish (не id блюда, а именно связи корзина-блюдо(cartdish))
+        """
+        super().destroy(request, *args, **kwargs)
+
+        redirect_url = reverse('api:shopping_cart-list')
+        return Response({'detail': 'Блюдо успешно удалено.'},
+                        status=status.HTTP_200_OK,
+                        headers={'Location': redirect_url})
+
+    def update(self, request, *args, **kwargs):
+        """
+        PUT запрос запрещен.
+        """
+        if request.method == "PUT":
+            return self.http_method_not_allowed(request, *args, **kwargs)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Редактирование кол-ва блюда (cartdish) в корзине. Корзина пересохраняется.
+        id - id cartdish (не id блюда, а именно связи корзина-блюдо(cartdish))
+        quantity >= 1.
+        !!! dish в payload не нужен!!!
+        """
+        super().update(request, *args, **kwargs)
+
+        redirect_url = reverse('api:shopping_cart-list')
+        return Response({'detail': 'Колличество успешно изменено.'},
+                        status=status.HTTP_200_OK,
+                        headers={'Location': redirect_url})
+
+    @action(detail=False,
+            methods=['delete'])
+    def empty_cart(self, request, *args, **kwargs):
+        """
+        Все товары(cartdishes) в корзине удаляются, сама корзина остается пустой
         и не удаляется.
         """
         cart = self.get_queryset()
@@ -346,16 +380,13 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
                         status=status.HTTP_204_NO_CONTENT,
                         headers={'Location': redirect_url})
 
-    # def update(self, request, *args, **kwargs):
-    #     return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED, data={"detail": "Method 'PUT' not allowed."})
-
     @action(detail=True,
             methods=['get'],
             )
     def plus(self, request, pk=None):
         """
-        Добавление одной единицы блюда в кол-во cartdish корзины.
-        id - id блюда, которое нужно добавить в `корзину покупок`.
+        Добавление одной единицы блюда в кол-во `cartdish` корзины.
+        id - id cartdish, которое нужно добавить в `корзину покупок`.
 
         Args:
             request (WSGIRequest): Объект запроса.
@@ -381,7 +412,7 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
     def minus(self, request, pk=None):
         """
         Удаление одной единицы кол-ва блюда cartdish в корзине.
-        id - id блюда, которое нужно минусовать из корзины покупок.
+        id - id cartdish, которое нужно минусовать из корзины покупок.
 
         Args:
             request (WSGIRequest): Объект запроса.
@@ -403,6 +434,34 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         return Response({'detail': 'Блюдо успешно убрано.'},
                         status=status.HTTP_200_OK,
                         headers={'Location': redirect_url})
+
+    @action(detail=False,
+            methods=['post'])
+    def promocode(self, request, *args, **kwargs):
+        """
+        Редактирование промокода (promocode) корзины.
+        Для удаления промокода передать { "promocode": null }.
+        """
+        cart = self.get_queryset()
+
+        if cart:
+            data = request.data
+            serializer = self.get_serializer(cart, data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+        else:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        redirect_url = reverse('api:shopping_cart-list')
+
+        if cart.promocode:
+            return Response({'detail': 'Promocode is succesfylly added.'},
+                            status=status.HTTP_200_OK,
+                            headers={'Location': redirect_url})
+        else:
+            return Response({'detail': 'Promocode успешно удален.'},
+                            status=status.HTTP_200_OK,
+                            headers={'Location': redirect_url})
 
 
 class ShopViewSet(viewsets.ReadOnlyModelViewSet):
