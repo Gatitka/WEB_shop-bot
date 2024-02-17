@@ -32,7 +32,7 @@ if TEST_SERVER or SERVER:
         allowed_hosts.append(str(TEST_SERVER))
     if SERVER:
         allowed_hosts.append(str(SERVER))
-print(allowed_hosts)
+print(f'allowed_hosts: {allowed_hosts}')
 ALLOWED_HOSTS = allowed_hosts
 
 
@@ -287,7 +287,7 @@ if TEST_SERVER or SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{TEST_SERVER}")
     if SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{SERVER}")
-print(cors_allowed_origins)
+print(f'cors_allowed_origins: {cors_allowed_origins}')
 CORS_ALLOWED_ORIGINS = cors_allowed_origins
 
 CORS_ALLOW_CREDENTIALS = True
@@ -318,7 +318,7 @@ if TEST_SERVER or SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{TEST_SERVER}"))
     if SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{SERVER}"))
-print(csrf_trusted_origins)
+print(f'csrf_trusted_origins {csrf_trusted_origins}')
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
 
 REST_USE_JWT = True
@@ -337,7 +337,7 @@ if TEST_SERVER or SERVER:
         internal_ips_origins.append(str(TEST_SERVER))
     if SERVER:
         internal_ips_origins.append(str(SERVER))
-print(internal_ips_origins)
+print(f'internal_ips_origins {internal_ips_origins}')
 INTERNAL_IPS = internal_ips_origins
 
 
