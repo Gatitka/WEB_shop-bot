@@ -80,6 +80,7 @@ class Command(BaseCommand):
 
         with open('docs/menu.csv', encoding='utf-8-sig') as f:
             vegan_cat = Category.objects.get(slug='vegan')
+            print(f'vegan cat = {vegan_cat.id}')
 
             for row in DictReader(f, delimiter=';'):
                 if not any(row.values()):
@@ -107,8 +108,7 @@ class Command(BaseCommand):
                     image=image_path,
                 )
                 category = Category.objects.get(slug=row['cat_slug'])
-
-                if dish.vegan_icon == 'True':
+                if dish.vegan_icon:
                     dish.category.set([category, vegan_cat])
                 else:
                     dish.category.set([category])
