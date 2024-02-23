@@ -1,8 +1,10 @@
 from django.core.management import BaseCommand
 from django.core.management import call_command
-from promos.models import PromoNews
+from promos.models import PromoNews, Promocode
 import os
 from csv import DictReader
+from datetime import datetime, timedelta
+from django.utils import timezone
 
 
 class Command(BaseCommand):
@@ -39,6 +41,20 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                'Load_promo executed successfully.'
+                'Load_promo_news executed successfully.'
             )
+        )
+
+        # Получаем сегодняшнюю дату
+        today = timezone.now().date()
+        # Вычисляем дату через год
+        valid_to = today + timedelta(days=365)
+
+        promocode1, created = Promocode.objects.get_or_create(
+            title_rus='Takeaway 10%',
+            promocode='take10',
+            discount=10,
+            is_active=True,
+            valid_from=today,
+            valid_to=valid_to,
         )

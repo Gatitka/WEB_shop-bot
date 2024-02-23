@@ -2,9 +2,18 @@ from django.conf import settings
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import (ContactsDeliveryViewSet, DeleteUserViewSet, MenuViewSet,
-                    PromoNewsViewSet, ShoppingCartViewSet, MyAddressViewSet,
-                    UserOrdersViewSet, ClientAddressesViewSet)
+from .views import (
+                    ContactsDeliveryViewSet,
+                    DeleteUserViewSet,
+                    MenuViewSet,
+                    PromoNewsViewSet,
+                    ShoppingCartViewSet,
+                    MyAddressViewSet,
+                    UserOrdersViewSet,
+                    ClientAddressesViewSet,
+                    get_unit_price
+                    )
+                    # TakeawayOrderViewSet,)
 
 app_name = 'api'
 
@@ -42,12 +51,16 @@ v1_router.register(
     PromoNewsViewSet,
     basename='promonews'
 )
-
 v1_router.register(
     r'get_client_addresses/(?P<user_id>\d+)',
     ClientAddressesViewSet,
     basename='client-addresses'
 )
+# v1_router.register(
+#     'create_order',
+#     TakeawayOrderViewSet,
+#     basename='create-order'
+# )
 
 # v1_router.register('auth/users/me/delete', DeleteUserViewSet.as_view({'delete': 'destroy'}), basename='users')
 
@@ -64,7 +77,7 @@ v1_router.register(
 urlpatterns = [
     path('v1/', include(v1_router.urls)),
     path('v1/auth/users/me/delete/', DeleteUserViewSet.as_view(), name='users'),
-
+    path('v1/get_unit_price/', get_unit_price, name='get_unit_price'),
     # Djoser создаст набор необходимых эндпоинтов.
     # базовые, для управления пользователями в Django:
     path('v1/auth/', include('djoser.urls')),

@@ -7,8 +7,7 @@ from django.core.validators import (MaxValueValidator, MinLengthValidator,
                                     MinValueValidator)
 from django.db import models
 from django.db.models import Sum
-from django.db.models.signals import post_save, pre_save  # signals
-from django.dispatch import receiver  # signals
+
 from phonenumber_field.modelfields import PhoneNumberField
 
 from catalog.models import Dish
@@ -148,19 +147,22 @@ class ShoppingCart(models.Model):
         self.items_qty = 0
         self.save()
 
+
 class CartDish(models.Model):
     """ Модель для сопоставления связи корзины и блюд."""
     dish = models.ForeignKey(
         Dish,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name='cartdishes',
-        verbose_name='Товары в корзине'
+        verbose_name='Товары в корзине',
+        null=True,
     )
     cart = models.ForeignKey(
         ShoppingCart,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         verbose_name='Заказ',
         related_name='cartdishes',
+        null=True,
     )
     quantity = models.PositiveSmallIntegerField(
         verbose_name='Кол-во',
@@ -177,6 +179,19 @@ class CartDish(models.Model):
         blank=True,
         max_digits=7, decimal_places=2
     )
+    dish_article = models.PositiveSmallIntegerField(
+        verbose_name='Запись блюда в БД',
+        null=True, blank=True,
+    )
+    cart_number = models.PositiveSmallIntegerField(
+        verbose_name='Запись корзины в БД',
+        null=True, blank=True,
+    )
+    base_profile = models.PositiveSmallIntegerField(
+        verbose_name='Запись baseprofile в БД',
+        null=True, blank=True,
+    )
+
 
     class Meta:
         ordering = ['cart']
@@ -193,19 +208,21 @@ class CartDish(models.Model):
         return f'корзина id={self.cart.pk} <- {self.dish}'
 
     def save(self, *args, **kwargs):
-        self.amount = self.dish.final_price * self.quantity
+        self.amount = Decimal(self.dish.final_price * self.quantity)
         self.unit_price = self.dish.final_price
+        self.dish_article = self.dish.pk
+        self.cart_number = self.cart.pk
+        self.base_profile = self.cart.user.pk
+
         super(CartDish, self).save(*args, **kwargs)
         self.update_shopping_cart()
 
-    def save_in_flow(self, *args, **kwargs):
-        self.amount = Decimal(self.dish.final_price * self.quantity)
-        self.unit_price = self.dish.final_price
-        super(CartDish, self).save(*args, **kwargs)
-
     def delete(self, *args, **kwargs):
         super(CartDish, self).delete()
-        total_amount = CartDish.objects.filter(cart=self.cart).aggregate(ta=Sum('amount'))['ta']
+        total_amount = CartDish.objects.filter(
+            cart=self.cart
+                ).aggregate(ta=Sum('amount'))['ta']
+
         self.cart.amount = total_amount if total_amount is not None else 0
         self.update_shopping_cart()
 
@@ -228,9 +245,13 @@ class CartDish(models.Model):
 
 class Order(models.Model):
     """ Модель для заказов."""
+    order_number = models.IntegerField(
+        verbose_name='Номер заказа',
+        blank=True, null=True
+    )
     user = models.ForeignKey(
         BaseProfile,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         verbose_name='Клиент',
         related_name='orders',
         blank=True, null=True
@@ -262,10 +283,20 @@ class Order(models.Model):
         related_name='orders',
         verbose_name='доставка'
     )
+    delivery_db = models.CharField(
+        max_length=10,
+        verbose_name='доставка запись в бд',
+        blank=True, null=True
+    )
     delivery_zone = models.ForeignKey(
         DeliveryZone,
         on_delete=models.PROTECT,
         verbose_name='зона доставки',
+        blank=True, null=True
+    )
+    delivery_zone_db = models.CharField(
+        max_length=10,
+        verbose_name='зона доставки запись в бд',
         blank=True, null=True
     )
     delivery_cost = models.DecimalField(
@@ -358,6 +389,12 @@ class Order(models.Model):
         ordering = ['-created']
         verbose_name = 'заказ'
         verbose_name_plural = 'заказы'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['order_number', 'created'],
+                name='unique_order_number_created'
+            )
+        ]
 
     def __str__(self):
         return f'{self.id}'
@@ -428,6 +465,10 @@ class Order(models.Model):
             self.calculate_final_amount_with_shipping()
             itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
             self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+
+
+        self.delivery_db = self.delivery.pk
+        self.delivery_zone_db = self.delivery_zone.pk
         super().save(*args, **kwargs)
 
 
@@ -435,15 +476,17 @@ class OrderDish(models.Model):
     """ Модель для сопоставления связи заказа и блюд."""
     dish = models.ForeignKey(
         Dish,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name='orders',
-        verbose_name='Товары в заказе'
+        verbose_name='Товары в заказе',
+        null=True
     )
     order = models.ForeignKey(
         Order,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         verbose_name='Заказ',
         related_name='order_dishes',
+        null=True
     )
     quantity = models.PositiveSmallIntegerField(
         verbose_name='Кол-во',
@@ -459,6 +502,19 @@ class OrderDish(models.Model):
         blank=True,
         max_digits=7, decimal_places=2
     )
+    dish_article = models.PositiveSmallIntegerField(
+        verbose_name='Запись блюда в БД',
+        null=True, blank=True,
+    )
+    order_number = models.PositiveSmallIntegerField(
+        verbose_name='Запись заказа в БД',
+        null=True, blank=True,
+    )
+    base_profile = models.PositiveSmallIntegerField(
+        verbose_name='Запись baseprofile в БД',
+        null=True, blank=True,
+    )
+
 
     class Meta:
         ordering = ['dish']
@@ -474,7 +530,12 @@ class OrderDish(models.Model):
     def save(self, *args, **kwargs):
         self.amount = self.dish.final_price * self.quantity
         self.unit_price = self.dish.final_price
+        self.dish_article = self.dish.pk
+        self.order_number = self.order.pk
+        self.base_profile = self.order.user.pk
+
         super(OrderDish, self).save(*args, **kwargs)
+
         total_amount = OrderDish.objects.filter(
             order=self.order
                 ).aggregate(ta=Sum('amount'))['ta']
@@ -499,10 +560,3 @@ class OrderDish(models.Model):
             'final_amount_with_shipping',
             'delivery_cost',
             ])
-
-
-# ------    сигналы для создания cart при создании base_profile
-@receiver(post_save, sender=BaseProfile)
-def create_cart(sender, instance, created, **kwargs):
-    if created:
-        cart, created = ShoppingCart.objects.get_or_create(user=instance)

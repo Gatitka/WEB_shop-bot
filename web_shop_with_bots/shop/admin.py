@@ -46,11 +46,14 @@ class CartDishInline(admin.TabularInline):
     model = CartDish
     min_num = 0
     extra = 0   # чтобы не добавлялись путые поля
-    readonly_fields = ['amount', 'unit_price']
+    readonly_fields = ['amount', 'unit_price', 'dish_article', 'cart_number', 'base_profile']
     autocomplete_fields = ['dish']
 
     verbose_name = 'товары корзины'
     verbose_name_plural = 'товары корзин'
+
+    # class Media:
+    #     js = ('js/shop/admin/cartitem_data_admin_request.js',)
 
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related('dish__translations', 'cart__user__messenger_account')
@@ -73,6 +76,10 @@ class ShoppingCartAdmin(admin.ModelAdmin):
               ('promocode', 'discount'),
               ('discounted_amount'),
               )
+    change_form_template = 'admin/shop/shoppingcart/my_shoping_cart_change_form.html'
+
+    class Media:
+        js = ('js/shop/admin/cartitem_data_admin_request.js',)
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
         return super().get_queryset(request).prefetch_related('user')
@@ -128,7 +135,7 @@ class OrderDishInline(admin.TabularInline):
     model = OrderDish
     min_num = 0
     extra = 0   # чтобы не добавлялись путые поля
-    readonly_fields = ['amount', 'unit_price',]
+    readonly_fields = ['amount', 'unit_price', 'dish_article', 'order_number', 'base_profile']
     verbose_name = 'заказ'
     verbose_name_plural = 'заказы'
     # raw_id_fields = ['dish',]
@@ -158,20 +165,21 @@ class OrderAdminForm(forms.ModelForm):
             )
         return super().formfield_for_dbfield(db_field, **kwargs)
 
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     """Настройки админ панели заказов.
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
-    list_display = ('pk', 'status',
+    list_display = ('order_number', 'status',
                     'recipient_name', 'recipient_phone', 'get_msngr_link',
                     'created', 'delivery', 'recipient_address',
                     'final_amount_with_shipping')
-    readonly_fields = ['pk', 'created', 'discounted_amount',
+    readonly_fields = ['order_number', 'created', 'discounted_amount',
                        'items_qty', 'device_id', 'amount',
                        'final_amount_with_shipping',
                        'get_msngr_link',]
     list_filter = ('created', 'status') # user_groups, paid
-    search_fields = ('user', 'pk')
+    search_fields = ('user', 'order_number')
     inlines = (OrderDishInline,)
     raw_id_fields = ['user',]
     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
@@ -180,7 +188,7 @@ class OrderAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Данные заказа', {
             'fields': (
-                ('pk', 'created'),
+                ('order_number', 'created'),
                 ('status'),
                 ('user', 'device_id'),
                 ('restaurant', 'delivery'),

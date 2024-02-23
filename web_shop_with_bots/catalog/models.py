@@ -104,20 +104,26 @@ class Dish(TranslatableModel):
             blank=True, null=True
         )
     )
-    priority = models.PositiveSmallIntegerField(
-        verbose_name='№ п/п',
-        validators=[MinValueValidator(1)],
-        blank=True,
-        help_text="Порядковый номер отображения в категории, прим. '01'.",
-        db_index=True
+    id = models.IntegerField(
+        unique=True,
+        primary_key=False,
+        null=True, blank=True,
     )
     article = models.CharField(
         max_length=6,
         verbose_name='артикул',
         help_text="Добавьте артикул, прим. '0101'.",
         db_index=True,
-        # unique=True,
+        unique=True,
+        primary_key=True
         # валидация длинны от 4 до 6
+    )
+    priority = models.PositiveSmallIntegerField(
+        verbose_name='№ п/п',
+        validators=[MinValueValidator(1)],
+        blank=True,
+        help_text="Порядковый номер отображения в категории, прим. '01'.",
+        db_index=True
     )
     is_active = models.BooleanField(
         verbose_name='активен',
@@ -248,8 +254,10 @@ class DishCategory(models.Model):
     """ Модель для сопоставления связи рецепта и тэгов."""
     dish = models.ForeignKey(
         Dish,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name='dishcategory',
+        to_field='article',
+        null=True
     )
     category = models.ForeignKey(
         Category,

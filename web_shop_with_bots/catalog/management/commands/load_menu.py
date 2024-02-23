@@ -6,6 +6,22 @@ from catalog.models import Category, Dish, UOM
 
 from web_shop_with_bots.settings import BASE_DIR
 
+def find_image_by_article(article):
+            # Укажите путь к директории с изображениями
+            image_directory = os.path.join(BASE_DIR,
+                                           'media', 'menu', 'dish_images')
+            # Формируем регулярное выражение для поиска файлов по артикулу
+            pattern = re.compile(rf"{article} .*\.jpg", re.IGNORECASE)
+
+            # Перебираем файлы в директории
+            for filename in os.listdir(image_directory):
+                if pattern.match(filename):
+                    # Найдено соответствие, возвращаем путь к файлу
+                    return os.path.join('menu', 'dish_images', filename)
+
+            # Если файл не найден
+            return os.path.join('icons', 'missing_image.jpg')
+
 
 class Command(BaseCommand):
     help = "Loads data from menu.csv"
@@ -80,7 +96,6 @@ class Command(BaseCommand):
 
         with open('docs/menu.csv', encoding='utf-8-sig') as f:
             vegan_cat = Category.objects.get(slug='vegan')
-            print(f'vegan cat = {vegan_cat.id}')
 
             for row in DictReader(f, delimiter=';'):
                 if not any(row.values()):
@@ -88,6 +103,9 @@ class Command(BaseCommand):
 
                 article_number = row['Артикул']
                 image_path = find_image_by_article(article_number)
+                vegan_icon = bool(row['vegan icon'])
+
+                spicy_icon = bool(row['hot icon'])
 
                 dish, created = Dish.objects.get_or_create(
                     article=row['Артикул'],
@@ -103,15 +121,17 @@ class Command(BaseCommand):
                     units_in_set_uom=UOM.objects.get(
                         name=row['ед-цы кол-ва']
                     ),
-                    vegan_icon=row['vegan icon'],
-                    spicy_icon=row['hot icon'],
+                    vegan_icon=vegan_icon,
+                    spicy_icon=spicy_icon,
                     image=image_path,
                 )
+
                 category = Category.objects.get(slug=row['cat_slug'])
                 if dish.vegan_icon:
                     dish.category.set([category, vegan_cat])
                 else:
                     dish.category.set([category])
+
                 dish.set_current_language('ru')
                 dish.short_name = row['наименование_ru']
                 dish.text = row['описание_ru']

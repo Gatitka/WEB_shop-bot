@@ -1,22 +1,20 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.db.models import Count
-
+from django import forms
 from shop.models import Order  # ShoppingCart
 
 from .models import BaseProfile, UserAddress, WEBAccount
-
-
-class WEBAccountAdminInline(admin.StackedInline):
-    model = WEBAccount
+from django.contrib.auth.forms import UserChangeForm
+from django.contrib.auth.password_validation import validate_password
+from django.conf import settings
+from django.core.exceptions import ValidationError
 
 
 class UserAddressesAdminInline(admin.TabularInline):
     model = UserAddress
     min_num = 0
     extra = 0   # чтобы не добавлялись путые поля
-
-
 
 
 @admin.register(BaseProfile)
@@ -26,8 +24,9 @@ class BaseProfileAdmin(admin.ModelAdmin):
     search_fields = ('first_name', 'last_name', 'phone', 'email')
     list_filter = ('is_active',)
     list_select_related = ['web_account', 'my_addresses']
-    readonly_fields = ('date_joined', 'orders')
-    inlines = (UserAddressesAdminInline,)    # WEBAccountAdminInline,)
+    readonly_fields = ('date_joined', 'orders',
+                       'first_name', 'last_name', 'phone', 'email')
+    inlines = (UserAddressesAdminInline,)
     fieldsets = (
         ('Основное', {
             'fields': (
@@ -74,8 +73,40 @@ class BaseProfileAdmin(admin.ModelAdmin):
 
 
 @admin.register(WEBAccount)
-class WEBAccountAdmin(admin.ModelAdmin):
+class WEBAccountAdmin(UserAdmin):
     """Настройки отображения данных таблицы User."""
     list_display = ('id', 'email', 'is_active', 'is_deleted')
     list_search = ('email', 'is_active', 'first_name', 'last_name', 'phone', )
     list_filter = ('is_active',)
+    readonly_fields = ('date_joined', 'last_login')
+    fieldsets = (
+        ('Основное', {
+            'fields': (
+                ('first_name', 'last_name'),
+                ('is_active', 'is_deleted'),
+                ('email', 'phone'),
+                ('date_joined', 'last_login'),
+                ('is_superuser', 'is_staff'),
+                ('web_language')
+            )
+        }),
+        ('Пароль', {
+            'fields': (
+                ('password'),
+            )
+        }),
+        ('Комментарии', {
+            'fields': (
+                ('notes'),
+            )
+        }),
+    )
+    ordering = ('id',)
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('first_name', 'last_name',
+                       'email', 'phone',
+                       'password1', 'password2'),
+        }),
+    )

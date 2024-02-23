@@ -110,21 +110,22 @@ class MessengerAccount(models.Model):
 
     def send_message_to_telegram(self, username, message):
         # Получаем chat_id пользователя по его юзернейму
-        token = settings.BOT_TOKEN
-        url = f'https://api.telegram.org/bot{token}/getChat'
-        params = {'chat_id': username}
-        response = requests.get(url, params=params)
-        data = response.json()
-        chat_id = data['result']['id']  # Получаем chat_id пользователя
-        # chat_id = '194602954'
-        # Отправляем сообщение пользователю
-        url = f'https://api.telegram.org/bot{token}/sendMessage'
-        payload = {
-            'chat_id': chat_id,
-            'text': message
-        }
-        response = requests.post(url, data=payload)
-        return response.json()
+        # token = settings.BOT_TOKEN
+        # url = f'https://api.telegram.org/bot{token}/getChat'
+        # params = {'chat_id': username}
+        # response = requests.get(url, params=params)
+        # data = response.json()
+        # chat_id = data['result']['id']  # Получаем chat_id пользователя
+        # # chat_id = '194602954'
+        # # Отправляем сообщение пользователю
+        # url = f'https://api.telegram.org/bot{token}/sendMessage'
+        # payload = {
+        #     'chat_id': chat_id,
+        #     'text': message
+        # }
+        # response = requests.post(url, data=payload)
+        # return response.json()
+        pass
 
 
 class Message(models.Model):

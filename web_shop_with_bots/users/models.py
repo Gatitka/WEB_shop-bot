@@ -1,13 +1,13 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.exceptions import ValidationError
-# from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, MinLengthValidator
 from django.db import models
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from phonenumber_field.modelfields import PhoneNumberField
-from .validators import validate_first_and_last_name
+from .validators import (validate_first_and_last_name,
+                         validate_birthdate)
 
 from tm_bot.models import MessengerAccount
 
@@ -39,7 +39,7 @@ class BaseProfile(models.Model):
     web_account = models.OneToOneField(
         'WEBAccount',
         on_delete=models.PROTECT,
-        related_name='profile',
+        related_name='base_profile',
         verbose_name='Аккаунт на сайте (web_account)',
         blank=True, null=True
         )
@@ -95,6 +95,7 @@ class BaseProfile(models.Model):
     date_of_birth = models.DateField(
         'День рождения',
         blank=True, null=True,
+        validators=[validate_birthdate,],
         help_text='Формат даты ДД.ММ.ГГГГ.'
     )
     is_active = models.BooleanField(
@@ -116,6 +117,24 @@ class BaseProfile(models.Model):
 
     def __str__(self):
         return (f'{self.first_name}' if self.first_name is not None else f'Клиент id = {self.id}')
+
+    @staticmethod
+    def base_profile_update(instance):
+        base_profile = BaseProfile.objects.filter(
+                                    web_account=instance,
+                                    )
+        if base_profile:
+            base_profile = base_profile[0]
+            base_profile.web_account = instance
+            base_profile.first_name = instance.first_name
+            base_profile.last_name = instance.last_name
+            base_profile.phone = instance.phone
+            base_profile.email = instance.email
+
+            base_profile.save(update_fields=[
+                'web_account', 'first_name', 'last_name', 'phone', 'email'
+                ]
+            )
 
 
 class CustomWEBAccountManager(BaseUserManager):
@@ -194,12 +213,12 @@ class WEBAccount(AbstractUser):
         max_length=400,
         blank=True, null=True
     )
-    base_profile = models.OneToOneField(
-        'BaseProfile',
-        on_delete=models.PROTECT,
-        verbose_name='базовый профиль',
-        blank=True, null=True
-    )
+    # base_profile = models.OneToOneField(
+    #     'BaseProfile',
+    #     on_delete=models.PROTECT,
+    #     verbose_name='базовый профиль',
+    #     blank=True, null=True
+    # )
     # role = models.CharField(
     #     'Роль',
     #     max_length=9,
@@ -219,6 +238,7 @@ class WEBAccount(AbstractUser):
         default=False,
         help_text='Был ли аккаунт удален.'
     )
+
     class Meta:
         ordering = ['-date_joined']
         verbose_name = 'Аккаунт сайта'
@@ -242,7 +262,11 @@ class WEBAccount(AbstractUser):
             raise ValidationError({'phone': 'Телефон не может быть пустым'})
 
     def save(self, *args, **kwargs):
-        self.clean()  # Вызов метода clean перед сохранением
+        update_fields = kwargs.get('update_fields')
+        if update_fields:
+            if update_fields != ['last_login']:
+                self.full_clean()
+
         super().save(*args, **kwargs)
 
     objects = CustomWEBAccountManager()
@@ -255,6 +279,7 @@ class WEBAccount(AbstractUser):
 @receiver(post_save, sender=WEBAccount)
 def create_base_profile(sender, instance, created, **kwargs):
     if created:
+        # если создается новый web_account
         if not (BaseProfile.objects.filter(web_account=instance).exists() and
                 BaseProfile.objects.filter(phone=instance.phone).exists() and
                 BaseProfile.objects.filter(email=instance.email).exists()):
@@ -268,8 +293,12 @@ def create_base_profile(sender, instance, created, **kwargs):
         else:
             base_profile = BaseProfile.objects.filter(
                                     phone=instance.phone,
-                                    )
+                                    )[0]
             base_profile.web_account = instance
         base_profile.save()
-        instance.base_profile = base_profile
-        instance.save(update_fields=['base_profile'])
+        # instance.base_profile = base_profile
+        # instance.save(update_fields=['base_profile'])
+
+    else:
+        # если изменется существующий web_account
+        BaseProfile.base_profile_update(instance)

@@ -305,7 +305,8 @@ class DishShortSerializer(TranslatableModelSerializer):
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         translations = rep['translations']
-        for lang, translation in translations["translations"].items():
+        # for lang, translation in translations["translations"].items():
+        for lang, translation in translations.items():
             if "msngr_short_name" in translation:
                 del translation["msngr_short_name"]
             if "msngr_text" in translation:
@@ -334,10 +335,10 @@ class UserOrdersSerializer(serializers.ModelSerializer):
     status = serializers.CharField(source='get_status_display')
 
     class Meta:
-        fields = ('id', 'created', 'status',
+        fields = ('order_number', 'created', 'status',
                   'order_dishes', 'final_amount_with_shipping')
         model = Order
-        read_only_fields = ('id', 'created', 'status',
+        read_only_fields = ('order_number', 'created', 'status',
                             'order_dishes', 'final_amount_with_shipping')
 
     def get_orer_dishes(self, order: Order) -> QuerySet[dict]:
@@ -393,9 +394,9 @@ class CategorySerializer(TranslatableModelSerializer):
                                          read_only=True)
 
     class Meta:
-        fields = ('id', 'priority', 'translations', 'slug',)
+        fields = ('priority', 'translations', 'slug',)
         model = Category
-        read_only_fields = ('id', 'priority', 'translations', 'slug',)
+        read_only_fields = ('priority', 'translations', 'slug',)
 
 
 class DishMenuSerializer(TranslatableModelSerializer):
@@ -415,7 +416,7 @@ class DishMenuSerializer(TranslatableModelSerializer):
     units_in_set_uom = UOMSerializer(read_only=True)
 
     class Meta:
-        fields = ('id', 'priority',
+        fields = ('article', 'priority',
                   'translations',
                   'category',
                   'price', 'final_price',
@@ -426,7 +427,7 @@ class DishMenuSerializer(TranslatableModelSerializer):
                   'is_in_shopping_cart',
                   )
         model = Dish
-        read_only_fields = ('id', 'priority',
+        read_only_fields = ('article', 'priority',
                             'translations',
                             'category',
                             'price', 'final_price',
@@ -539,10 +540,10 @@ class DishCartDishSerializer(serializers.ModelSerializer):
                                          read_only=True)
 
     class Meta:
-        fields = ('id', 'translations',
+        fields = ('article', 'translations',
                   'image')
         model = Dish
-        read_only_fields = ('id', 'translations',
+        read_only_fields = ('article', 'translations',
                             'image')
 
     def to_representation(self, instance):
@@ -585,7 +586,7 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
                   'discounted_amount',
                   'cartdishes')
         model = ShoppingCart
-        read_only_fields = ('id', 'num_of_items',
+        read_only_fields = ('id',
                             'amount',
                             'discounted_amount',
                             'cartdishes',
@@ -614,8 +615,33 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
         return instance
 
 
+# --------------------------- ЗАКАЗ ------------------------------
 
+# class PreOrderDataSerializer(serializers.ModelSerializer):
+#     """
+#     Сериализатор данных пользователя необходимых для сохранения заказа.
+#     """
+#     my_addresses = UserAddressSerializer(many=True)
+#     shopping_cart = SerializerMethodField(read_only=True)
 
+#     class Meta:
+#         fields = ('first_name', 'phone',
+#                   'my_addresses', 'messenger_account',
+#                   'shopping_cart')
+#         model = BaseProfile
+#         read_only_fields = ('first_name', 'phone',
+#                             'my_addresses', 'messenger_account',
+#                             'shopping_cart')
+
+#     def get_shopping_cart(self, obj):
+#         """
+#         """
+#         shopping_cart = {}
+#         shopping_cart['items_qty'] = self.instance.get('shopping_cart__items_qty')
+#         # shopping_cart['items_qty'] = instance.shopping_cart.items_qty
+#         shopping_cart['discounted_amount'] = self.instance.get('shopping_cart__discounted_amount')
+#         # shopping_cart['discounted_amount'] = instance.shopping_cart.discounted_amount
+#         return shopping_cart
 
 
 

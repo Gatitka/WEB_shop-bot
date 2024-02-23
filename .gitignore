@@ -172,3 +172,9 @@ media/
 static/
 
 node_modules/
+
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover

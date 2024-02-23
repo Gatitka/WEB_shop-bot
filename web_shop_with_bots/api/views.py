@@ -20,6 +20,8 @@ from promos.models import PromoNews
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
 from django.urls import reverse
+from django.http import JsonResponse
+from django.utils.translation import activate
 
 from .filters import CategoryFilter
 from.serializers import (CartDishSerializer, DeliverySerializer,
@@ -31,6 +33,7 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                           UserAddressSerializer,
                           UserOrdersSerializer,
                           ContatsDeliverySerializer)
+                          # PreOrderDataSerializer,)
 
 User = get_user_model()
 
@@ -45,7 +48,7 @@ class DeleteUserViewSet(DestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.request.user
-        instance.is_deleted = False
+        instance.is_deleted = True
         instance.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -88,14 +91,14 @@ class MyAddressViewSet(mixins.ListModelMixin,
 
     def get_queryset(self):
         return UserAddress.objects.filter(
-            base_profile=self.request.user.profile
+            base_profile=self.request.user.base_profile
         ).all()
 
     def perform_create(self, serializer):
-        serializer.save(base_profile=self.request.user.profile)
+        serializer.save(base_profile=self.request.user.base_profile)
 
     def perform_update(self, serializer):
-        serializer.save(base_profile=self.request.user.profile)
+        serializer.save(base_profile=self.request.user.base_profile)
 
 
 class ClientAddressesViewSet(mixins.ListModelMixin,
@@ -132,19 +135,21 @@ class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Order.objects.filter(
-            user=self.request.user.profile
-        ).all().prefetch_related(
-            Prefetch('order_dishes',
-                queryset=OrderDish.objects.all().select_related(
-                    'dish'
-                ).only(
-                    'dish__image'
-                ).prefetch_related(
-                    'dish__translations'
+        my_orders = Order.objects.filter(
+                user=self.request.user.base_profile
+            ).all().prefetch_related(
+                Prefetch('order_dishes',
+                    queryset=OrderDish.objects.all().select_related(
+                        'dish'
+                    ).only(
+                        'dish__image'
+                    ).prefetch_related(
+                        'dish__translations'
+                    )
                 )
-            )
-        )[:3]
+            )[:3]
+        if my_orders:
+            return my_orders
 
 
 class MenuViewSet(mixins.ListModelMixin,
@@ -234,7 +239,7 @@ class MenuViewSet(mixins.ListModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
-        dish = get_object_or_404(Dish, id=pk)
+        dish = get_object_or_404(Dish, article=pk)
         method = request.META['REQUEST_METHOD']
         current_user = request.user
 
@@ -295,6 +300,7 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
                 )
 
             return cart
+
 
         return None
 
@@ -483,6 +489,63 @@ class DeliveryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DeliverySerializer
     pagination_class = None
 
+
+# class TakeawayOrderViewSet(mixins.ListModelMixin,
+#                            viewsets.GenericViewSet,
+#                            ):
+#     def get_queryset(self):
+#         current_user = self.request.user
+#         if current_user.is_authenticated:
+#             if self.action == 'list':
+#                 base_profile = BaseProfile.objects.filter(
+#                     web_account=current_user
+#                     ).select_related(
+#                         'shopping_cart',
+#                         'messenger_account',
+#                         'my_addresses'
+#                     ).values(
+#                         'first_name',
+#                         'phone',
+#                         'shopping_cart__items_qty',
+#                         'shopping_cart__discounted_amount',
+#                         'my_addresses',
+#                     )
+
+#                 return base_profile
+
+#             elif self.action == 'create':
+#                 return Order.objects.all()
+
+#         return None
+
+#     def get_serializer_class(self):
+#         if self.action == 'list':
+#             return PreOrderDataSerializer
+
+
+
+
+def get_unit_price(request):
+    if request.method == 'GET':
+        dish_name = request.GET.get('dish_name')  # Получаем ID блюда из GET-параметров
+
+        activate('ru')
+        try:
+            # Ищем блюдо по его названию
+            from parler.utils import get_active_language_choices
+
+            dish = Dish.objects.filter(
+                translations__language_code__in=get_active_language_choices(),
+                translations__short_name=dish_name
+            )[0]
+            # dish = Dish.objects.filter('translations__short_name'==dish_name)[0]
+            # dish = Dish.objects.language().get(short_name=dish_name)
+            unit_price = dish.final_price  # Получаем актуальную цену блюда
+            return JsonResponse({'unit_price': unit_price})
+        except Dish.DoesNotExist:
+            return JsonResponse({'error': 'Dish not found'}, status=404)  # Возвращаем ошибку, если блюдо не найдено
+
+    return JsonResponse({'error': 'Invalid request method'}, status=400)  # Возвращаем ошибку, если метод запроса не GET
 
 
 

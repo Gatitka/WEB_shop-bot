@@ -1,0 +1,21 @@
+{% extends 'admin/change_form.html' %}
+
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <!-- Ваш стиль, если необходимо -->
+{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <!-- Подключаем jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Подключаем ваш JavaScript файл -->
+    <script src="{% static 'js\shop\admin\cartitem_data_admin_request.js' %}"></script>
+{% endblock %}
+
+{% block extrajs %}
+    {{ block.super }}
+    <!-- Ваш JavaScript, если необходимо -->
+{% endblock %}
