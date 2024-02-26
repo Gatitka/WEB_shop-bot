@@ -17,6 +17,7 @@ from users.models import BaseProfile
 from .validators import validate_delivery_time
 from exceptions import NoDeliveryDataException
 from django.core.exceptions import ValidationError
+from users.validators import validate_first_and_last_name
 
 
 User = get_user_model()
@@ -146,6 +147,22 @@ class ShoppingCart(models.Model):
         self.discounted_amount = 0.00
         self.items_qty = 0
         self.save()
+
+    @staticmethod
+    def get_base_profile_and_shopping_cart(user):
+        base_profile = BaseProfile.objects.filter(
+                        web_account=user
+                    ).select_related(
+                        'shopping_cart'
+                    ).prefetch_related(
+                        'shopping_cart__cartdishes'
+                    ).first()
+
+        if base_profile and base_profile.shopping_cart:
+            cart = base_profile.shopping_cart
+        else:
+            cart = None
+        return base_profile, cart
 
 
 class CartDish(models.Model):
@@ -308,7 +325,8 @@ class Order(models.Model):
     # payment
     recipient_name = models.CharField(
         max_length=400,
-        verbose_name='имя получателя'
+        verbose_name='имя получателя',
+        validators=[validate_first_and_last_name,]
     )
     recipient_phone = PhoneNumberField(
         verbose_name='телефон получателя',
@@ -401,7 +419,7 @@ class Order(models.Model):
 
     def calculate_discontinued_amount(self):
         """
-        Рассчитывает final_amount с учетом скидки от промокода.
+        Рассчитывает final_amount с учетом спец скидок от промокода.
         """
         if self.promocode:
             # Если есть промокод, применяем скидку
@@ -426,7 +444,8 @@ class Order(models.Model):
                 self.discounted_amount,
                 self.recipient_address
             )
-        elif self.delivery_id == 'takeaway':
+            self.delivery_zone_db = self.delivery_zone.pk
+        elif self.delivery.type == 'takeaway':
             if self.delivery.discount:
                 takeaway_discount = (
                     Decimal(self.discounted_amount)
@@ -437,10 +456,10 @@ class Order(models.Model):
                 )
             else:
                 self.delivery_cost = Decimal(0)
-        print(self.discounted_amount, self.delivery_cost)
         self.final_amount_with_shipping = (
             Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
         )
+        self.delivery_db = self.delivery.pk
 
     def clean(self):
         super().clean()
@@ -466,10 +485,8 @@ class Order(models.Model):
             itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
             self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
 
-
-        self.delivery_db = self.delivery.pk
-        self.delivery_zone_db = self.delivery_zone.pk
         super().save(*args, **kwargs)
+
 
 
 class OrderDish(models.Model):
@@ -532,7 +549,6 @@ class OrderDish(models.Model):
         self.unit_price = self.dish.final_price
         self.dish_article = self.dish.pk
         self.order_number = self.order.pk
-        self.base_profile = self.order.user.pk
 
         super(OrderDish, self).save(*args, **kwargs)
 
@@ -560,3 +576,14 @@ class OrderDish(models.Model):
             'final_amount_with_shipping',
             'delivery_cost',
             ])
+
+    @staticmethod
+    def create_orderdishes_from_cartdishes(order, cartdishes, base_profile):
+        for cartdish in cartdishes:
+
+            OrderDish.objects.create(
+                order=order,
+                dish=cartdish.dish,
+                quantity=cartdish.quantity,
+                base_profile=base_profile
+            )

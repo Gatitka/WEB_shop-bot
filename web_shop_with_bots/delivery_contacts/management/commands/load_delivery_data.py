@@ -13,25 +13,27 @@ class Command(BaseCommand):
         shop1, created = Restaurant.objects.get_or_create(
             short_name='центр',
             address='Milovana Milovanovića 4',
-            work_hours="9:00 - 22:00",
+            open_time="9:00",
+            close_time="22:00",
             phone="+381 61 271 4798",
-            city='Белград',
+            city='Beograd',
             is_active=True,
             image=os.path.join('contacts', 'shop1.jpg')
         )
         shop2, created = Restaurant.objects.get_or_create(
             short_name='центр2',
             address='Štark arena',
-            work_hours="9:00 - 22:00",
+            open_time="9:00",
+            close_time="22:00",
             phone="+381 11 222 3333",
-            city='Белград',
+            city='Beograd',
             is_active=True,
             image=os.path.join('contacts', 'shop2.jpg')
         )
 
         delivery1, created = Delivery.objects.get_or_create(
             type='delivery',
-            city='Белград',
+            city='Beograd',
             is_active=True,
             image=os.path.join('contacts', 'delivery1.jpg'),
         )
@@ -59,7 +61,7 @@ class Command(BaseCommand):
 
         delivery2, created = Delivery.objects.get_or_create(
             type='takeaway',
-            city='Белград',
+            city='Beograd',
             discount='10.00',
             is_active=True,
         )

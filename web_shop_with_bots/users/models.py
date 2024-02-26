@@ -136,6 +136,38 @@ class BaseProfile(models.Model):
                 ]
             )
 
+    @staticmethod
+    def base_profile_messegner_account_add(messenger, instance):
+        if instance.base_profile.messenger_account:
+            if messenger is None:
+                msngr_account = instance.base_profile.messenger_account
+                instance.base_profile.messenger_account = None
+                instance.base_profile.save(
+                    update_fields=['messenger_account']
+                )
+                msngr_account.delete()
+
+            else:
+                instance.base_profile.messenger_account.save(
+                    msngr_type=messenger['msngr_type'],
+                    msngr_username=messenger['msngr_username'],
+                )
+
+        else:
+            if messenger:
+                messenger_account, created = MessengerAccount.objects.get_or_create(
+                    msngr_type = messenger.get('msngr_type'),
+                    msngr_username = messenger.get('msngr_username'),
+                )
+                if created:
+                    messenger_account.language = instance.web_language
+                    messenger_account.save()
+
+                instance.base_profile.messenger_account = messenger_account
+                instance.base_profile.save(
+                    update_fields=['messenger_account']
+                    )
+
 
 class CustomWEBAccountManager(BaseUserManager):
 

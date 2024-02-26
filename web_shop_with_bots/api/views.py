@@ -32,7 +32,9 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                           RestaurantSerializer,
                           UserAddressSerializer,
                           UserOrdersSerializer,
-                          ContatsDeliverySerializer)
+                          ContatsDeliverySerializer,
+                          TakeawayOrderSerializer,
+                          TakeawayConditionsSerializer,)
                           # PreOrderDataSerializer,)
 
 User = get_user_model()
@@ -103,6 +105,9 @@ class MyAddressViewSet(mixins.ListModelMixin,
 
 class ClientAddressesViewSet(mixins.ListModelMixin,
                              viewsets.GenericViewSet):
+    """
+    Вьюсет для всех пользователей для получения сохраненных адресов клиента.
+    """
     serializer_class = UserAddressSerializer
     permission_classes = [AllowAny]
 
@@ -403,7 +408,6 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
             Responce: Статус подтверждающий/отклоняющий действие.
         """
         cartdish = self.get_object()
-        # cartdish = get_object_or_404(CartDish, pk=pk)
         cartdish.quantity += 1
         cartdish.save()
 
@@ -490,37 +494,35 @@ class DeliveryViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = None
 
 
-# class TakeawayOrderViewSet(mixins.ListModelMixin,
-#                            viewsets.GenericViewSet,
-#                            ):
-#     def get_queryset(self):
-#         current_user = self.request.user
-#         if current_user.is_authenticated:
-#             if self.action == 'list':
-#                 base_profile = BaseProfile.objects.filter(
-#                     web_account=current_user
-#                     ).select_related(
-#                         'shopping_cart',
-#                         'messenger_account',
-#                         'my_addresses'
-#                     ).values(
-#                         'first_name',
-#                         'phone',
-#                         'shopping_cart__items_qty',
-#                         'shopping_cart__discounted_amount',
-#                         'my_addresses',
-#                     )
+class TakeawayOrderViewSet(mixins.CreateModelMixin,
+                           mixins.ListModelMixin,
+                           viewsets.GenericViewSet,
+                           ):
+    """
+    Вьюсет для заказов самовывозом.
+    GET-запрос получает условия самовывоза по городам.
+    !!!!! "restaurants" как в api/v1/contacts/
+    POST-запрос сохраняет заказ.
+    """
+    def get_queryset(self):
+        if self.action == 'list':
+            queryset = Delivery.get_delivery_conditions(type='takeaway')
 
-#                 return base_profile
+        elif self.action == 'create':
+            current_user = self.request.user
+            if current_user.is_authenticated:
+                queryset = Order.objects.filter(user=self.request.user.base_profile).all()
 
-#             elif self.action == 'create':
-#                 return Order.objects.all()
+        return queryset
 
-#         return None
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return TakeawayConditionsSerializer
+        elif self.action == 'create':
+            return TakeawayOrderSerializer
 
-#     def get_serializer_class(self):
-#         if self.action == 'list':
-#             return PreOrderDataSerializer
+
+
 
 
 

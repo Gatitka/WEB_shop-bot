@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 
 def validate_first_and_last_name(value):
@@ -14,14 +14,12 @@ def validate_first_and_last_name(value):
 
 
 def validate_birthdate(value):
-    if not value:
-        raise ValidationError(_('Please provide the birthdate.'), code='invalid')
+    min_birthdate = datetime.now().date() - timedelta(days=365*100)
+    if value < min_birthdate:
+        raise ValidationError(_('Проверьте, что дата рождения не ранее 100 назад.'),
+                              code='invalid')
 
-    try:
-        birthdate = datetime.strptime(value, '%Y-%m-%d')
-    except ValueError:
-        raise ValidationError(_('Invalid birthdate format. Please use the format YYYY-MM-DD.'), code='invalid')
-
-    min_birthdate = datetime.now().replace(year=datetime.now().year - 100)
-    if birthdate > min_birthdate:
-        raise ValidationError(_('Birthdate should be at least 100 years ago.'), code='invalid')
+    today = date.today()
+    if today <= value:
+        raise ValidationError(_("Проверьте, что дата рождения не в будущем"),
+                              code='invalid')

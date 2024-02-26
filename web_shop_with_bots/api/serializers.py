@@ -1,12 +1,6 @@
-import base64  # Модуль с функциями кодирования и декодирования base64
-import re
-from datetime import date, datetime
 
-import phonenumbers
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
-from django.core.files.base import ContentFile
 from django.core.validators import EmailValidator
 from django.db.models import F, QuerySet
 from djoser.compat import get_user_email, get_user_email_field_name
@@ -24,33 +18,21 @@ from promos.models import PromoNews, Promocode
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from tm_bot.models import MessengerAccount
 from users.models import BaseProfile, UserAddress
+from users.validators import (validate_birthdate,
+                              validate_first_and_last_name)
+from tm_bot.validators import (validate_msngr_account,
+                               validate_msngr_type_username)
+from django.utils.translation import gettext_lazy as _
+from django.shortcuts import get_object_or_404
 
 User = get_user_model()
 
 
 # ---------------- ЛИЧНЫЙ КАБИНЕТ --------------------
 class MessengerAccountSerializer(serializers.ModelSerializer):
-    msngr_phone = PhoneNumberField
-
     class Meta:
         model = MessengerAccount
-        fields = ('msngr_username', 'msngr_type', 'msngr_phone')
-
-    def validate_msngr_phone(self, value):
-        """
-        Пользовательская валидация для номера телефона.
-        """
-        if value:
-            try:
-                parsed_phone = phonenumbers.parse(value, None)
-                if not phonenumbers.is_valid_number(parsed_phone):
-                    raise serializers.ValidationError(
-                        "Неверный формат номера телефона.")
-            except Exception:
-                raise serializers.ValidationError(
-                    "Неверный формат номера телефона.")
-
-        return value
+        fields = ('msngr_username', 'msngr_type',)
 
     def validate(self, data: dict) -> dict:
         """
@@ -62,41 +44,30 @@ class MessengerAccountSerializer(serializers.ModelSerializer):
 
         if msngr_type:
             if msngr_username:
-
-                if msngr_type == 'tm':
-                    # Проверка на допустимые символы
-                    # (A-z, 0-9, и подчеркивания)
-                    if not re.match("^@[A-Za-z0-9_]+$", msngr_username):
-                        raise serializers.ValidationError(
-                            "Недопустимые символы в Telegram username."
-                            " Username должен начинаться с @ и содержать "
-                            "только цифры и буквы."
-                        )
-
-                    # Проверка длины (5-32 символа)
-                    if not (5 <= len(msngr_username) <= 32):
-                        raise serializers.ValidationError(
-                            "Длина Telegram username должна быть"
-                            " от 5 до 32 символов."
-                        )
-
-                elif msngr_type == 'wts':
-                    # метод validate наступает после метода
-                    # validate_msngr_phone. Раз на том этапе не было ошибок
-                    # валидации, то номер телефона корректен и его можно
-                    # сохранить в username WtsApp.
-                    pass
-
-                else:
-                    raise ValidationError("Сейчас присоединяем только tm, wts.")
+                validate_msngr_type_username(msngr_type, msngr_username)
 
         return data
 
 
 class MyUserSerializer(serializers.ModelSerializer):
-    date_of_birth = SerializerMethodField(required=False)
-    messenger = SerializerMethodField(required=False)
-    email = serializers.EmailField(validators=[EmailValidator()])
+    date_of_birth = serializers.DateField(
+                        source='base_profile.date_of_birth',
+                        required=False,
+                        allow_null=True,
+                        validators=[validate_birthdate,])
+
+    messenger = MessengerAccountSerializer(
+                        source='base_profile.messenger_account',
+                        required=False,
+                        allow_null=True,
+                        validators=[validate_msngr_account,])
+
+    first_name = serializers.CharField(
+                        validators=[validate_first_and_last_name,])
+
+    last_name = serializers.CharField(
+                        validators=[validate_first_and_last_name,])
+
     phone = PhoneNumberField(required=True)
 
     class Meta:
@@ -107,121 +78,7 @@ class MyUserSerializer(serializers.ModelSerializer):
                   'web_language',
                   'messenger',
                   )
-        read_only_fields = ('email',)
-
-    def get_date_of_birth(self, user: User):
-        """Получает значение, если авторизованный пользователь имеет
-        этот рецепт в корзине покупок.
-        Args:
-            dish (Dish): Запрошенное блюдо.
-        Returns:
-            bool: в корзине покупок или нет.
-        """
-        if user.is_authenticated:
-            date_of_birth = user.base_profile.date_of_birth
-        if date_of_birth:
-            return date_of_birth.strftime("%d.%m.%Y")
-        return None
-
-    def get_messenger(self, user: User) -> MessengerAccount:
-        """Получаем значение аккаунта мессенджера
-        Args:
-            user (User): Запрошенный пользователь.
-        Returns:
-            MessengerAccount: данные мессенджер-аккаунта (username, type).
-        """
-        if user.is_authenticated:
-
-            try:
-                messenger_account = MessengerAccount.objects.get(
-                    profile=user.base_profile
-                )
-                serializer = MessengerAccountSerializer(messenger_account)
-                return serializer.data
-
-            except MessengerAccount.DoesNotExist:
-                messenger_account = None
-                return None
-
-    def validate_first_name(self, value):
-        if (not value
-            or value in ['me', 'i', 'я', 'ja', 'и']
-                or (value.isalpha() is not True)):
-
-            raise serializers.ValidationError(
-                {'first_name': ("Please provide first_name. "
-                                "Only letters are allowed.")})
-        return value
-
-    def validate(self, data: dict) -> dict:
-        """
-        Проверка данных в поле Messenger_account, date_of_birth.
-        """
-        if 'messenger' in self.initial_data:
-            messenger = self.initial_data.get('messenger')
-
-            if messenger:
-                if isinstance(messenger, dict):
-                    if 'msngr_type' not in messenger:
-                        raise serializers.ValidationError(
-                            "Ключа msngr_type нет в передаваемом словаре messenger.")
-                    if 'msngr_username' not in messenger:
-                        raise serializers.ValidationError(
-                            "Ключа msngr_username нет в передаваемом словаре messenger.")
-
-                    if (messenger['msngr_type'] is not None
-                            and messenger['msngr_username'] is not None):
-
-                        if messenger['msngr_type'] == 'tm':
-                            messenger['msngr_phone'] = None
-                        elif messenger['msngr_type'] == 'wts':
-                            messenger['msngr_phone'] = messenger['msngr_username']
-                        else:
-                            raise serializers.ValidationError(
-                                "msngr_type принимается только 'tm', 'wts'."
-                            )
-
-                        serializer = MessengerAccountSerializer(data=messenger)
-                        if not serializer.is_valid():
-                        # Если данные не прошли валидацию, обработайте ошибки, если нужно
-                            raise serializers.ValidationError(serializer.errors)
-                    else:
-                        messenger = None
-
-                else:
-                    raise serializers.ValidationError(
-                        "объект messenger не является словарем")
-
-        if 'date_of_birth' in self.initial_data:
-            date_of_birth = self.initial_data.get('date_of_birth')
-
-            if date_of_birth:
-                try:
-                    date_obj = datetime.strptime(
-                        date_of_birth, "%d.%m.%Y"
-                    ).date()
-                    today = date.today()
-
-                    if date_obj > today:
-                        raise serializers.ValidationError({
-                            "date_of_birth": ("Дата рождения "
-                                              "не может быть в будущем.")
-                        })
-                    data['date_of_birth'] = date_obj
-
-                except ValueError:
-                    raise serializers.ValidationError({
-                        "date_of_birth": ("Проверьте корректность "
-                                          "и формат даты: ДД.ММ.ГГГГ.")
-                    })
-
-            else:
-                data['date_of_birth'] = None
-
-
-            data['messenger'] = messenger
-
-        return data
+        read_only_fields = ('email', 'date_of_birth')
 
     def update(self, instance: User, validated_data: dict) -> User:
         """
@@ -232,58 +89,24 @@ class MyUserSerializer(serializers.ModelSerializer):
         Returns:
             User: созданный рецепт.
         """
-        if 'messenger' in validated_data:
-            messenger = validated_data.pop('messenger')
+        if 'base_profile' in validated_data:
+            base_profile_validated_data = validated_data.pop('base_profile')
 
-            if instance.base_profile.messenger_account:
-                if messenger is None:
-                    msngr_account = instance.base_profile.messenger_account
-                    instance.base_profile.messenger_account = None
-                    instance.base_profile.save(
-                        update_fields=['messenger_account']
-                    )
-                    msngr_account.delete()
+            if 'messenger_account' in base_profile_validated_data:
+                messenger = base_profile_validated_data.get('messenger_account')
+                BaseProfile.base_profile_messegner_account_add(
+                    messenger,
+                    instance
+                )
 
-                else:
-                    instance.base_profile.messenger_account.save(
-                        msngr_type=messenger['msngr_type'],
-                        msngr_username=messenger['msngr_username'],
-                        msngr_phone=messenger['msngr_phone'],
-                    )
+            if 'date_of_birth' in base_profile_validated_data:
+                date_of_birth = base_profile_validated_data.get('date_of_birth')
 
-            else:
-                if messenger:
-                    messenger_account, created = MessengerAccount.objects.get_or_create(
-                        msngr_type = messenger.get('msngr_type'),
-                        msngr_username = messenger.get('msngr_username'),
-                    )
-                    if created:
-                        messenger_account.msngr_phone = messenger.get('msngr_phone')
-                        messenger_account.language = instance.web_language
-                        messenger_account.save()
+                instance.base_profile.date_of_birth = date_of_birth
 
-
-                    instance.base_profile.messenger_account = messenger_account
-                    instance.base_profile.save(
-                        update_fields=['messenger_account']
-                    )
-
-        if 'date_of_birth' in validated_data:
-            date_of_birth = validated_data.pop('date_of_birth')
-
-            instance.base_profile.date_of_birth = date_of_birth
-
-            instance.base_profile.save(
-                update_fields=['date_of_birth']
-            )
-
-        email_field = get_user_email_field_name(User)
-        if email_field in validated_data:
-            if settings.DJOSER['SEND_ACTIVATION_EMAIL']:
-                instance_email = get_user_email(instance)
-                if instance_email != validated_data[email_field]:
-                    instance.is_active = False
-                    instance.save(update_fields=["is_active"])
+                instance.base_profile.save(
+                    update_fields=['date_of_birth']
+                )
 
         return super().update(instance, validated_data)
 
@@ -324,6 +147,7 @@ class OrderDishesShortSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ('dish', 'quantity', 'amount')
         model = OrderDish
+        read_only_fields = ('dish', 'quantity', 'amount')
 
 
 class UserOrdersSerializer(serializers.ModelSerializer):
@@ -471,16 +295,18 @@ class RestaurantSerializer(serializers.ModelSerializer):
     Базовый сериализатор для модели Restaurant, только чтение!
     """
     coordinates = serializers.SerializerMethodField()
+    open_time = serializers.TimeField(format='%H:%M')
+    close_time = serializers.TimeField(format='%H:%M')
 
     class Meta:
         fields = ('id', 'short_name',
                   'city', 'address', 'coordinates',
-                  'work_hours', 'phone',
+                  'open_time', 'close_time', 'phone',
                   'image')
         model = Restaurant
         read_only_fields = ('id', 'short_name',
                             'city', 'address', 'coordinates',
-                            'work_hours', 'phone',
+                            'open_time', 'close_time', 'phone',
                             'image')
 
     def get_coordinates(self, obj):
@@ -643,10 +469,112 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
 #         # shopping_cart['discounted_amount'] = instance.shopping_cart.discounted_amount
 #         return shopping_cart
 
+class OrderDishWriteSerializer(serializers.ModelSerializer):
+    """
+    Сериализатор для записи Order_dishes в заказ.
+    """
+    class Meta:
+        fields = ('dish', 'quantity')
+        model = OrderDish
 
 
+class TakeawayOrderSerializer(serializers.ModelSerializer):
+    amount = serializers.DecimalField(required=False,
+                                      allow_null=True,
+                                      max_digits=8,
+                                      decimal_places=2)
+    promocode = serializers.CharField(required=False,
+                                      allow_null=True)
+    orderdishes = OrderDishWriteSerializer(required=False,
+                                           allow_null=True,
+                                           many=True)
+    recipient_phone = PhoneNumberField(required=True)
+
+    class Meta:
+        fields = ('recipient_name', 'recipient_phone',
+                  'city', 'time', 'restaurant',
+                  'comment', 'persons_qty',
+                  'orderdishes', 'amount', 'promocode',)
+        model = Order
+        # read_only_fields = ('recipient_name', 'recipient_phone',
+        #                     'city', 'time', 'restaurant', 'restaurant',
+        #                     'amount', 'promocode',
+        #                     'cartdishes')
+
+    def create(self, validated_data):
+        request = self.context['request']
+
+        if request:
+            validated_data['delivery'] = get_object_or_404(
+                                            Delivery,
+                                            city=self.initial_data['city'],
+                                            type='takeaway')
+
+            if request.user.is_authenticated:
+                base_profile, cart = (
+                    ShoppingCart.get_base_profile_and_shopping_cart(request.user)
+                )
+                if base_profile and cart:
+                    cartdishes = cart.cartdishes.all()
+                    if cartdishes:
+                        validated_data['promocode'] = cart.promocode
+                        order = Order.objects.create(**validated_data,
+                                                     user=base_profile)
+
+                        OrderDish.create_orderdishes_from_cartdishes(
+                            order, cartdishes, base_profile=base_profile.pk)
+                        # проверить единство расчетов фронт и бэк
+                        # validated_data['discount'] = cart.discount
+                        # validated_data['discounted_amount'] = cart.discounted_amount
+                        # validated_data['items_qty'] = cart.items_qty
+                        # validated_data['amount'] = cart.amount
+                        cart.empty_cart()
+                    else:
+                        raise serializers.ValidationError(_(
+                            "Корзина пуста. Пожалуйста, добавьте блюда в "
+                            "корзину перед оформлением заказа."
+                        ))
+
+            else:
+                # Если пользователь не аутентифицирован, получаем данные корзины из запроса
+                if 'cartdishes' in validated_data:
+                    cartdishes = validated_data.pop('cartdishes')
+                    order = Order.objects.create(**validated_data,
+                                                 user=None)
+                    OrderDish.create_orderdishes_from_cartdishes(
+                        order, cartdishes, base_profile=None)
+            return order
+
+        # Если что-то пошло не так или не было найдено корзины, возвращаем None
+        return None
 
 
+class TakeawayConditionsSerializer(serializers.ModelSerializer):
+    restaurants = SerializerMethodField()
+
+    class Meta:
+        fields = ('city', 'restaurants',
+                  'discount')
+        model = Order
+        read_only_fields = ('city', 'restaurants',
+                            'discount')
+
+    def get_restaurants(self, delivery: Delivery) -> QuerySet[dict]:
+        """Получает список ресторанов города.
+
+        Args:
+            delivery (Delivery): Запрошенный объект доставки.
+
+        Returns:
+            QuerySet[dict]: Список ресторанов в городе.
+        """
+        city = delivery['city']
+        restaurants = Restaurant.objects.filter(
+            city=city,
+            is_active=True
+        )
+
+        return RestaurantSerializer(restaurants, many=True).data
 
 
 

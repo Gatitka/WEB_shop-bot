@@ -90,7 +90,8 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
     # Beograd 44.813366941787976, 20.460647915161385
 
     list_display = ('pk', 'city', 'short_name',
-                    'is_active', 'phone', 'work_hours',
+                    'is_active', 'phone',
+                    'open_time', 'close_time',
                     'is_overloaded', 'admin_photo')
     readonly_fields = ('admin_photo',)
     list_filter = ('is_active', 'city')

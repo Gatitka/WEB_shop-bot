@@ -169,6 +169,26 @@ class Delivery(TranslatableModel):
             print(f'Ошибка при разборе ответа от API Google Maps: {e}')
             return None
 
+    @staticmethod
+    def get_delivery_conditions(type):
+        if type == 'takeaway':
+            queryset = Delivery.objects.filter(
+                    is_active=True,
+                    type=type
+                ).all().values(
+                    'city', 'min_time', 'max_time',
+                    'discount'
+                )
+        if type == 'delivery':
+            queryset = Delivery.objects.filter(
+                    is_active=True,
+                    type=type
+                ).all().values(
+                    'city', 'min_time', 'max_time',
+                    'min_order_amount',
+                )
+        return queryset
+
     class Meta:
         verbose_name = 'доставка'
         verbose_name_plural = 'способы доставки'
@@ -240,10 +260,14 @@ class Restaurant(models.Model):
         verbose_name='координаты'
     )
 
-    work_hours = models.CharField(
-        max_length=100,
-        verbose_name='время работы'
+    open_time = models.TimeField(
+        verbose_name='время открытия'
     )
+
+    close_time = models.TimeField(
+        verbose_name='время закрытия'
+    )
+
     phone = PhoneNumberField(
         verbose_name='телефон',
         unique=True,

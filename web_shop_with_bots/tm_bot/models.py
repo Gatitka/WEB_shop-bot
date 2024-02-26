@@ -85,11 +85,18 @@ class MessengerAccount(models.Model):
         return f'Tm id = {self.msngr_id}'
 
     def save(self, *args, **kwargs):
-        # Автоматически генерирует ссылку на чат перед сохранением, если msngr_username изменено
+        # Проверяем, создаем ли мы новый объект или обновляем существующий
+        if self.pk is not None:
+            for attr, value in kwargs.items():
+                setattr(self, attr, value)
+
+        # Вызываем метод get_msngr_link() и производим дополнительные действия
         self.get_msngr_link()
         if self.msngr_type == 'wts':
             self.msngr_phone = self.msngr_username
-        super().save(*args, **kwargs)
+        super().save()
+
+        return self
 
     def get_msngr_link(self):
         # Генерирует ссылку на чат в мессенджере на основе msngr_username
@@ -101,7 +108,7 @@ class MessengerAccount(models.Model):
                 f" target='_blank'>Открыть чат (Tm)</a>"
             )
 
-        if self.msngr_type == 'wts':
+        elif self.msngr_type == 'wts':
             username = self.msngr_username
             self.msngr_link = (
                 f"<a href='https://wa.me/{username}'"

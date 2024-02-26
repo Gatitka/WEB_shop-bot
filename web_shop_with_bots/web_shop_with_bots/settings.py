@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(os.path.join(os.path.dirname(BASE_DIR), 'infra', '.env'), verbose=True)
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))), 'infra', '.env'), verbose=True)
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -15,6 +15,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 DEBUG = os.getenv('DEBUG')
 TEST_SERVER = os.getenv('TEST_SERVER')
 SERVER = os.getenv('SERVER')
+ENVIRONMENT = os.getenv('ENVIRONMENT')
 
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 
@@ -201,6 +202,8 @@ DJOSER = {
     },
     'PERMISSIONS': {
         'user_delete': ['api.permissions.DenyAllPermission'],
+        'set_password': ['api.permissions.DenyAllPermission'],
+        'set_username': ['api.permissions.DenyAllPermission']
         # запрет на удаление пользователей стандартным способом,
         # т.к. кастомный метод удаления, делая юзера неактивным
     },
@@ -367,12 +370,12 @@ SUMMERNOTE_CONFIG = {
 }
 
 # -------------------------------- GEOCODING --------------------------------------------
+if ENVIRONMENT == 'development':
 
-GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), 'Program Files', 'GDAL', 'gdal.dll')
+    GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), 'Program Files', 'GDAL', 'gdal.dll')
 
-GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal308.dll'
-GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
-
+    GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal308.dll'
+    GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
 
 # -------------------------------- SENTRY MISTAKES INFORMATION----------------------------
 
