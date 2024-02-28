@@ -1,3 +1,6 @@
+
+
+
 def make_active(modeladmin, request, queryset):
     """Добавление действия активации выбранных позиций."""
     queryset.update(is_active=1)

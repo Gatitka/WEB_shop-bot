@@ -15,7 +15,8 @@ from rest_framework.serializers import SerializerMethodField
 from catalog.models import Category, Dish, UOM
 from delivery_contacts.models import Delivery, Restaurant
 from promos.models import PromoNews, Promocode
-from shop.models import CartDish, Order, OrderDish, ShoppingCart
+from shop.models import (CartDish, Order, OrderDish,
+                         ShoppingCart, ORDER_STATUS_CHOICES)
 from tm_bot.models import MessengerAccount
 from users.models import BaseProfile, UserAddress
 from users.validators import (validate_birthdate,
@@ -24,6 +25,7 @@ from tm_bot.validators import (validate_msngr_account,
                                validate_msngr_type_username)
 from django.utils.translation import gettext_lazy as _
 from django.shortcuts import get_object_or_404
+from shop.validators import validate_delivery_data
 
 User = get_user_model()
 
@@ -139,7 +141,7 @@ class DishShortSerializer(TranslatableModelSerializer):
 
 class OrderDishesShortSerializer(serializers.ModelSerializer):
     """
-    Базовый сериализатор для Order_dishes.
+    Базовый сериализатор для Orderdishes.
     Возможно только чтение.
     """
     dish = DishShortSerializer()
@@ -155,15 +157,15 @@ class UserOrdersSerializer(serializers.ModelSerializer):
     Базовый сериализатор для Orders.
     Возможно только чтение.
     """
-    order_dishes = OrderDishesShortSerializer(many=True)
+    orderdishes = OrderDishesShortSerializer(many=True)
     status = serializers.CharField(source='get_status_display')
 
     class Meta:
         fields = ('order_number', 'created', 'status',
-                  'order_dishes', 'final_amount_with_shipping')
+                  'orderdishes', 'final_amount_with_shipping')
         model = Order
         read_only_fields = ('order_number', 'created', 'status',
-                            'order_dishes', 'final_amount_with_shipping')
+                            'orderdishes', 'final_amount_with_shipping')
 
     def get_orer_dishes(self, order: Order) -> QuerySet[dict]:
         """Получает список блюд заказа.
@@ -174,7 +176,7 @@ class UserOrdersSerializer(serializers.ModelSerializer):
         Returns:
             QuerySet[dict]: Список блюд в заказе.
         """
-        return order.order_dishes.values(
+        return order.orderdishes.values(
             'id',
             'translations',
             'amount'
@@ -471,7 +473,7 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
 
 class OrderDishWriteSerializer(serializers.ModelSerializer):
     """
-    Сериализатор для записи Order_dishes в заказ.
+    Сериализатор для записи Orderdishes в заказ.
     """
     class Meta:
         fields = ('dish', 'quantity')
@@ -482,24 +484,45 @@ class TakeawayOrderSerializer(serializers.ModelSerializer):
     amount = serializers.DecimalField(required=False,
                                       allow_null=True,
                                       max_digits=8,
-                                      decimal_places=2)
+                                      decimal_places=2,
+                                      write_only=True)
+
     promocode = serializers.CharField(required=False,
-                                      allow_null=True)
+                                      allow_null=True,
+                                      write_only=True)
+
     orderdishes = OrderDishWriteSerializer(required=False,
                                            allow_null=True,
                                            many=True)
+
     recipient_phone = PhoneNumberField(required=True)
+    status_display = serializers.SerializerMethodField()
+    restaurant = serializers.PrimaryKeyRelatedField(
+        queryset=Restaurant.objects.all(),
+        required=True,
+        )
 
     class Meta:
-        fields = ('recipient_name', 'recipient_phone',
+        fields = ('order_number', 'created',
+                  'status_display',
+                  'final_amount_with_shipping',
+                  'payment_type',
+                  'items_qty',
+                  'recipient_name', 'recipient_phone',
                   'city', 'time', 'restaurant',
                   'comment', 'persons_qty',
-                  'orderdishes', 'amount', 'promocode',)
+                  'orderdishes', 'amount', 'promocode',
+                  )
         model = Order
-        # read_only_fields = ('recipient_name', 'recipient_phone',
-        #                     'city', 'time', 'restaurant', 'restaurant',
-        #                     'amount', 'promocode',
-        #                     'cartdishes')
+        read_only_fields = ('order_number', 'created',
+                            'status',
+                            'final_amount_with_shipping',
+                            )
+
+    def get_status_display(self, obj):
+        # Получаем разъяснение статуса заказа по его значению
+        status_display = dict(ORDER_STATUS_CHOICES).get(obj.status)
+        return status_display
 
     def create(self, validated_data):
         request = self.context['request']

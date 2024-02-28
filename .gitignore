@@ -178,3 +178,6 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+
+temp/
+yume.log

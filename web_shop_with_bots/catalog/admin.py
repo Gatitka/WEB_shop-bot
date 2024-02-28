@@ -35,9 +35,9 @@ class DishCategoryAdmin(admin.TabularInline):
 @admin.register(Dish)
 class DishAdmin(TranslatableAdmin):
     """Настройки админ панели блюд."""
-    readonly_fields = ('final_price', 'admin_photo', 'created')
+    readonly_fields = ('id', 'final_price', 'admin_photo', 'created')
     list_display = ('id', 'article', 'is_active', 'priority', 'short_name',
-                    'price', 'discount', 'final_price',
+                    'discount', 'final_price',
                     'spicy_icon', 'vegan_icon', 'admin_photo')
     list_filter = ('is_active', 'category__slug',)
     list_per_page = 10
@@ -46,22 +46,24 @@ class DishAdmin(TranslatableAdmin):
                      'translations__text__icontains')
     inlines = (DishCategoryAdmin,)
     actions = [make_active, make_deactive]
+    list_select_related = False
 
     fieldsets = (
         ('Основное', {
             'fields': (
-                ('article', 'created'),
+                ('article'),
+                ('id', 'created'),
                 ('is_active', 'priority'),
                 ('spicy_icon', 'vegan_icon'),
             )
         }),
-        ('Описание сайт', {
+        ('Тексты для сайта', {
             'fields': (
                 ('short_name'),
                 ('text'),
             )
         }),
-        ('Описание мессенджер', {
+        ('Тексты для мессенджера', {
             'fields': (
                 ('msngr_short_name'),
                 ('msngr_text'),
@@ -86,8 +88,11 @@ class DishAdmin(TranslatableAdmin):
 
     # надстройка для увеличения размера текстового поля
     def formfield_for_dbfield(self, db_field, **kwargs):
-        if db_field.db_type == 'text':
-            kwargs['widget'] = admin.widgets.AdminTextareaWidget(attrs={'rows': 3, 'cols': 40})
+        if db_field.name in ['short_name', 'text',
+                             'msngr_short_name', 'msngr_text']:
+            kwargs['widget'] = admin.widgets.AdminTextareaWidget(
+                attrs={'rows': 3, 'cols': 40}
+            )
         return super().formfield_for_dbfield(db_field, **kwargs)
 
     def get_queryset(self, request):
@@ -104,7 +109,7 @@ class DishAdmin(TranslatableAdmin):
                                              'units_in_set_uom__translations')
 
         # Retrieve the object based on the object_id
-        obj = queryset.get(pk=object_id)
+        obj = queryset.get(article=object_id)
 
         return obj
 

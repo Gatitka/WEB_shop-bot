@@ -1,12 +1,10 @@
 from decimal import Decimal
-from typing import Collection
 
-from django.conf import settings  # для импорта валюты
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.validators import (MaxValueValidator, MinLengthValidator,
                                     MinValueValidator)
 from django.db import models
-from django.db.models import Sum
 
 from phonenumber_field.modelfields import PhoneNumberField
 
@@ -14,10 +12,13 @@ from catalog.models import Dish
 from delivery_contacts.models import Delivery, DeliveryZone, Restaurant
 from promos.models import Promocode
 from users.models import BaseProfile
-from .validators import validate_delivery_time
+from .validators import validate_order_time
 from exceptions import NoDeliveryDataException
 from django.core.exceptions import ValidationError
 from users.validators import validate_first_and_last_name
+from django.shortcuts import get_object_or_404
+from datetime import date, datetime, timedelta
+from django.db.models import Max, Sum
 
 
 User = get_user_model()
@@ -46,7 +47,9 @@ ORDER_STATUS_CHOICES = (
     (DELIVERED, "доставлен"),
     (CLOSED, "выдан")
 )
+import logging
 
+logger = logging.getLogger(__name__)
 
 class ShoppingCart(models.Model):
     """ Модель для добавления блюд в корзину покупок."""
@@ -322,7 +325,11 @@ class Order(models.Model):
         max_digits=7, decimal_places=2,
         blank=True, null=True,
     )
-    # payment
+    payment_type = models.CharField(
+        max_length=20,
+        verbose_name="способ оплаты",
+        choices=settings.PAYMENT_METHODS
+    )
     recipient_name = models.CharField(
         max_length=400,
         verbose_name='имя получателя',
@@ -360,7 +367,6 @@ class Order(models.Model):
         related_name='заказы',
         blank=True,
         null=True,
-        default=1
     )
     persons_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во приборов',
@@ -465,7 +471,7 @@ class Order(models.Model):
         super().clean()
         # Проверяем, время доставки
         try:
-            validate_delivery_time(self.time, self.delivery)
+            validate_order_time(self.time, self.delivery, self.restaurant)
         except Exception as e:
             raise ValidationError(
                 f'{e}'
@@ -478,15 +484,36 @@ class Order(models.Model):
         self.full_clean()
         if self.pk is None:  # Если объект новый
             self.items_qty = 0
+            self.order_number = self.get_next_item_id_today()
+
         else:
             # Если объект уже существует, выполнить рассчеты и другие действия
+            self.get_restaurant(self.restaurant,
+                                self.delivery.type,
+                                self.recipient_address)
+
             self.calculate_discontinued_amount()
             self.calculate_final_amount_with_shipping()
-            itemsqty = self.order_dishes.aggregate(qty=Sum('quantity'))
+            itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
             self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
 
         super().save(*args, **kwargs)
 
+    def get_restaurant(self, restaurant, delivery_type, recipient_address=None):
+        if delivery_type == 'takeaway':
+            self.restaurant = restaurant
+        if delivery_type == 'delivery':
+            self.restaurant = Restaurant.objects.get(id=1)
+
+    def get_next_item_id_today(self):
+        today_start = datetime.combine(date.today(), datetime.min.time())  # Начало текущего дня
+        today_end = today_start + timedelta(days=1) - timedelta(microseconds=1)  # Конец текущего дня
+
+        max_id = Order.objects.filter(
+            created__range=(today_start, today_end)
+        ).aggregate(Max('order_number'))['order_number__max']
+        # Устанавливаем номер заказа на единицу больше MAX текущей даты
+        return (max_id + 1)
 
 
 class OrderDish(models.Model):
@@ -494,7 +521,7 @@ class OrderDish(models.Model):
     dish = models.ForeignKey(
         Dish,
         on_delete=models.SET_NULL,
-        related_name='orders',
+        related_name='orderdishes',
         verbose_name='Товары в заказе',
         null=True
     )
@@ -502,7 +529,7 @@ class OrderDish(models.Model):
         Order,
         on_delete=models.SET_NULL,
         verbose_name='Заказ',
-        related_name='order_dishes',
+        related_name='orderdishes',
         null=True
     )
     quantity = models.PositiveSmallIntegerField(
@@ -531,7 +558,6 @@ class OrderDish(models.Model):
         verbose_name='Запись baseprofile в БД',
         null=True, blank=True,
     )
-
 
     class Meta:
         ordering = ['dish']

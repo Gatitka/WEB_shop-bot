@@ -54,8 +54,8 @@ class Command(BaseCommand):
         delivery1.set_current_language('sr-latn')       # Only switches
         delivery1.description = (
             "Besplatna dostava\n"
-            "Stari Grad, Dorćol, Vračar, Beograd na vodi za narudžbine od 2500 din.\n"
-            "Pitajte našeg operatera za druge okruge."
+            "Stari Grad, Dorćol, Vračar, Beograd na vodi - porudžbine od 2500 din.\n"
+            "Za druge opštine obratite se administratoru. "
             )
         delivery1.save()
 
@@ -66,13 +66,13 @@ class Command(BaseCommand):
             is_active=True,
         )
         delivery2.set_current_language('ru')
-        delivery2.description = 'при самовывозе скидка 10%'
+        delivery2.description = 'при самовывозе скидка 10%.'
         delivery2.save()
         delivery2.set_current_language('en')
-        delivery2.description = 'discount for takeaway 10%'
+        delivery2.description = 'discount for takeaway 10%.'
         delivery2.save()
         delivery2.set_current_language('sr-latn')       # Only switches
-        delivery2.description = 'popust za poneti 10%'
+        delivery2.description = 'Za samostalno preuzimanje popust od 10%.'
         delivery2.save()
 
         self.stdout.write(

@@ -6,6 +6,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from parler.models import TranslatableModel, TranslatedFields
 from pytils.translit import slugify
+from django.db.models import Max
 
 
 class Category(TranslatableModel):
@@ -78,30 +79,28 @@ class Dish(TranslatableModel):
     '''Модель блюда.'''
     translations = TranslatedFields(
         short_name=models.CharField(
+            'короткое описание *',
+            max_length=200,
+            db_index=True,
+            help_text='Добавьте название блюда. max 200 зн.',
+        ),
+        text=models.CharField(
+            'полное описание *',
+            max_length=200,
+            help_text='Добавьте описание блюда. max 200 зн.',
+        ),
+        msngr_short_name=models.CharField(
             'короткое описание',
             max_length=200,
             db_index=True,
-            help_text='Добавьте название блюда.',
-            blank=True, null=True,
-        ),
-        text=models.CharField(
-            'полное описание',
-            max_length=200,
-            help_text='Добавьте описание блюда.',
-            blank=True, null=True
-        ),
-        msngr_short_name=models.CharField(
-            'мсдж_короткое описание',
-            max_length=200,
-            db_index=True,
-            help_text='Добавьте название блюда.',
-            blank=True, null=True,
+            help_text='Добавьте название блюда. max 200 зн.',
+            null=True, blank=True,
         ),
         msngr_text=models.CharField(
-            'мсдж_полное описание',
+            'полное описание',
             max_length=200,
-            help_text='Добавьте описание блюда.',
-            blank=True, null=True
+            help_text='Добавьте описание блюда. max 200 зн.',
+            null=True, blank=True,
         )
     )
     id = models.IntegerField(
@@ -111,18 +110,22 @@ class Dish(TranslatableModel):
     )
     article = models.CharField(
         max_length=6,
-        verbose_name='артикул',
-        help_text="Добавьте артикул, прим. '0101'.",
-        db_index=True,
+        verbose_name='артикул *',
+        help_text=(
+            "Добавьте артикул, пример: '0101'.\n"
+            "Возможны как цифры, так и буквы."
+        ),
         unique=True,
-        primary_key=True
-        # валидация длинны от 4 до 6
+        primary_key=True,
+        db_index=True,
     )
     priority = models.PositiveSmallIntegerField(
         verbose_name='№ п/п',
         validators=[MinValueValidator(1)],
         blank=True,
-        help_text="Порядковый номер отображения в категории, прим. '01'.",
+        help_text=
+            "Порядковый номер отображения в категории, прим. '01'.\n"
+            "Проставится автоматически.",
         db_index=True
     )
     is_active = models.BooleanField(
@@ -144,7 +147,7 @@ class Dish(TranslatableModel):
         db_index=True,
     )
     price = models.DecimalField(
-        verbose_name='цена, DIN',
+        verbose_name='цена, DIN *',
         validators=[MinValueValidator(0.01)],
         help_text='Внесите цену в DIN. Формат 00000.00',
         max_digits=7, decimal_places=2,
@@ -160,32 +163,33 @@ class Dish(TranslatableModel):
     final_price = models.DecimalField(
         verbose_name='итог цена, DIN',
         validators=[MinValueValidator(0.01)],
-        help_text='Цена после скидок в DIN.',
+        help_text='Цена после скидок в DIN. Проставится после сохранения.',
         max_digits=7, decimal_places=2,
         default=Decimal('0'),
     )
     weight_volume = models.CharField(
         max_length=10,
         default=1,
-        verbose_name='вес/объем',
+        verbose_name='Вес/объем всего блюда *',
         help_text='Добавьте вес/объем.'
     )
     weight_volume_uom = models.ForeignKey(
         'UOM',
-        verbose_name='ед-ца измерения веса/обема',
+        verbose_name='ед-цы веса/обема',
         on_delete=models.PROTECT,
         related_name='dishes_weight',
         blank=True, null=True
     )
     units_in_set = models.CharField(
+        verbose_name='Количество единиц в блюде *',
+        help_text=("Добавьте количество единиц \nв одной позиции. "
+                   "Пример: в 1 блюде 8 роллов, вносимое значение будет '8'."),
         max_length=10,
-        default=1,
-        verbose_name='объем в ед-це поз',
-        help_text="Добавьте кол-во ед-ц в одной позиции."
+        default=1
     )
     units_in_set_uom = models.ForeignKey(
         'UOM',
-        verbose_name='ед-ц в поз',
+        verbose_name='ед-цы кол-ва',
         on_delete=models.PROTECT,
         related_name='dishes_units_in_set',
         blank=True, null=True
@@ -195,28 +199,33 @@ class Dish(TranslatableModel):
         auto_now_add=True
     )
     vegan_icon = models.BooleanField(
-        verbose_name='веган',
+        verbose_name='Иконка веган',
         default=False,
-        help_text='Иконка веган.',
         null=True, blank=True,
     )
     spicy_icon = models.BooleanField(
-        verbose_name='острое',
+        verbose_name='Иконка острое',
         default=False,
-        help_text='Иконка острое.',
         null=True, blank=True,
     )
 
-    def clean(self) -> None:
-        self.short_name = self.short_name.strip().lower()
-        return super().clean()
+    # def clean(self) -> None:
+    #     self.short_name = self.short_name.strip().lower()
+    #     return super().clean()
 
     def save(self, *args, **kwargs):
-        if not self.priority:
-            max_position = Dish.objects.filter(
-                    category=self.category
-                ).all().order_by('-priority').values('priority').first()
-            self.priority = max_position['priority'] + 1
+        if not self.id:
+            max_id = Dish.objects.all().aggregate(Max('id'))
+            if max_id['id__max'] is not None:
+                self.id = max_id['id__max'] + 1
+            else:
+                self.id = 1
+
+            if not self.priority:
+                max_position = Dish.objects.filter(
+                        category=self.category
+                    ).all().order_by('-priority').values('priority').first()
+                self.priority = max_position['priority'] + 1
 
         if self.discount:
             self.final_price = Decimal(

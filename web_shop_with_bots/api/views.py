@@ -22,7 +22,7 @@ from users.models import BaseProfile, UserAddress
 from django.urls import reverse
 from django.http import JsonResponse
 from django.utils.translation import activate
-
+import logging
 from .filters import CategoryFilter
 from.serializers import (CartDishSerializer, DeliverySerializer,
                           DishMenuSerializer, PromoNewsSerializer,
@@ -37,13 +37,14 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                           TakeawayConditionsSerializer,)
                           # PreOrderDataSerializer,)
 
+logger = logging.getLogger(__name__)
+
 User = get_user_model()
 
 
 DATE_TIME_FORMAT = '%d/%m/%Y %H:%M'
 
 
-# @csrf_protect
 class DeleteUserViewSet(DestroyAPIView):
     serializer_class = [UserSerializer]
     permission_classes = [IsAuthenticated]
@@ -51,7 +52,9 @@ class DeleteUserViewSet(DestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         instance = self.request.user
         instance.is_deleted = True
+        logger.debug('web_account проставлена отметка is_deleted = True')
         instance.save()
+        logger.debug('web_account сохранен')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -68,14 +71,15 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
 
     def list(self, request, *args, **kwargs):
         restaurants = Restaurant.objects.filter(is_active=True).all()
-
+        logger.debug('получен список ресторанов')
         delivery = Delivery.objects.filter(
             is_active=True,
             ).all().prefetch_related('translations')
-
+        logger.debug('получен список доставок')
         response_data = {}
         response_data['restaurants'] = RestaurantSerializer(restaurants, many=True).data
         response_data['delivery'] = DeliverySerializer(delivery, many=True).data
+        logger.debug('списки ресторанов и доставки успешно сериализированны')
         return Response(response_data)
 
 
@@ -112,7 +116,7 @@ class ClientAddressesViewSet(mixins.ListModelMixin,
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        user_id = self.kwargs['user_id']
+        user_id = self.kwargs.get('user_id')
         if user_id is None or not user_id.isdigit():
             return Response("User ID is required")
 
@@ -185,7 +189,7 @@ class MenuViewSet(mixins.ListModelMixin,
         'category__translations',
         'units_in_set_uom__translations',
         'weight_volume_uom__translations',
-    ).distinct()
+    ).distinct().order_by('category__priority', 'priority')
 
     http_method_names = ['get', 'post']
 

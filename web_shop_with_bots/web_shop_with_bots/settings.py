@@ -1,13 +1,50 @@
 # from pathlib import Path
 import os
+
 from datetime import timedelta
 
 from django.utils.translation import gettext_lazy as _  # for translation
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))), 'infra', '.env'), verbose=True)
+
+LOG_FILE_PATH = os.path.join(
+    BASE_DIR, '/tmp', 'yume.log'
+    ) if os.name != 'nt' else os.path.join(BASE_DIR, 'tmp', 'yume.log')
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": "WARNING",
+            "class": "logging.StreamHandler",
+        },
+        "file": {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': LOG_FILE_PATH,
+            'formatter': 'verbose',
+        }
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console", "file"],
+            "level": "DEBUG",
+            "propagate": True,
+        },
+    },
+}
+
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))),
+                         'infra',
+                         '.env'), verbose=True)
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -153,7 +190,7 @@ REST_FRAMEWORK = {
     'DATETIME_FORMAT': '%d.%m.%Y %H:%M',
 
     'DATETIME_INPUT_FORMATS': [
-        '%d.%m.%Y %H:%i',
+        '%d.%m.%Y %H:%M',
     ],
 }
 
@@ -186,11 +223,17 @@ DOMAIN = os.getenv('DOMAIN')
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
-    'PASSWORD_CHANGED_EMAIL_CONFIRMATION': True,
     'SEND_ACTIVATION_EMAIL': True,
     'SEND_CONFIRMATION_EMAIL': True,
-    'PASSWORD_RESET_CONFIRM_URL': 'reset_password_confirm/{uid}/{token}',
     'ACTIVATION_URL': 'activation/{uid}/{token}',
+
+    'USERNAME_CHANGED_EMAIL_CONFIRMATION': True,
+
+    'PASSWORD_RESET_CONFIRM_URL': 'reset_password_confirm/{uid}/{token}',
+    'PASSWORD_RESET_SHOW_EMAIL_NOT_FOUND': True,
+    'PASSWORD_CHANGED_EMAIL_CONFIRMATION': True,
+    'LOGOUT_ON_PASSWORD_CHANGE': True,
+
     'SERIALIZERS': {
         'current_user': 'api.serializers.MyUserSerializer',
     },
@@ -202,8 +245,8 @@ DJOSER = {
     },
     'PERMISSIONS': {
         'user_delete': ['api.permissions.DenyAllPermission'],
-        'set_password': ['api.permissions.DenyAllPermission'],
-        'set_username': ['api.permissions.DenyAllPermission']
+        'username_reset': ['api.permissions.DenyAllPermission'],
+        'username_reset_confirm': ['api.permissions.DenyAllPermission'],
         # запрет на удаление пользователей стандартным способом,
         # т.к. кастомный метод удаления, делая юзера неактивным
     },
@@ -229,8 +272,8 @@ SESSION_COOKIE_AGE = 3600
 
 
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static/')]
-# STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+# STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static/')]
+STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
@@ -372,7 +415,7 @@ SUMMERNOTE_CONFIG = {
 # -------------------------------- GEOCODING --------------------------------------------
 if ENVIRONMENT == 'development':
 
-    GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), 'Program Files', 'GDAL', 'gdal.dll')
+    # GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), 'Program Files', 'GDAL', 'gdal.dll')
 
     GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal308.dll'
     GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
@@ -392,4 +435,9 @@ if ENVIRONMENT == 'development':
 CITY_CHOICES = [
     ('Beograd', 'Beograd'),
     ('Novi_sad', 'Novi Sad'),
+]
+
+PAYMENT_METHODS = [
+    ('cash', 'cash'),
+    ('card', 'card'),
 ]
