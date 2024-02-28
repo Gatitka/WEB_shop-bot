@@ -75,9 +75,10 @@ class Delivery(TranslatableModel):
         null=True,
         blank=True
         )
-    discount = models.FloatField(
-        verbose_name='Скидка на самовывоз',
+    discount = models.DecimalField(
+        verbose_name='Скидка на самовывоз, %',
         help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
+        max_digits=7, decimal_places=2,
         null=True,
         blank=True,
     )
@@ -212,11 +213,11 @@ class DeliveryZone(models.Model):
     polygon = MultiPolygonField()
 
     is_promo = models.BooleanField(
-        verbose_name='промо',
+        verbose_name='PROMO',
         default=False
     )
     promo_min_order_amount = models.DecimalField(
-        verbose_name='мин сумма заказа, DIN',
+        verbose_name='PROMO мин сумма заказа, DIN',
         max_digits=10, decimal_places=2,
         null=True, blank=True,
     )

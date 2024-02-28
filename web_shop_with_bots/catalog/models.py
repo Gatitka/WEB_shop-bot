@@ -83,11 +83,13 @@ class Dish(TranslatableModel):
             max_length=200,
             db_index=True,
             help_text='Добавьте название блюда. max 200 зн.',
+            null=True, blank=True,
         ),
         text=models.CharField(
             'полное описание *',
             max_length=200,
             help_text='Добавьте описание блюда. max 200 зн.',
+            null=True, blank=True,
         ),
         msngr_short_name=models.CharField(
             'короткое описание',

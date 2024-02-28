@@ -12,7 +12,7 @@ from .models import Promocode, PromoNews
 @admin.register(PromoNews)
 class PromoNewsAdmin(TranslatableAdmin):
     """Настройки админ панели промо-новостей."""
-    list_display = ['title', 'is_active', 'city', 'created', 'admin_image_ru']
+    list_display = ['id', 'title', 'is_active', 'city', 'created', 'admin_image_ru']
     readonly_fields = ('admin_image_ru', 'created',
                        'admin_image_en', 'admin_image_sr_latn')
     actions = [*activ_actions]
@@ -48,4 +48,11 @@ class PromoNewsAdmin(TranslatableAdmin):
 
 # admin.site.register(PromoNews, SummerAdmin)
 
-admin.site.register(Promocode, admin.ModelAdmin)
+@admin.register(Promocode)
+class PromocodeAdmin(admin.ModelAdmin):
+    """Настройки админ панели промо-новостей."""
+    list_display = ['id', 'is_active', 'title_rus', 'promocode']
+    readonly_fields = ('id', 'created')
+    actions = [*activ_actions]
+    search_fields = ('promocode', 'title_rus')
+    list_filter = ('is_active',)

@@ -1,12 +1,13 @@
 from django.db import models
 from django.utils.safestring import mark_safe
 from parler.models import TranslatableModel, TranslatedFields
+from django.conf import settings
 
 
 class PromoNews(TranslatableModel):
     """ Модель для промо новостей."""
     translations = TranslatedFields(
-        title=models.CharField(
+        title=models.TextField(
             max_length=100,
             verbose_name='заголовок',
             blank=True, null=True
@@ -22,10 +23,9 @@ class PromoNews(TranslatableModel):
         verbose_name='активен'
     )
     city = models.CharField(
-        max_length=50,
-        verbose_name='город',
-        blank=True,
-        null=True
+        max_length=20,
+        verbose_name="город",
+        choices=settings.CITY_CHOICES
     )
     created = models.DateField(
         'Дата добавления', auto_now_add=True

@@ -301,7 +301,7 @@ class Order(models.Model):
         Delivery,
         on_delete=models.PROTECT,
         related_name='orders',
-        verbose_name='доставка'
+        verbose_name='доставка *'
     )
     delivery_db = models.CharField(
         max_length=10,
@@ -332,11 +332,11 @@ class Order(models.Model):
     )
     recipient_name = models.CharField(
         max_length=400,
-        verbose_name='имя получателя',
+        verbose_name='имя получателя *',
         validators=[validate_first_and_last_name,]
     )
     recipient_phone = PhoneNumberField(
-        verbose_name='телефон получателя',
+        verbose_name='телефон получателя *',
         blank=True, null=True,
         help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
     )
@@ -369,7 +369,7 @@ class Order(models.Model):
         null=True,
     )
     persons_qty = models.PositiveSmallIntegerField(
-        verbose_name='Кол-во приборов',
+        verbose_name='Кол-во приборов *',
         validators=[MaxValueValidator(10)]
     )
     amount = models.DecimalField(

@@ -1,11 +1,9 @@
 from decimal import Decimal
-from typing import Any, Mapping, Union
+from typing import Any, Union
 
 from django import forms
 from django.contrib import admin
-from django.core.files.base import File
 from django.db.models import Sum
-from django.db.models.base import Model
 from django.db.models.query import QuerySet
 from django.forms.utils import ErrorList
 from django.http.request import HttpRequest
@@ -18,9 +16,12 @@ from utils.utils import activ_actions
 
 from .models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import UserAddress
+from django.conf import settings
 
-admin.site.register(OrderDish)
-admin.site.register(CartDish)
+
+if settings.ENVIRONMENT == 'development':
+    admin.site.register(OrderDish)
+    admin.site.register(CartDish)
 
 
 class ShopAdminArea(admin.AdminSite):
@@ -184,6 +185,8 @@ class OrderAdmin(admin.ModelAdmin):
     raw_id_fields = ['user',]
     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
     list_per_page = 10
+    radio_fields = {"payment_type": admin.HORIZONTAL,
+                    "delivery": admin.HORIZONTAL}
 
     fieldsets = (
         ('Данные заказа', {
@@ -191,14 +194,15 @@ class OrderAdmin(admin.ModelAdmin):
                 ('order_number', 'created'),
                 ('status'),
                 ('user', 'device_id'),
-                ('restaurant', 'delivery'),
+                ('city', 'restaurant'),
                 ('recipient_name', 'recipient_phone', 'get_msngr_link'),
                 ('time', 'persons_qty'),
+                ('delivery'),
             )
         }),
         ('Доставка', {
             'fields':
-                ('city', 'recipient_address')
+                ('recipient_address',)
         }),
         ('Расчет суммы заказа', {
             'fields': (
@@ -212,6 +216,7 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': (
                 ('final_amount_with_shipping'),
                 ('items_qty'),
+                ('payment_type'),
             )
         }),
         ('Комментарий', {

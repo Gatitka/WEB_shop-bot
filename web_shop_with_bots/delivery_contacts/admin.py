@@ -10,8 +10,7 @@ from parler.admin import TranslatableAdmin
 class DeliveryAdmin(TranslatableAdmin):
     """Настройки админ панели доставки".
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
-    list_display = ('type', 'city', 'type',
-                    'is_active', 'admin_photo')
+    list_display = ('id', 'is_active', 'city', 'type')
     readonly_fields = ('admin_photo',)
     list_filter = ('is_active', 'city', 'type')
     actions = [*activ_actions]
@@ -27,7 +26,7 @@ class DeliveryAdmin(TranslatableAdmin):
         }),
         ('Доставка', {
             'fields': (
-                ('default_delivery_cost', ),
+                ('default_delivery_cost'),
             )
         }),
         ('Самовывоз', {
@@ -91,7 +90,7 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
 
     list_display = ('pk', 'city', 'short_name',
                     'is_active', 'phone',
-                    'open_time', 'close_time',
+                    'working_hours',
                     'is_overloaded', 'admin_photo')
     readonly_fields = ('admin_photo',)
     list_filter = ('is_active', 'city')
@@ -101,8 +100,13 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
         ('city'),
         ('address'),
         ('coordinates'),
-        ('work_hours'),
+        ('open_time', 'close_time'),
         ('phone'),
         ('admin'),
         ('admin_photo', 'image')
     )
+
+    def working_hours(self, obj):
+        return f"{obj.open_time.strftime('%H:%M')} - {obj.close_time.strftime('%H:%M')}"
+
+    working_hours.short_description = 'Рабочие часы'
