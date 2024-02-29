@@ -18,7 +18,7 @@ def make_deactive(modeladmin, request, queryset):
 make_active.short_description = "Отметить позиции активными"
 make_deactive.short_description = "Отметить позиции не активными"
 
-admin.site.register(DishCategory)
+# admin.site.register(DishCategory)
 
 class DishCategoryAdmin(admin.TabularInline):
     """Вложенная админка DishCategory для добавления категори блюда

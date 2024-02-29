@@ -13,6 +13,7 @@ from django.utils.html import format_html
 from tm_bot.models import MessengerAccount
 from users.models import BaseProfile
 from utils.utils import activ_actions
+from delivery_contacts.models import Delivery
 
 from .models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import UserAddress
@@ -45,13 +46,13 @@ class CartDishInline(admin.TabularInline):
     (создания записей CartDish) сразу в админке заказа (через объект Cart).
     """
     model = CartDish
-    min_num = 0
+    min_num = 1   # хотя бы 1 блюдо должно быть добавлено
     extra = 0   # чтобы не добавлялись путые поля
     readonly_fields = ['amount', 'unit_price', 'dish_article', 'cart_number', 'base_profile']
     autocomplete_fields = ['dish']
 
-    verbose_name = 'товары корзины'
-    verbose_name_plural = 'товары корзин'
+    verbose_name = 'товар корзины'
+    verbose_name_plural = 'товары корзины'
 
     # class Media:
     #     js = ('js/shop/admin/cartitem_data_admin_request.js',)
@@ -86,59 +87,83 @@ class ShoppingCartAdmin(admin.ModelAdmin):
         return super().get_queryset(request).prefetch_related('user')
 
 # ------ настройки оптимизации сохранения CartDish из inline -----
-    def save_related(self, request, form, formsets, change):
-        '''
-        Метод кастомизирован для
-        оптимизации сохранения связаного объекта ShoppingCart.
-        При стандартном подходе, сохранение CartDish вызывается методом save(),
-        который тригерит пересохранение итоговых значений Shopping cart:
-        amount / final amount.
-        Сейчас внесен кастомный метод save_in_flow,
-        который не пересохраняет Shopping Cart каждый раз.
-        Данные ShoppingCart финалятся и пересохраняются в конце этого метода.
-        '''
-        form.save_m2m()
+    # def save_related(self, request, form, formsets, change):
+    #     '''
+    #     Метод кастомизирован для
+    #     оптимизации сохранения связаного объекта ShoppingCart.
+    #     При стандартном подходе, сохранение CartDish вызывается методом save(),
+    #     который тригерит пересохранение итоговых значений Shopping cart:
+    #     amount / final amount.
+    #     Сейчас внесен кастомный метод save_in_flow,
+    #     который не пересохраняет Shopping Cart каждый раз.
+    #     Данные ShoppingCart финалятся и пересохраняются в конце этого метода.
+    #     '''
+    #     form.save_m2m()
 
-        for formset in formsets:
-            if formset.model == CartDish:
+    #     for formset in formsets:
+    #         if formset.model == CartDish:
 
-                # Пересохраняем formset для:
-                #   - добавления instances, "макеты" экземпляров
-                # класса CartDish, заполненные в формах
-                # !!!!(все - новые, измененные, удаленные)
-                #   - добавление новых списков:
-                # new_objects, changed_objects, deleted_objects
-                instances = formset.save(commit=False)
-                # если commit=True, то экземпляры сохранятся стандартным
-                # методом save, тригеря каждый раз пересохранение корзины
-                # сейчас пересохранение итоговых сумм делается в конце данного метода
+    #             # Пересохраняем formset для:
+    #             #   - добавления instances, "макеты" экземпляров
+    #             # класса CartDish, заполненные в формах
+    #             # !!!!(все - новые, измененные, удаленные)
+    #             #   - добавление новых списков:
+    #             # new_objects, changed_objects, deleted_objects
+    #             instances = formset.save(commit=False)
+    #             # если commit=True, то экземпляры сохранятся стандартным
+    #             # методом save, тригеря каждый раз пересохранение корзины
+    #             # сейчас пересохранение итоговых сумм делается в конце данного метода
 
-                for instance in instances:
-                    instance.save_in_flow()    # данный метод сохранения не обновляет итоговые суммы всей корзины
-                if hasattr(formset, 'deleted_objects') and formset.deleted_objects:
-                    for deleted_object in formset.deleted_objects:
-                        deleted_object.delete()
+    #             for instance in instances:
+    #                 instance.save_in_flow()    # данный метод сохранения не обновляет итоговые суммы всей корзины
+    #             if hasattr(formset, 'deleted_objects') and formset.deleted_objects:
+    #                 for deleted_object in formset.deleted_objects:
+    #                     deleted_object.delete()
 
-        shopping_cart = form.instance
-        total_amount = CartDish.objects.filter(
-                cart=shopping_cart
-                    ).aggregate(ta=Sum('amount'))
-        shopping_cart.amount = (Decimal(total_amount['ta']) if total_amount['ta'] is not None
-                                else Decimal(0))
-        shopping_cart.save(update_fields=['amount', 'discounted_amount'])
+    #     shopping_cart = form.instance
+    #     total_amount = CartDish.objects.filter(
+    #             cart=shopping_cart
+    #                 ).aggregate(ta=Sum('amount'))
+    #     shopping_cart.amount = (Decimal(total_amount['ta']) if total_amount['ta'] is not None
+    #                             else Decimal(0))
+    #     shopping_cart.save(update_fields=['amount', 'discounted_amount'])
 
-        formset.save_m2m()
+    #     formset.save_m2m()
+
+    # def save_model(self, request, obj, form, change):
+    #     from django.contrib import messages
+    #     from django.utils.html import format_html
+    #     if change:
+    #         # Если объект уже существует и редактируется
+    #         messages.warning(request, format_html(
+    #             '<div style="display: flex; flex-direction: column;">'
+    #             'Вы уверены, что хотите сохранить изменения?'
+    #             '<button style="margin-top: 10px;" type="submit" name="_continue" value="Save and continue editing" class="default">Да</button>'
+    #             '<button style="margin-top: 10px;" type="submit" name="_save" value="Save" class="default">Сохранить</button>'
+    #             '<button style="margin-top: 10px;" type="button" class="cancel-button">Нет</button>'
+    #             '</div>'
+    #         ))
+    #     else:
+    #         # Если объект создается
+    #         messages.info(request, format_html(
+    #             '<div style="display: flex; flex-direction: column;">'
+    #             'Вы уверены, что хотите сохранить объект?'
+    #             '<button style="margin-top: 10px;" type="submit" name="_continue" value="Save and continue editing" class="default">Да</button>'
+    #             '<button style="margin-top: 10px;" type="submit" name="_save" value="Save" class="default">Сохранить</button>'
+    #             '<button style="margin-top: 10px;" type="button" class="cancel-button">Отменить</button>'
+    #             '</div>'
+    #         ))
 
 
 class OrderDishInline(admin.TabularInline):
     """Вложенная админка OrderDish для добавления товаров в заказ (создания записей OrderDish)
     сразу в админке заказа (через объект Order)."""
     model = OrderDish
-    min_num = 0
+    min_num = 1   # хотя бы 1 блюдо должно быть добавлено
     extra = 0   # чтобы не добавлялись путые поля
     readonly_fields = ['amount', 'unit_price', 'dish_article', 'order_number', 'base_profile']
-    verbose_name = 'заказ'
-    verbose_name_plural = 'заказы'
+    verbose_name = 'товар заказа'
+    verbose_name_plural = 'товары заказа'
     # raw_id_fields = ['dish',]
     autocomplete_fields = ['dish']
 
@@ -153,19 +178,39 @@ class OrderAdminForm(forms.ModelForm):
         fields = '__all__'
 
     def clean_recipient_address(self):
-        delivery_value = self.cleaned_data.get('delivery')
+        delivery = self.cleaned_data.get('delivery')
         recipient_address = self.cleaned_data.get('recipient_address')
-        if delivery_value == 'delivery' and not recipient_address:
-            raise forms.ValidationError("Recipient address is required for delivery.")
+        if (delivery is not None and delivery.type == 'delivery') and (
+                recipient_address is None or recipient_address == ''):
+            raise forms.ValidationError("Проверьте указан ли адрес доставки клиенту.")
         return recipient_address
 
+    def clean(self):
+        cleaned_data = super().clean()
+        delivery = cleaned_data.get('delivery')
+        if not delivery:
+            raise forms.ValidationError("Выберите способ доставки.")
+        return cleaned_data
+
     def formfield_for_dbfield(self, db_field, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, **kwargs)
         if db_field.db_type == 'text':
             kwargs['widget'] = admin.widgets.AdminTextareaWidget(
-                attrs={'rows': 3, 'cols': 40}
-            )
-        return super().formfield_for_dbfield(db_field, **kwargs)
+                attrs={'rows': 1, 'cols': 40})
 
+        if db_field.name == 'delivery':
+            formfield.required = True
+
+        elif db_field.name == 'recipient_address':
+            delivery_value = self.cleaned_data.get('delivery')
+            if delivery_value:
+                try:
+                    delivery_obj = Delivery.objects.get(pk=delivery_value)
+                    if delivery_obj.type == 'delivery':
+                        formfield.required = True
+                except Delivery.DoesNotExist:
+                    raise forms.ValidationError("Выберите способ доставки.")
+        return formfield
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
@@ -185,8 +230,8 @@ class OrderAdmin(admin.ModelAdmin):
     raw_id_fields = ['user',]
     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
     list_per_page = 10
-    radio_fields = {"payment_type": admin.HORIZONTAL,
-                    "delivery": admin.HORIZONTAL}
+    radio_fields = {"payment_type": admin.HORIZONTAL}
+                    #"delivery": admin.HORIZONTAL}
 
     fieldsets = (
         ('Данные заказа', {
@@ -238,7 +283,7 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_object(self, request: HttpRequest, object_id: str, from_field: None = ...) -> Union[Any, None]:
         queryset = super().get_queryset(
-            request
+                request
             ).select_related(
                 'delivery',
                 'promocode',

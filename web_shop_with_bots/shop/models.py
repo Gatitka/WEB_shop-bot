@@ -58,6 +58,7 @@ class ShoppingCart(models.Model):
         on_delete=models.CASCADE,
         verbose_name='ID клиента',
         related_name='shopping_cart',
+        help_text="Поиск в поле по имени и номеру телефона.",
         blank=True, null=True
     )
     device_id = models.CharField(
@@ -81,6 +82,7 @@ class ShoppingCart(models.Model):
     )
     amount = models.DecimalField(
         verbose_name='Сумма, DIN',
+        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=10, decimal_places=2
@@ -99,6 +101,7 @@ class ShoppingCart(models.Model):
     )
     discounted_amount = models.DecimalField(
         verbose_name='Итог сумма, DIN',
+        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=10, decimal_places=2
@@ -107,7 +110,8 @@ class ShoppingCart(models.Model):
     items_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во порций, шт',
         default=0,
-        blank=True
+        blank=True,
+        help_text="Посчитается автоматически.",
     )
 
     class Meta:
@@ -174,7 +178,8 @@ class CartDish(models.Model):
         Dish,
         on_delete=models.SET_NULL,
         related_name='cartdishes',
-        verbose_name='Товары в корзине',
+        verbose_name='Товары в корзине *',
+        help_text="Начните писать название блюда...",
         null=True,
     )
     cart = models.ForeignKey(
@@ -185,30 +190,38 @@ class CartDish(models.Model):
         null=True,
     )
     quantity = models.PositiveSmallIntegerField(
-        verbose_name='Кол-во',
+        verbose_name='Кол-во *',
+        help_text="Внесите колличество.",
         validators=[MinValueValidator(1)],
         default=1
     )
     unit_price = models.DecimalField(
+        verbose_name='Цена за ед-цу, DIN.',
+        help_text='Подтянется автоматически.',
         default=0.00,
         null=True, blank=True,
         max_digits=6, decimal_places=2
     )
     amount = models.DecimalField(
+        verbose_name='Стоимость всей позиции, DIN.',
+        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=7, decimal_places=2
     )
     dish_article = models.PositiveSmallIntegerField(
         verbose_name='Запись блюда в БД',
+        help_text="Подтянется автоматически.",
         null=True, blank=True,
     )
     cart_number = models.PositiveSmallIntegerField(
         verbose_name='Запись корзины в БД',
+        help_text="Подтянется автоматически.",
         null=True, blank=True,
     )
     base_profile = models.PositiveSmallIntegerField(
         verbose_name='Запись baseprofile в БД',
+        help_text="Подтянется автоматически.",
         null=True, blank=True,
     )
 
@@ -267,11 +280,13 @@ class Order(models.Model):
     """ Модель для заказов."""
     order_number = models.IntegerField(
         verbose_name='Номер заказа',
+        help_text="Проставится автоматически.",
         blank=True, null=True
     )
     user = models.ForeignKey(
         BaseProfile,
         on_delete=models.PROTECT,
+        help_text="Поиск по имени и номеру телефона.",
         verbose_name='Клиент',
         related_name='orders',
         blank=True, null=True
@@ -317,17 +332,19 @@ class Order(models.Model):
     delivery_zone_db = models.CharField(
         max_length=10,
         verbose_name='зона доставки запись в бд',
+
         blank=True, null=True
     )
     delivery_cost = models.DecimalField(
         verbose_name='стоимость доставки',
+        help_text="Посчитается автоматически. Для доставки будет +, для самовывоза -.",
         default=0.00,
         max_digits=7, decimal_places=2,
         blank=True, null=True,
     )
     payment_type = models.CharField(
         max_length=20,
-        verbose_name="способ оплаты",
+        verbose_name="способ оплаты *",
         choices=settings.PAYMENT_METHODS
     )
     recipient_name = models.CharField(
@@ -337,17 +354,16 @@ class Order(models.Model):
     )
     recipient_phone = PhoneNumberField(
         verbose_name='телефон получателя *',
-        blank=True, null=True,
         help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
     )
-    recipient_address = models.CharField(
+    recipient_address = models.TextField(
         verbose_name='адрес доставки',
-        max_length=200,
+        max_length=100,
         blank=True, null=True
     )
     city = models.CharField(
         max_length=20,
-        verbose_name="город",
+        verbose_name="город *",
         choices=settings.CITY_CHOICES
     )
     time = models.DateTimeField(
@@ -363,8 +379,10 @@ class Order(models.Model):
     restaurant = models.ForeignKey(
         Restaurant,
         on_delete=models.PROTECT,
-        verbose_name='точка',
+        verbose_name='точка ',
+        help_text="Подтянется автоматически.",
         related_name='заказы',
+
         blank=True,
         null=True,
     )
@@ -377,6 +395,7 @@ class Order(models.Model):
         blank=True,
         max_digits=8, decimal_places=2,
         verbose_name='сумма заказа до скидки, DIN',
+        help_text="Посчитается автоматически.",
     )
     promocode = models.ForeignKey(
         Promocode,
@@ -385,19 +404,22 @@ class Order(models.Model):
         null=True, blank=True,
     )
     discount = models.DecimalField(
-        verbose_name='Скидка, DIN',
+        verbose_name='Доп скидка, DIN',
+        help_text="Опциональная доп скидка вводится вручную в формате '0000.00'.",
         default=0.00,
         null=True,
         max_digits=8, decimal_places=2
     )
     discounted_amount = models.DecimalField(
         verbose_name='Сумма заказа после скидок, DIN',
+        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=8, decimal_places=2
     )
     final_amount_with_shipping = models.DecimalField(
         verbose_name='Сумма заказа с учетом скидок и доставки, DIN',
+        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=8, decimal_places=2
@@ -405,6 +427,7 @@ class Order(models.Model):
 
     items_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во ед-ц заказа, шт',
+        help_text="Посчитается автоматически.",
         default=0,
         blank=True,
     )
@@ -470,12 +493,13 @@ class Order(models.Model):
     def clean(self):
         super().clean()
         # Проверяем, время доставки
-        try:
-            validate_order_time(self.time, self.delivery, self.restaurant)
-        except Exception as e:
-            raise ValidationError(
-                f'{e}'
-            )
+        # from django.db.models.fields.related import ObjectDoesNotExist
+        # try:
+        #     delivery = self.cleaned_data.get('delivery')
+        # except Exception as ex:
+        #     raise ValidationError(f"{ex} Объект доставки не существует")
+        # if delivery and self.time and self.restaurant:
+        #     validate_order_time(self.time, self.delivery, self.restaurant)
 
     def save(self, *args, **kwargs):
         """
@@ -513,7 +537,10 @@ class Order(models.Model):
             created__range=(today_start, today_end)
         ).aggregate(Max('order_number'))['order_number__max']
         # Устанавливаем номер заказа на единицу больше MAX текущей даты
-        return (max_id + 1)
+        if max_id is None:
+            return 1
+        else:
+            return max_id + 1
 
 
 class OrderDish(models.Model):
