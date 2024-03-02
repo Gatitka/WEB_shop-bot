@@ -21,8 +21,10 @@ from tm_bot.models import MessengerAccount
 from users.models import BaseProfile, UserAddress
 from users.validators import (validate_birthdate,
                               validate_first_and_last_name)
-from tm_bot.validators import (validate_msngr_account,
-                               validate_msngr_type_username)
+from tm_bot.validators import (validate_msngr_username,
+                               validate_messenger_account)
+                                # validate_msngr_account,
+                                # validate_msngr_type_username,
 from django.utils.translation import gettext_lazy as _
 from django.shortcuts import get_object_or_404
 from shop.validators import validate_delivery_data
@@ -32,23 +34,48 @@ User = get_user_model()
 
 # ---------------- ЛИЧНЫЙ КАБИНЕТ --------------------
 class MessengerAccountSerializer(serializers.ModelSerializer):
+    msngr_username = serializers.CharField(
+        validators=[validate_msngr_username,]
+    )
+
     class Meta:
         model = MessengerAccount
-        fields = ('msngr_username', 'msngr_type',)
+        fields = ('msngr_username', 'msngr_type')
+        read_only_fields = ('msngr_type',)
 
-    def validate(self, data: dict) -> dict:
-        """
-        Проверка данных в поле Messenger_account.
-        Если телеграмм, то ID wbahjdjt
-        """
-        msngr_type = data.get('msngr_type')
-        msngr_username = data.get('msngr_username')
+    # def validate_msngr_username(self, data: dict) -> dict:
+    #     """
+    #     Проверка данных в поле Messenger_account.
+    #     Если телеграмм, то ID wbahjdjt
+    #     """
+    #     # msngr_type = data.get('msngr_type')
+    #     msngr_username = data.get('msngr_username')
 
-        if msngr_type:
-            if msngr_username:
-                validate_msngr_type_username(msngr_type, msngr_username)
+    #     # if msngr_type:
+    #     #     if msngr_username:
+    #     #         validate_msngr_type_username(msngr_type, msngr_username)
 
-        return data
+    #     if msngr_username:
+    #         validate_msngr_username(msngr_username)
+
+    #     return data
+
+    # def validate(self, data: dict) -> dict:
+    #     """
+    #     Проверка данных в поле Messenger_account.
+    #     Если телеграмм, то ID wbahjdjt
+    #     """
+    #     # msngr_type = data.get('msngr_type')
+    #     msngr_username = data.get('msngr_username')
+
+    #     # if msngr_type:
+    #     #     if msngr_username:
+    #     #         validate_msngr_type_username(msngr_type, msngr_username)
+
+    #     if msngr_username:
+    #         validate_msngr_username(msngr_username)
+
+    #     return data
 
 
 class MyUserSerializer(serializers.ModelSerializer):
@@ -58,12 +85,12 @@ class MyUserSerializer(serializers.ModelSerializer):
                         allow_null=True,
                         validators=[validate_birthdate,])
 
-    messenger = MessengerAccountSerializer(
+    messenger_account = MessengerAccountSerializer(
                         source='base_profile.messenger_account',
                         required=False,
                         allow_null=True,
-                        validators=[validate_msngr_account,])
-
+                        validators=[validate_messenger_account,]  #  validate_msngr_account,])
+    )
     first_name = serializers.CharField(
                         validators=[validate_first_and_last_name,])
 
@@ -78,7 +105,7 @@ class MyUserSerializer(serializers.ModelSerializer):
                   'email', 'phone',
                   'date_of_birth',
                   'web_language',
-                  'messenger',
+                  'messenger_account',
                   )
         read_only_fields = ('email', 'date_of_birth')
 
@@ -95,9 +122,14 @@ class MyUserSerializer(serializers.ModelSerializer):
             base_profile_validated_data = validated_data.pop('base_profile')
 
             if 'messenger_account' in base_profile_validated_data:
-                messenger = base_profile_validated_data.get('messenger_account')
+                messenger_account = base_profile_validated_data.get('messenger_account')
+                if messenger_account is not None:
+                    messenger_account = MessengerAccount.fulfill_messenger_account(
+                        base_profile_validated_data.get('messenger_account')
+                    )
+
                 BaseProfile.base_profile_messegner_account_add(
-                    messenger,
+                    messenger_account,
                     instance
                 )
 

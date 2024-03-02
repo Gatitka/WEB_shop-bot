@@ -7,6 +7,7 @@ from phonenumber_field.modelfields import PhoneNumberField
 import requests
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from tm_bot.validators import validate_msngr_username
 
 # from users.models import BaseProfile
 
@@ -39,7 +40,7 @@ class MessengerAccount(models.Model):
     msngr_username = models.CharField(
         'Username',
         max_length=100,
-        validators=[MinLengthValidator(1)],
+        validators=[validate_msngr_username,],
         blank=True, null=True
     )
     msngr_phone = PhoneNumberField(
@@ -114,6 +115,15 @@ class MessengerAccount(models.Model):
                 f"<a href='https://wa.me/{username}'"
                 f" target='_blank'>Открыть чат (Wts)</a>"
             )
+
+    @staticmethod
+    def fulfill_messenger_account(messenger_account):
+        msngr_username = messenger_account['msngr_username']
+        if msngr_username[0] == '+':
+            messenger_account['msngr_type'] = 'wts'
+        elif msngr_username[0] == '@':
+            messenger_account['msngr_type'] = 'tm'
+        return messenger_account
 
     def send_message_to_telegram(self, username, message):
         # Получаем chat_id пользователя по его юзернейму

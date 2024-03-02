@@ -86,50 +86,6 @@ class ShoppingCartAdmin(admin.ModelAdmin):
     def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
         return super().get_queryset(request).prefetch_related('user')
 
-# ------ настройки оптимизации сохранения CartDish из inline -----
-    # def save_related(self, request, form, formsets, change):
-    #     '''
-    #     Метод кастомизирован для
-    #     оптимизации сохранения связаного объекта ShoppingCart.
-    #     При стандартном подходе, сохранение CartDish вызывается методом save(),
-    #     который тригерит пересохранение итоговых значений Shopping cart:
-    #     amount / final amount.
-    #     Сейчас внесен кастомный метод save_in_flow,
-    #     который не пересохраняет Shopping Cart каждый раз.
-    #     Данные ShoppingCart финалятся и пересохраняются в конце этого метода.
-    #     '''
-    #     form.save_m2m()
-
-    #     for formset in formsets:
-    #         if formset.model == CartDish:
-
-    #             # Пересохраняем formset для:
-    #             #   - добавления instances, "макеты" экземпляров
-    #             # класса CartDish, заполненные в формах
-    #             # !!!!(все - новые, измененные, удаленные)
-    #             #   - добавление новых списков:
-    #             # new_objects, changed_objects, deleted_objects
-    #             instances = formset.save(commit=False)
-    #             # если commit=True, то экземпляры сохранятся стандартным
-    #             # методом save, тригеря каждый раз пересохранение корзины
-    #             # сейчас пересохранение итоговых сумм делается в конце данного метода
-
-    #             for instance in instances:
-    #                 instance.save_in_flow()    # данный метод сохранения не обновляет итоговые суммы всей корзины
-    #             if hasattr(formset, 'deleted_objects') and formset.deleted_objects:
-    #                 for deleted_object in formset.deleted_objects:
-    #                     deleted_object.delete()
-
-    #     shopping_cart = form.instance
-    #     total_amount = CartDish.objects.filter(
-    #             cart=shopping_cart
-    #                 ).aggregate(ta=Sum('amount'))
-    #     shopping_cart.amount = (Decimal(total_amount['ta']) if total_amount['ta'] is not None
-    #                             else Decimal(0))
-    #     shopping_cart.save(update_fields=['amount', 'discounted_amount'])
-
-    #     formset.save_m2m()
-
     # def save_model(self, request, obj, form, change):
     #     from django.contrib import messages
     #     from django.utils.html import format_html
@@ -172,6 +128,10 @@ class OrderDishInline(admin.TabularInline):
 
 
 class OrderAdminForm(forms.ModelForm):
+    recipient_address = forms.CharField(
+               widget=forms.TextInput(attrs={'size': '40',
+                                             'autocomplete': 'on',
+                                             'class': 'basicAutoComplete'}))
 
     class Meta:
         model = Order
@@ -192,25 +152,7 @@ class OrderAdminForm(forms.ModelForm):
             raise forms.ValidationError("Выберите способ доставки.")
         return cleaned_data
 
-    def formfield_for_dbfield(self, db_field, **kwargs):
-        formfield = super().formfield_for_dbfield(db_field, **kwargs)
-        if db_field.db_type == 'text':
-            kwargs['widget'] = admin.widgets.AdminTextareaWidget(
-                attrs={'rows': 1, 'cols': 40})
 
-        if db_field.name == 'delivery':
-            formfield.required = True
-
-        elif db_field.name == 'recipient_address':
-            delivery_value = self.cleaned_data.get('delivery')
-            if delivery_value:
-                try:
-                    delivery_obj = Delivery.objects.get(pk=delivery_value)
-                    if delivery_obj.type == 'delivery':
-                        formfield.required = True
-                except Delivery.DoesNotExist:
-                    raise forms.ValidationError("Выберите способ доставки.")
-        return formfield
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
@@ -246,6 +188,7 @@ class OrderAdmin(admin.ModelAdmin):
             )
         }),
         ('Доставка', {
+            'classes': ['wide'],
             'fields':
                 ('recipient_address',)
         }),
@@ -270,6 +213,11 @@ class OrderAdmin(admin.ModelAdmin):
     )
 
     form = OrderAdminForm
+    add_form_template = 'admin/shop/order/my_order_change_form.html'
+    change_form_template = 'admin/shop/order/my_order_change_form.html'
+
+    class Media:
+        js = ('js/shop/admin/address_autocomplete.js',)
 
     def get_queryset(self, request):
         qs = super().get_queryset(
@@ -292,6 +240,51 @@ class OrderAdmin(admin.ModelAdmin):
                 'user',
                 'user__messenger_account')
         return super().get_object(request, object_id, from_field)
+
+    def get_google_api_key(self):
+        return settings.GOOGLE_API_KEY
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        # Добавление ключа API Google Maps в контекст
+        extra_context["google_api_key"] = self.get_google_api_key()
+        return super().change_view(
+            request,
+            object_id,
+            form_url,
+            extra_context=extra_context,
+        )
+
+    def add_view(self, request, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        # Добавление ключа API Google Maps в контекст
+        extra_context["GOOGLE_API_KEY"] = self.get_google_api_key()
+        return super(OrderAdmin, self).add_view(
+            request,
+            form_url,
+            extra_context=extra_context,
+        )
+
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, **kwargs)
+
+        if db_field.name == 'delivery':
+            formfield.required = True
+
+        elif db_field.name == 'recipient_address':
+            kwargs['widget'] = admin.widgets.AdminTextInputWidget(
+                attrs={'rows': 1, 'cols': 50,
+                       'autocomplete': 'on'})
+
+        #     delivery_value = self.cleaned_data.get('delivery')
+        #     if delivery_value:
+        #         try:
+        #             delivery_obj = Delivery.objects.get(pk=delivery_value)
+        #             if delivery_obj.type == 'delivery':
+        #                 formfield.required = True
+        #         except Delivery.DoesNotExist:
+        #             raise forms.ValidationError("Выберите способ доставки.")
+        return formfield
 
 # ------ ОТОБРАЖЕНИЕ ССЫЛКИ НА ЧАТ С КЛИЕНТОМ -----
 

@@ -238,10 +238,11 @@ DJOSER = {
         'current_user': 'api.serializers.MyUserSerializer',
     },
     'EMAIL': {
-        'activation': 'api.utils.CustomActivationEmail',
-        'confirmation': 'djoser.email.ConfirmationEmail',
-        'password_reset': 'djoser.email.PasswordResetEmail',
-        'password_changed_confirmation': 'djoser.email.PasswordChangedConfirmationEmail',
+        'activation': 'api.utils.email.MyActivationEmail',
+        'confirmation': 'api.utils.email.MyConfirmationEmail',
+        'password_reset': 'api.utils.email.MyPasswordResetEmail',
+        'password_changed_confirmation': 'api.utils.email.MyPasswordChangedConfirmationEmail',
+        'username_reset': 'api.utils.email.MyUsernameResetEmail',
     },
     'PERMISSIONS': {
         'user_delete': ['api.permissions.DenyAllPermission'],
@@ -272,8 +273,8 @@ SESSION_COOKIE_AGE = 3600
 
 
 STATIC_URL = 'static/'
-# STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static/')]
-STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static/')]
+# STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')

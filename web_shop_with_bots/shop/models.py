@@ -356,7 +356,7 @@ class Order(models.Model):
         verbose_name='телефон получателя *',
         help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
     )
-    recipient_address = models.TextField(
+    recipient_address = models.CharField(
         verbose_name='адрес доставки',
         max_length=100,
         blank=True, null=True
