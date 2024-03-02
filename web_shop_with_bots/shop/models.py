@@ -94,7 +94,7 @@ class ShoppingCart(models.Model):
         on_delete=models.SET_NULL
     )
     discount = models.DecimalField(
-        verbose_name='Скидка, DIN',
+        verbose_name='Сумма скидки по промокоду, DIN',
         default=0.00,
         null=True,
         max_digits=6, decimal_places=2
@@ -133,6 +133,7 @@ class ShoppingCart(models.Model):
         else:
             # Если нет промокода и вручную внесенной скидки, final_amount равен общей сумме
             self.discounted_amount = self.amount
+            self.discount = Decimal(0)
 
     def save(self, *args, **kwargs):
         """
@@ -373,7 +374,7 @@ class Order(models.Model):
     comment = models.TextField(
         max_length=400,
         verbose_name='Комментарий',
-        help_text='Комментарий к заказу.',
+        help_text='Уточнение по адресу доставки: частный дом / этаж, квартира, домофон. Прочие комм к заказу',
         blank=True, null=True
     )
     restaurant = models.ForeignKey(
@@ -430,6 +431,13 @@ class Order(models.Model):
         help_text="Посчитается автоматически.",
         default=0,
         blank=True,
+    )
+    language = models.CharField(
+        'lg',
+        max_length=10,
+        choices=settings.LANGUAGES,
+        help_text="Язык общения.",
+        null=True, blank=True,
     )
 
     class Meta:
@@ -521,6 +529,7 @@ class Order(models.Model):
             itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
             self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
 
+
         super().save(*args, **kwargs)
 
     def get_restaurant(self, restaurant, delivery_type, recipient_address=None):
@@ -574,15 +583,15 @@ class OrderDish(models.Model):
         max_digits=7, decimal_places=2
     )
     dish_article = models.PositiveSmallIntegerField(
-        verbose_name='Запись блюда в БД',
+        verbose_name='Арт. блюда/БД',
         null=True, blank=True,
     )
     order_number = models.PositiveSmallIntegerField(
-        verbose_name='Запись заказа в БД',
+        verbose_name='# заказа/БД',
         null=True, blank=True,
     )
     base_profile = models.PositiveSmallIntegerField(
-        verbose_name='Запись baseprofile в БД',
+        verbose_name='ID baseprofile/БД',
         null=True, blank=True,
     )
 

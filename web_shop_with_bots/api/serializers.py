@@ -28,6 +28,8 @@ from tm_bot.validators import (validate_msngr_username,
 from django.utils.translation import gettext_lazy as _
 from django.shortcuts import get_object_or_404
 from shop.validators import validate_delivery_data
+from django.utils.translation import get_language
+from django.db import transaction
 
 User = get_user_model()
 
@@ -89,7 +91,8 @@ class MyUserSerializer(serializers.ModelSerializer):
                         source='base_profile.messenger_account',
                         required=False,
                         allow_null=True,
-                        validators=[validate_messenger_account,]  #  validate_msngr_account,])
+                        validators=[validate_messenger_account,]
+                        #  validate_msngr_account,])
     )
     first_name = serializers.CharField(
                         validators=[validate_first_and_last_name,])
@@ -122,10 +125,14 @@ class MyUserSerializer(serializers.ModelSerializer):
             base_profile_validated_data = validated_data.pop('base_profile')
 
             if 'messenger_account' in base_profile_validated_data:
-                messenger_account = base_profile_validated_data.get('messenger_account')
+                messenger_account = base_profile_validated_data.get(
+                    'messenger_account')
                 if messenger_account is not None:
-                    messenger_account = MessengerAccount.fulfill_messenger_account(
-                        base_profile_validated_data.get('messenger_account')
+                    messenger_account = (
+                        MessengerAccount.fulfill_messenger_account(
+                            base_profile_validated_data.get(
+                                'messenger_account')
+                        )
                     )
 
                 BaseProfile.base_profile_messegner_account_add(
@@ -528,11 +535,23 @@ class TakeawayOrderSerializer(serializers.ModelSerializer):
                                            many=True)
 
     recipient_phone = PhoneNumberField(required=True)
-    status_display = serializers.SerializerMethodField()
     restaurant = serializers.PrimaryKeyRelatedField(
         queryset=Restaurant.objects.all(),
         required=True,
         )
+
+    class Meta:
+        fields = ('items_qty',
+                  'recipient_name', 'recipient_phone',
+                  'city', 'time', 'restaurant',
+                  'comment', 'persons_qty',
+                  'orderdishes', 'amount', 'promocode',
+                  )
+        model = Order
+
+
+class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
+    status_display = serializers.SerializerMethodField()
 
     class Meta:
         fields = ('order_number', 'created',
@@ -557,9 +576,12 @@ class TakeawayOrderSerializer(serializers.ModelSerializer):
         return status_display
 
     def create(self, validated_data):
-        request = self.context['request']
+
+        language = self.context.get('request').LANGUAGE_CODE
+        request = self.context.get('request')
 
         if request:
+            request = self.context['request']
             validated_data['delivery'] = get_object_or_404(
                                             Delivery,
                                             city=self.initial_data['city'],
@@ -567,23 +589,28 @@ class TakeawayOrderSerializer(serializers.ModelSerializer):
 
             if request.user.is_authenticated:
                 base_profile, cart = (
-                    ShoppingCart.get_base_profile_and_shopping_cart(request.user)
+                    ShoppingCart.get_base_profile_and_shopping_cart(
+                        request.user)
                 )
                 if base_profile and cart:
                     cartdishes = cart.cartdishes.all()
                     if cartdishes:
                         validated_data['promocode'] = cart.promocode
-                        order = Order.objects.create(**validated_data,
-                                                     user=base_profile)
 
-                        OrderDish.create_orderdishes_from_cartdishes(
-                            order, cartdishes, base_profile=base_profile.pk)
-                        # проверить единство расчетов фронт и бэк
-                        # validated_data['discount'] = cart.discount
-                        # validated_data['discounted_amount'] = cart.discounted_amount
-                        # validated_data['items_qty'] = cart.items_qty
-                        # validated_data['amount'] = cart.amount
-                        cart.empty_cart()
+                        with transaction.atomic():
+                            order = Order.objects.create(**validated_data,
+                                                         user=base_profile,
+                                                         language=language)
+
+                            OrderDish.create_orderdishes_from_cartdishes(
+                                order, cartdishes,
+                                base_profile=base_profile.pk)
+                            # проверить единство расчетов фронт и бэк
+                            # validated_data['discount'] = cart.discount
+                            # validated_data['discounted_amount'] = cart.discounted_amount
+                            # validated_data['items_qty'] = cart.items_qty
+                            # validated_data['amount'] = cart.amount
+                            cart.empty_cart()
                     else:
                         raise serializers.ValidationError(_(
                             "Корзина пуста. Пожалуйста, добавьте блюда в "
@@ -595,13 +622,16 @@ class TakeawayOrderSerializer(serializers.ModelSerializer):
                 if 'cartdishes' in validated_data:
                     cartdishes = validated_data.pop('cartdishes')
                     order = Order.objects.create(**validated_data,
-                                                 user=None)
+                                                 user=None,
+                                                 language=language)
                     OrderDish.create_orderdishes_from_cartdishes(
                         order, cartdishes, base_profile=None)
             return order
 
         # Если что-то пошло не так или не было найдено корзины, возвращаем None
         return None
+
+
 
 
 class TakeawayConditionsSerializer(serializers.ModelSerializer):

@@ -24,18 +24,23 @@ from django.http import JsonResponse
 from django.utils.translation import activate
 import logging
 from .filters import CategoryFilter
+from django.core.exceptions import ValidationError
 from.serializers import (CartDishSerializer, DeliverySerializer,
-                          DishMenuSerializer, PromoNewsSerializer,
+                         DishMenuSerializer, PromoNewsSerializer,
 
-                          ShoppingCartSerializer,
-                          RestaurantSerializer,
-                          RestaurantSerializer,
-                          UserAddressSerializer,
-                          UserOrdersSerializer,
-                          ContatsDeliverySerializer,
-                          TakeawayOrderSerializer,
-                          TakeawayConditionsSerializer,)
-                          # PreOrderDataSerializer,)
+                         ShoppingCartSerializer,
+                         RestaurantSerializer,
+                         RestaurantSerializer,
+                         UserAddressSerializer,
+                         UserOrdersSerializer,
+                         ContatsDeliverySerializer,
+                         TakeawayOrderSerializer,
+                         TakeawayConditionsSerializer,
+                         TakeawayOrderWriteSerializer,)
+                         # PreOrderDataSerializer,)
+from decimal import Decimal
+from shop.utils import get_cart
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +82,12 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
             ).all().prefetch_related('translations')
         logger.debug('получен список доставок')
         response_data = {}
-        response_data['restaurants'] = RestaurantSerializer(restaurants, many=True).data
-        response_data['delivery'] = DeliverySerializer(delivery, many=True).data
+        response_data['restaurants'] = RestaurantSerializer(
+            restaurants,
+            many=True).data
+        response_data['delivery'] = DeliverySerializer(
+            delivery,
+            many=True).data
         logger.debug('списки ресторанов и доставки успешно сериализированны')
         return Response(response_data)
 
@@ -147,7 +156,8 @@ class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
         my_orders = Order.objects.filter(
                 user=self.request.user.base_profile
             ).all().prefetch_related(
-                Prefetch('order_dishes',
+                Prefetch(
+                    'order_dishes',
                     queryset=OrderDish.objects.all().select_related(
                         'dish'
                     ).only(
@@ -515,7 +525,8 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         elif self.action == 'create':
             current_user = self.request.user
             if current_user.is_authenticated:
-                queryset = Order.objects.filter(user=self.request.user.base_profile).all()
+                queryset = Order.objects.filter(
+                    user=self.request.user.base_profile).all()
 
         return queryset
 
@@ -523,17 +534,63 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         if self.action == 'list':
             return TakeawayConditionsSerializer
         elif self.action == 'create':
+            return TakeawayOrderWriteSerializer
+        elif self.action == 'pre_checkout':
             return TakeawayOrderSerializer
 
+    @action(detail=False,
+            methods=['post'])
+    def pre_checkout(self, request, *args, **kwargs):
+        """
+        !!!! Вьюсет для валидации данных и предварительного расчета заказа без его сохранения.
+        Ответ либо ошибки валидации данных, либо расчет заказа:
+        {
+            "amount": 5500.0,
+            "promocode_discount": 550.0,
+            "delivery_discount": 495.0,
+            "total_discount": 1045.0,
+            "order_final_amount_with_shipping": 4455.0
+        }
+        """
 
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
+        current_user = self.request.user
+        if current_user.is_authenticated:
+            cart = get_cart(current_user)
 
+            delivery = get_object_or_404(Delivery,
+                                         city='Beograd',
+                                         type='takeaway')
+            if delivery.discount:
+                takeaway_discount = (
+                    Decimal(cart.discounted_amount)
+                    * Decimal(delivery.discount) / Decimal(100)
+                )
+            else:
+                takeaway_discount = Decimal(0)
 
+            order_final_amount_with_shipping = (
+                Decimal(cart.discounted_amount) - Decimal(takeaway_discount)
+            )
+
+            reply_data = {}
+            reply_data['amount'] = cart.amount
+            reply_data['promocode_discount'] = cart.discount
+            reply_data['takeaway_discount'] = takeaway_discount
+            reply_data['total_discount'] = (
+                cart.discount + takeaway_discount)
+            reply_data['order_final_amount_with_shipping'] = (
+                order_final_amount_with_shipping)
+
+        return Response(reply_data, status=status.HTTP_200_OK)
 
 
 def get_unit_price(request):
     if request.method == 'GET':
-        dish_name = request.GET.get('dish_name')  # Получаем ID блюда из GET-параметров
+        dish_name = request.GET.get('dish_name')
+        # Получаем ID блюда из GET-параметров
 
         activate('ru')
         try:
@@ -549,9 +606,11 @@ def get_unit_price(request):
             unit_price = dish.final_price  # Получаем актуальную цену блюда
             return JsonResponse({'unit_price': unit_price})
         except Dish.DoesNotExist:
-            return JsonResponse({'error': 'Dish not found'}, status=404)  # Возвращаем ошибку, если блюдо не найдено
+            return JsonResponse({'error': 'Dish not found'}, status=404)
+        # Возвращаем ошибку, если блюдо не найдено
 
-    return JsonResponse({'error': 'Invalid request method'}, status=400)  # Возвращаем ошибку, если метод запроса не GET
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
+# Возвращаем ошибку, если метод запроса не GET
 
 
 

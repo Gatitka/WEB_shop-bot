@@ -117,6 +117,7 @@ class OrderDishInline(admin.TabularInline):
     model = OrderDish
     min_num = 1   # хотя бы 1 блюдо должно быть добавлено
     extra = 0   # чтобы не добавлялись путые поля
+    fields = ['dish', 'quantity', 'unit_price', 'amount']
     readonly_fields = ['amount', 'unit_price', 'dish_article', 'order_number', 'base_profile']
     verbose_name = 'товар заказа'
     verbose_name_plural = 'товары заказа'
@@ -158,7 +159,7 @@ class OrderAdminForm(forms.ModelForm):
 class OrderAdmin(admin.ModelAdmin):
     """Настройки админ панели заказов.
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
-    list_display = ('order_number', 'status',
+    list_display = ('order_number', 'status', 'language',
                     'recipient_name', 'recipient_phone', 'get_msngr_link',
                     'created', 'delivery', 'recipient_address',
                     'final_amount_with_shipping')
@@ -179,7 +180,7 @@ class OrderAdmin(admin.ModelAdmin):
         ('Данные заказа', {
             'fields': (
                 ('order_number', 'created'),
-                ('status'),
+                ('status', 'language'),
                 ('user', 'device_id'),
                 ('city', 'restaurant'),
                 ('recipient_name', 'recipient_phone', 'get_msngr_link'),
