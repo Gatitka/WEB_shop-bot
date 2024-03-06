@@ -111,7 +111,7 @@ class BaseProfile(models.Model):
     )
 
     class Meta:
-        ordering = ['-id']
+        # ordering = ['-id']
         verbose_name = 'клиент'
         verbose_name_plural = 'клиенты'
 
@@ -272,7 +272,7 @@ class WEBAccount(AbstractUser):
     )
 
     class Meta:
-        ordering = ['-date_joined']
+        # ordering = ['-date_joined']
         verbose_name = 'Аккаунт сайта'
         verbose_name_plural = 'Аккаунты сайта'
 

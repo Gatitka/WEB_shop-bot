@@ -23,7 +23,7 @@ class Command(BaseCommand):
             phone='+79055969166',
             web_language='ru',
         )
-        admin.set_password("admin")
+        admin.set_password("adminadmin0")
         admin.save()
 
         user1, created = User.objects.get_or_create(
@@ -33,7 +33,7 @@ class Command(BaseCommand):
             phone='+79055969160',
             web_language='en',
         )
-        user1.set_password("foreverlove")
+        user1.set_password("foreverlove0")
         user1.save()
 
         user2, created = User.objects.get_or_create(
@@ -43,7 +43,7 @@ class Command(BaseCommand):
             phone='+79055969161',
             web_language='sr-latn'
         )
-        user2.set_password("foreverlove")
+        user2.set_password("foreverlove0")
         user2.save()
 
         user3, created = User.objects.get_or_create(
@@ -52,7 +52,7 @@ class Command(BaseCommand):
             last_name='Колин',
             phone='+79055969162'
         )
-        user3.set_password("foreverlove")
+        user3.set_password("foreverlove0")
         user3.save()
 
         address1, created = UserAddress.objects.get_or_create(

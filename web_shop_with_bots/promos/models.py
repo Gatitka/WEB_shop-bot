@@ -2,6 +2,7 @@ from django.db import models
 from django.utils.safestring import mark_safe
 from parler.models import TranslatableModel, TranslatedFields
 from django.conf import settings
+from django.utils import timezone
 
 
 class PromoNews(TranslatableModel):
@@ -97,9 +98,12 @@ class Promocode(models.Model):
         max_length=6,
         verbose_name='код'
     )
-    discount = models.CharField(
-        max_length=5,
-        verbose_name='скидка'
+    discount = models.DecimalField(
+        verbose_name='Скидка, %',
+        help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
+        max_digits=7, decimal_places=2,
+        null=True,
+        blank=True,
     )
     is_active = models.BooleanField(
         default=False,
@@ -125,4 +129,16 @@ class Promocode(models.Model):
 
     @classmethod
     def is_valid(cls, promocode):
-        return Promocode.objects.filter(promocode=promocode).exists()
+        now = timezone.now()
+        try:
+            promocode_obj = Promocode.objects.get(promocode=promocode)
+            if (promocode_obj.is_active
+                    and
+                    promocode_obj.valid_from <= now
+                    <= promocode_obj.valid_to):
+                return promocode_obj
+
+        except Promocode.DoesNotExist:
+            pass
+
+        return False

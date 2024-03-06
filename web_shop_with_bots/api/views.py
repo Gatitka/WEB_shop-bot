@@ -16,7 +16,7 @@ from django.utils.translation import get_language_from_request
 from django.db.models import Prefetch
 from catalog.models import Dish
 from delivery_contacts.models import Delivery, Restaurant, DeliveryZone
-from promos.models import PromoNews
+from promos.models import PromoNews, Promocode
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
 from django.urls import reverse
@@ -495,6 +495,22 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Редактирование промокода (promocode) корзины.
         Для удаления промокода передать { "promocode": null }.
         """
+        if not request.user.is_authenticated:
+            data = request.data
+            promocode = data.get('promocode', None)
+
+            if promocode is None:
+                return Response({}, status=status.HTTP_204_NO_CONTENT)
+
+            if Promocode.is_valid(promocode):
+                return Response(
+                    {"promocode_disc": f"{promocode.discount}",
+                     "promocode_code": f"{promocode.promocode}"},
+                    status=status.HTTP_200_OK)
+
+            return Response({"No such active promocode."},
+                            status=status.HTTP_204_NO_CONTENT)
+
         cart = self.get_queryset()
 
         if cart:
@@ -503,7 +519,7 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
             serializer.is_valid(raise_exception=True)
             serializer.save()
         else:
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
 
         redirect_url = reverse('api:shopping_cart-list')
 

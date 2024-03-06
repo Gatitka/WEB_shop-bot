@@ -2,7 +2,8 @@ from django.contrib.auth.tokens import default_token_generator
 import requests
 
 from djoser import utils
-from django.conf import settings
+from djoser.conf import settings
+from django.conf import settings as settings_django
 
 
 from django.contrib.sites.shortcuts import get_current_site
@@ -39,20 +40,20 @@ class MyBaseEmailMessage(mail.EmailMultiAlternatives, ContextMixin):
         if self.request:
             site = get_current_site(self.request)
             domain = context.get('domain') or (
-                getattr(settings, 'DOMAIN', '') or site.domain
+                getattr(settings_django, 'DOMAIN', '') or site.domain
             )
             protocol = context.get('protocol') or (
                 'https' if self.request.is_secure() else 'http'
             )
             site_name = context.get('site_name') or (
-                getattr(settings, 'SITE_NAME', '') or site.name
+                getattr(settings_django, 'SITE_NAME', '') or site.name
             )
             user = context.get('user') or self.request.user
         else:
-            domain = context.get('domain') or getattr(settings, 'DOMAIN', '')
+            domain = context.get('domain') or getattr(settings_django, 'DOMAIN', '')
             protocol = context.get('protocol') or 'http'
             site_name = context.get('site_name') or getattr(
-                settings, 'SITE_NAME', ''
+                settings_django, 'SITE_NAME', ''
             )
             user = context.get('user')
 
@@ -80,7 +81,7 @@ class MyBaseEmailMessage(mail.EmailMultiAlternatives, ContextMixin):
         self.bcc = kwargs.pop('bcc', [])
         self.reply_to = kwargs.pop('reply_to', [])
         self.from_email = kwargs.pop(
-            'from_email', settings.DEFAULT_FROM_EMAIL
+            'from_email', settings_django.DEFAULT_FROM_EMAIL
         )
 
         super(MyBaseEmailMessage, self).send(*args, **kwargs)

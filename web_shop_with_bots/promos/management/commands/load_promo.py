@@ -53,7 +53,7 @@ class Command(BaseCommand):
         promocode1, created = Promocode.objects.get_or_create(
             title_rus='Takeaway 10%',
             promocode='take10',
-            discount=10,
+            discount=10.00,
             is_active=True,
             valid_from=today,
             valid_to=valid_to,
