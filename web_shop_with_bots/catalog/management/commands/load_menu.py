@@ -127,7 +127,7 @@ class Command(BaseCommand):
                 )
 
                 category = Category.objects.get(slug=row['cat_slug'])
-                if dish.vegan_icon:
+                if dish.vegan_icon and category.slug != 'extra':
                     dish.category.set([category, vegan_cat])
                 else:
                     dish.category.set([category])

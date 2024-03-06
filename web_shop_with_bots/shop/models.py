@@ -528,7 +528,6 @@ class Order(models.Model):
                 delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
                 self.delivery_zone = get_delivery_zone(
                                             delivery_zones,
-                                            self.recipient_address,
                                             lat, lon
                                         )
 

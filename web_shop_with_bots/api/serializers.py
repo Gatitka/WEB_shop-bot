@@ -663,9 +663,14 @@ class DeliveryOrderSerializer(BaseOrderSerializer):
         fields = BaseOrderSerializer.Meta.fields + ('recipient_address',)
 
     def validate_recipient_address(self, value):
-        lat, lon, status = google_validate_address_and_get_coordinates(value)
-        self.initial_data['lat'] = lat
-        self.initial_data['lon'] = lon
+        try:
+            lat, lon, status = google_validate_address_and_get_coordinates(value)
+
+        except Exception as e:
+            lat, lon, status = None, None, None
+
+        self.initial_data['lat'], self.initial_data['lon'] = lat, lon
+
         return value
 
 

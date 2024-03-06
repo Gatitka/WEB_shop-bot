@@ -55,8 +55,8 @@ msgstr "Спасибо, что Вы с нами!"
 #: .\email\my_password_changed_confirmation.html:20
 #: .\email\my_password_reset.html:16 .\email\my_password_reset.html:28
 #, python-format
-msgid "The %(site_name)s team"
-msgstr "Команда %(site_name)s"
+msgid "The YUME SUSHI team"
+msgstr "Команда YUME SUSHI"
 
 #: .\email\my_confirmation.html:4
 #, python-format

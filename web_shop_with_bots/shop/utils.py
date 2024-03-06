@@ -77,7 +77,7 @@ def get_base_profile_cartdishes_promocode(current_user):
         return base_profile, cart, cartdishes, promocode
 
 
-def get_reply_data(cart, delivery, delivery_zone, delivery_cost):
+def get_reply_data(cart, delivery, delivery_zone=None, delivery_cost=None):
     reply_data = {}
 
     promocode = cart.promocode
@@ -92,30 +92,37 @@ def get_reply_data(cart, delivery, delivery_zone, delivery_cost):
     else:
         delivery_discount = Decimal(0)
 
-    if delivery_zone is None:
-        reply_data['delivery_cost'] = "по запросу"
+    if delivery.type == 'delivery' and delivery_zone is None:
+        reply_data['delivery_cost'] = "Requires clarification"
         reply_data['comment'] = (
-            "Возможность и стоимость доставки по данному "
-            "адресу уточняйте у администратора."
+            "Delivery address is outside our service area or "
+            "an error occurred while processing the delivery data."
+            "Please check with the administrator regarding "
+            "the delivery possibility and it's cost."
         )
-        order_final_amount_with_shipping = (
+        total = (
             Decimal(cart.discounted_amount) - Decimal(delivery_discount)
         )
+        reply_data['total'] = {
+            "title": "Total amount, excl. delivery",
+            "total_amount": total
+            }
 
     else:
         reply_data['delivery_cost'] = delivery_cost
-        order_final_amount_with_shipping = (
+        total = (
             Decimal(cart.discounted_amount) - Decimal(delivery_discount) +
             Decimal(delivery_cost)
         )
+        reply_data['total'] = {
+            "title": "Total amount, incl. delivery",
+            "total_amount": total
+            }
 
     reply_data['amount'] = cart.amount
-    reply_data['promocode_discount'] = cart.discount
     reply_data['promocode'] = promocode
-    reply_data['delivery_discount'] = delivery_discount
     reply_data['total_discount'] = (
         cart.discount + delivery_discount)
-    reply_data['order_final_amount_with_shipping'] = (
-        order_final_amount_with_shipping)
+
 
     return reply_data

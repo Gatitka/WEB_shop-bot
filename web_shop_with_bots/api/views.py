@@ -278,18 +278,18 @@ class MenuViewSet(mixins.ListModelMixin,
             #     cart = ShoppingCart.objects.get_or_create(session_id=request.session['hi'], completed=False)
 
             if method == 'POST':
-                cartitem, created = CartDish.objects.get_or_create(
+                cartdish, created = CartDish.objects.get_or_create(
                     cart=cart, dish=dish)
                 if not created:
-                    cartitem.quantity += 1
-                    cartitem.save(update_fields=['quantity', 'amount'])
+                    cartdish.quantity += 1
+                    cartdish.save(update_fields=['quantity', 'amount'])
 
-                return Response({'cartitem': f'{cartitem.id}',
-                                 'quantity': f'{cartitem.quantity}',
-                                 'amount': f'{cartitem.amount}',
-                                 'dish': f'{cartitem.dish.article}'
+                return Response({'cartdish': f'{cartdish.id}',
+                                 'quantity': f'{cartdish.quantity}',
+                                 'amount': f'{cartdish.amount}',
+                                 'dish': f'{cartdish.dish.article}'
                                  },
-                        status=status.HTTP_200_OK)
+                                status=status.HTTP_200_OK)
 
         return Response({}, status=status.HTTP_204_NO_CONTENT)
 
@@ -607,30 +607,33 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         reply_data = {}
         if current_user.is_authenticated:
             cart = get_cart(current_user)
+            if cart.promocode is not None:
+                promocode = cart.promocode.promocode
 
             delivery = get_object_or_404(Delivery,
                                          city='Beograd',
                                          type='takeaway')
             if delivery.discount:
-                takeaway_discount = (
+                delivery_discount = (
                     Decimal(cart.discounted_amount)
                     * Decimal(delivery.discount) / Decimal(100)
                 )
             else:
-                takeaway_discount = Decimal(0)
+                delivery_discount = Decimal(0)
 
-            order_final_amount_with_shipping = (
-                Decimal(cart.discounted_amount) - Decimal(takeaway_discount)
+            total = (
+                Decimal(cart.discounted_amount) - Decimal(delivery_discount)
             )
 
             reply_data = {}
             reply_data['amount'] = cart.amount
-            reply_data['promocode_discount'] = cart.discount
-            reply_data['takeaway_discount'] = takeaway_discount
+            reply_data['promocode'] = promocode
             reply_data['total_discount'] = (
-                cart.discount + takeaway_discount)
-            reply_data['order_final_amount_with_shipping'] = (
-                order_final_amount_with_shipping)
+                cart.discount + delivery_discount)
+            reply_data['total'] = {
+                "title": "Total amount",
+                "total_amount": total
+                }
 
         return Response(reply_data, status=status.HTTP_200_OK)
 
@@ -687,12 +690,16 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         current_user = self.request.user
         if current_user.is_authenticated:
             cart = serializer.initial_data.get('cart')
+            city = serializer.initial_data['city']
 
             delivery = get_object_or_404(Delivery,
-                                         city=serializer.initial_data['city'],
+                                         city=city,
                                          type='delivery')
 
-            delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
+            lat=serializer.initial_data.get('lat')
+            lon=serializer.initial_data.get('lon')
+
+            delivery_zones = DeliveryZone.objects.filter(city=city).all()
             delivery_cost, delivery_zone = get_delivery_cost_zone(
                 delivery_zones,
                 discounted_amount=cart.discounted_amount,
