@@ -6,6 +6,7 @@ from utils.utils import activ_actions
 from .models import Delivery, DeliveryZone, Restaurant
 from parler.admin import TranslatableAdmin
 
+
 @admin.register(Delivery)
 class DeliveryAdmin(TranslatableAdmin):
     """Настройки админ панели доставки".
@@ -74,9 +75,10 @@ class DeliveryZoneAdmin(OSMGeoAdmin):
     def polygon_coordinates(self, obj):
         # Здесь вы можете форматировать координаты как вам нужно
         # Например, просто выводить их в строку
-        polygon_str = str(obj.polygon)
-        polygon_data = polygon_str.split("MULTIPOLYGON (((")[1]
-        return str("MULTIPOLYGON (((" + polygon_data)
+        if obj.pk is not None:
+            polygon_str = str(obj.polygon)
+            polygon_data = polygon_str.split("MULTIPOLYGON (((")[1]
+            return str("MULTIPOLYGON (((" + polygon_data)
     polygon_coordinates.short_description = 'WKT координаты полигона'
 
 
@@ -91,12 +93,13 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
     list_display = ('pk', 'city', 'short_name',
                     'is_active', 'phone',
                     'working_hours',
-                    'is_overloaded', 'admin_photo')
+                    'is_overloaded', 'admin_photo', 'is_default')
     readonly_fields = ('admin_photo',)
     list_filter = ('is_active', 'city')
     actions = [*activ_actions]
     fields = (
-        ('short_name', 'is_active', 'is_overloaded'),
+        ('short_name', 'is_active'),
+        ('is_overloaded', 'is_default'),
         ('city'),
         ('address'),
         ('coordinates'),

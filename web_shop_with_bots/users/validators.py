@@ -23,3 +23,18 @@ def validate_birthdate(value):
     if today <= value:
         raise ValidationError(_("Проверьте, что дата рождения не в будущем"),
                               code='invalid')
+
+
+class AlphanumericPasswordValidator:
+    def validate(self, password, user=None):
+        if (not any(char.isdigit() for char in password)
+            or not any(char.isalpha() for char in password)):
+            raise ValidationError(
+                _("Password must contain at least one letter and one digit."),
+                code='invalid_password',
+            )
+
+    def get_help_text(self):
+        return _(
+            "Your password must contain at least one letter and one digit."
+        )

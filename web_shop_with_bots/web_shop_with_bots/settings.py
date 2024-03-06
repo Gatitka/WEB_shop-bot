@@ -5,6 +5,8 @@ from datetime import timedelta
 
 from django.utils.translation import gettext_lazy as _  # for translation
 from dotenv import load_dotenv
+from users.validators import AlphanumericPasswordValidator
+
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -168,6 +170,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+    {
+        'NAME': 'users.validators.AlphanumericPasswordValidator',
+    },
 ]
 
 
@@ -213,10 +218,12 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 EMAIL_PORT = os.getenv('EMAIL_PORT')
+SITE_NAME = os.getenv('SITE_NAME')
 
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 SERVER_EMAIL = EMAIL_HOST_USER
 EMAIL_ADMIN = EMAIL_HOST_USER
+
 
 PROTOCOL = os.getenv('PROTOCOL')
 DOMAIN = os.getenv('DOMAIN')
@@ -242,7 +249,7 @@ DJOSER = {
         'confirmation': 'api.utils.email.MyConfirmationEmail',
         'password_reset': 'api.utils.email.MyPasswordResetEmail',
         'password_changed_confirmation': 'api.utils.email.MyPasswordChangedConfirmationEmail',
-        'username_reset': 'api.utils.email.MyUsernameResetEmail',
+        'username_changed_confirmation': 'api.utils.email.MyUsernameChangedConfirmationEmail',
     },
     'PERMISSIONS': {
         'user_delete': ['api.permissions.DenyAllPermission'],
@@ -269,7 +276,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.WEBAccount'
 
-SESSION_COOKIE_AGE = 3600
+SESSION_COOKIE_AGE = 60*60*24    # срок годности кук для админа, чтобы не перелогиниваться в админке
 
 
 STATIC_URL = 'static/'
@@ -313,6 +320,11 @@ PARLER_LANGUAGES = {
         'hide_untranslated': False,   # the default; let .active_translations() return fallbacks too.
     }
 }
+
+LOCALE_PATHS = [
+    os.path.join(BASE_DIR, "backend_translations", "locale/"),
+    os.path.join(BASE_DIR, "templates", "locale/"),
+]
 
 # -------------------------------- CORS ------------------------------------------
 

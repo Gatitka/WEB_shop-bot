@@ -15,7 +15,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils.translation import get_language_from_request
 from django.db.models import Prefetch
 from catalog.models import Dish
-from delivery_contacts.models import Delivery, Restaurant
+from delivery_contacts.models import Delivery, Restaurant, DeliveryZone
 from promos.models import PromoNews
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
@@ -36,10 +36,16 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                          ContatsDeliverySerializer,
                          TakeawayOrderSerializer,
                          TakeawayConditionsSerializer,
-                         TakeawayOrderWriteSerializer,)
+                         TakeawayOrderWriteSerializer,
+                         DeliveryOrderSerializer,
+                         DeliveryConditionsSerializer,
+                         DeliveryOrderWriteSerializer,
+                         )
                          # PreOrderDataSerializer,)
 from decimal import Decimal
-from shop.utils import get_cart
+from shop.utils import get_cart, get_reply_data
+from delivery_contacts.utils import get_delivery_cost_zone
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 
 logger = logging.getLogger(__name__)
@@ -258,11 +264,11 @@ class MenuViewSet(mixins.ListModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
-        dish = get_object_or_404(Dish, article=pk)
         method = request.META['REQUEST_METHOD']
         current_user = request.user
 
         if current_user.is_authenticated:
+            dish = get_object_or_404(Dish, article=pk)
             cart, state = ShoppingCart.objects.get_or_create(user=current_user.base_profile)
 
             # try:
@@ -271,13 +277,21 @@ class MenuViewSet(mixins.ListModelMixin,
             #     request.session['hi'] = str(uuid.uuid4())
             #     cart = ShoppingCart.objects.get_or_create(session_id=request.session['hi'], completed=False)
 
-        if method == 'POST':
-            cartitem, created = CartDish.objects.get_or_create(cart=cart, dish=dish)
-            if not created:
-                cartitem.quantity += 1
-                cartitem.save(update_fields=['quantity', 'amount'])
+            if method == 'POST':
+                cartitem, created = CartDish.objects.get_or_create(
+                    cart=cart, dish=dish)
+                if not created:
+                    cartitem.quantity += 1
+                    cartitem.save(update_fields=['quantity', 'amount'])
 
-            return redirect('api:menu-list')
+                return Response({'cartitem': f'{cartitem.id}',
+                                 'quantity': f'{cartitem.quantity}',
+                                 'amount': f'{cartitem.amount}',
+                                 'dish': f'{cartitem.dish.article}'
+                                 },
+                        status=status.HTTP_200_OK)
+
+        return Response({}, status=status.HTTP_204_NO_CONTENT)
 
 
 class ShoppingCartViewSet(mixins.UpdateModelMixin,
@@ -325,10 +339,13 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
 
     def get_object(self):
         cart = self.get_queryset()
-        cartdishes = cart.cartdishes.all()
-        cartdish_id = self.kwargs.get('pk')
+        if cart:
+            cartdishes = cart.cartdishes.all()
+            cartdish_id = self.kwargs.get('pk')
 
-        return get_object_or_404(cartdishes, pk=cartdish_id)
+            return get_object_or_404(cartdishes, pk=cartdish_id)
+
+        return None
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -344,19 +361,22 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         А так же информации о корзине: сумма, сумма с учетом скидки промокода,
         промокод, кол-во позиций.
         """
+        if not request.user.is_authenticated:
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
+
         cart = self.get_queryset()
         if cart:
             cart_serializer = ShoppingCartSerializer(cart)
             return Response(cart_serializer.data)
-        else:
-            # Если пользователь не авторизован, возвращаем 204 No Content
-            return Response(status=status.HTTP_204_NO_CONTENT)
 
     def destroy(self, request, *args, **kwargs):
         """
         Удаление всего блюда (cartdish) из корзины. Корзина пересохраняется.
         id - id cartdish (не id блюда, а именно связи корзина-блюдо(cartdish))
         """
+        if not request.user.is_authenticated:
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
+
         super().destroy(request, *args, **kwargs)
 
         redirect_url = reverse('api:shopping_cart-list')
@@ -379,6 +399,9 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         quantity >= 1.
         !!! dish в payload не нужен!!!
         """
+        if not request.user.is_authenticated:
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
+
         super().update(request, *args, **kwargs)
 
         redirect_url = reverse('api:shopping_cart-list')
@@ -393,13 +416,12 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Все товары(cartdishes) в корзине удаляются, сама корзина остается пустой
         и не удаляется.
         """
+        if not request.user.is_authenticated:
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
+
         cart = self.get_queryset()
 
-        if cart:
-            cart.empty_cart()
-        else:
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
+        cart.empty_cart()
         redirect_url = reverse('api:shopping_cart-list')
         return Response({'detail': 'Корзина успешно очищена.'},
                         status=status.HTTP_204_NO_CONTENT,
@@ -421,7 +443,11 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
+        if not request.user.is_authenticated:
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
+
         cartdish = self.get_object()
+
         cartdish.quantity += 1
         cartdish.save()
 
@@ -446,8 +472,11 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
+        if not request.user.is_authenticated:
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-        cartdish = get_object_or_404(CartDish, pk=pk)
+        cartdish = self.get_object()
+
         if cartdish.quantity > 1:
             cartdish.quantity -= 1
             cartdish.save()
@@ -518,6 +547,8 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
     !!!!! "restaurants" как в api/v1/contacts/
     POST-запрос сохраняет заказ.
     """
+    permission_classes = [AllowAny,]
+
     def get_queryset(self):
         if self.action == 'list':
             queryset = Delivery.get_delivery_conditions(type='takeaway')
@@ -557,6 +588,7 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         serializer.is_valid(raise_exception=True)
 
         current_user = self.request.user
+        reply_data = {}
         if current_user.is_authenticated:
             cart = get_cart(current_user)
 
@@ -584,6 +616,78 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
             reply_data['order_final_amount_with_shipping'] = (
                 order_final_amount_with_shipping)
 
+        return Response(reply_data, status=status.HTTP_200_OK)
+
+
+class DeliveryOrderViewSet(mixins.CreateModelMixin,
+                           mixins.ListModelMixin,
+                           viewsets.GenericViewSet,
+                           ):
+    """
+    Вьюсет для заказов с доставкой.
+    GET-запрос получает условия доставки по городам.
+    !!!!! "restaurants" как в api/v1/contacts/
+    POST-запрос сохраняет заказ.
+    """
+    permission_classes = [AllowAny,]
+
+    def get_queryset(self):
+        if self.action == 'list':
+            queryset = Delivery.get_delivery_conditions(type='delivery')
+
+        elif self.action == 'create':
+            current_user = self.request.user
+            if current_user.is_authenticated:
+                queryset = Order.objects.filter(
+                    user=self.request.user.base_profile).all()
+
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return DeliveryConditionsSerializer
+        elif self.action == 'create':
+            return DeliveryOrderWriteSerializer
+        elif self.action == 'pre_checkout':
+            return DeliveryOrderSerializer
+
+    @action(detail=False,
+            methods=['post'])
+    def pre_checkout(self, request, *args, **kwargs):
+        """
+        !!!! Вьюсет для валидации данных и предварительного расчета заказа без его сохранения.
+        Ответ либо ошибки валидации данных, либо расчет заказа:
+        {
+            "amount": 5500.0,
+            "promocode_discount": 550.0,
+            "delivery_discount": 495.0,
+            "total_discount": 1045.0,
+            "order_final_amount_with_shipping": 4455.0
+        }
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        current_user = self.request.user
+        if current_user.is_authenticated:
+            cart = serializer.initial_data.get('cart')
+
+            delivery = get_object_or_404(Delivery,
+                                         city=serializer.initial_data['city'],
+                                         type='delivery')
+
+            delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
+            delivery_cost, delivery_zone = get_delivery_cost_zone(
+                delivery_zones,
+                discounted_amount=cart.discounted_amount,
+                delivery=delivery,
+                address=serializer.initial_data.get('recipient_address'),
+                lat=serializer.initial_data.get('lat'),
+                lon=serializer.initial_data.get('lon'))
+
+            reply_data = get_reply_data(
+                cart, delivery, delivery_zone, delivery_cost
+            )
         return Response(reply_data, status=status.HTTP_200_OK)
 
 

@@ -6,10 +6,7 @@
 <head>
     <title>Order Form</title>
     <!-- Подключаем ваш JavaScript файл -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC3paYUScGgCcFnZ6sFcTbimxb53Z5p41g&libraries=places&callback=initAutocomplete" async defer></script>
     <script src="{% static 'js/address_autocomplete.js' %}"></script>
-
-
     {{ block.super }}
 </head>
 <body>
@@ -23,6 +20,5 @@
             <input id="id_recipient_address" name="recipient_address" class="vTextField delivery__input" placeholder="Введите Ваш полный адрес" minLength="5" maxLength="100" required data-google-api-key="{{ GOOGLE_API_KEY }}">
         </div>
     </div>
-
 </body>
 </html>

@@ -1,0 +1,113 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-03-05 17:36+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+#: .\email\my_activation.html:4
+#, python-format
+msgid "Account activation on %(site_name)s"
+msgstr "Aktivacija naloga na %(site_name)s"
+
+#: .\email\my_activation.html:8 .\email\my_activation.html:23
+#, python-format
+msgid ""
+"You're receiving this email because you need to finish activation process on "
+"%(site_name)s."
+msgstr
+"Primate ovaj email jer treba da završite proces aktivacije na "
+"%(site_name)s."
+
+#: .\email\my_activation.html:10 .\email\my_activation.html:25
+msgid "Please go to the following page to activate account:"
+msgstr "Idite na sledeću stranicu kako biste aktivirali svoj nalog:"
+
+#: .\email\my_activation.html:13 .\email\my_activation.html:28
+#: .\email\my_confirmation.html:10 .\email\my_confirmation.html:18
+#: .\email\my_email_changed_confirmation.html:10
+#: .\email\my_email_changed_confirmation.html:18
+#: .\email\my_password_changed_confirmation.html:10
+#: .\email\my_password_changed_confirmation.html:18
+#: .\email\my_password_reset.html:14 .\email\my_password_reset.html:26
+msgid "Thanks for using our site!"
+msgstr "Hvala što koristite naš sajt!"
+
+#: .\email\my_activation.html:15 .\email\my_activation.html:30
+#: .\email\my_confirmation.html:12 .\email\my_confirmation.html:20
+#: .\email\my_email_changed_confirmation.html:12
+#: .\email\my_email_changed_confirmation.html:20
+#: .\email\my_password_changed_confirmation.html:12
+#: .\email\my_password_changed_confirmation.html:20
+#: .\email\my_password_reset.html:16 .\email\my_password_reset.html:28
+#, python-format
+msgid "The %(site_name)s team"
+msgstr "Tim %(site_name)s"
+
+#: .\email\my_confirmation.html:4
+#, python-format
+msgid ""
+"%(site_name)s - Your account has been successfully created and activated!"
+msgstr ""
+"%(site_name)s - Vaš nalog je uspešno kreiran i aktiviran!"
+
+#: .\email\my_confirmation.html:8 .\email\my_confirmation.html:16
+msgid "Your account has been created and is ready to use!"
+msgstr "Vaš nalog je kreiran i spreman je za korišćenje!"
+
+#: .\email\my_email_changed_confirmation.html:4
+#, python-format
+msgid "%(site_name)s - Your email has been successfully changed!"
+msgstr ""
+"%(site_name)s - Vaš email je uspešno promenjen!"
+
+#: .\email\my_email_changed_confirmation.html:8
+#: .\email\my_email_changed_confirmation.html:16
+msgid "Your email has been changed!"
+msgstr "Vaš email je promenjen!"
+
+#: .\email\my_password_changed_confirmation.html:4
+#, python-format
+msgid "%(site_name)s - Your password has been successfully changed!"
+msgstr "Vaša lozinka je uspešno promenjena na %(site_name)s!"
+
+#: .\email\my_password_changed_confirmation.html:8
+#: .\email\my_password_changed_confirmation.html:16
+msgid "Your password has been changed!"
+msgstr "Vaša lozinka je promenjena!"
+
+#: .\email\my_password_reset.html:4
+#, python-format
+msgid "Password reset on %(site_name)s"
+msgstr "Resetovanje lozinke na %(site_name)s"
+
+#: .\email\my_password_reset.html:8 .\email\my_password_reset.html:20
+#, python-format
+msgid ""
+"You're receiving this email because you requested a password reset for your "
+"user account at %(site_name)s."
+msgstr ""
+"Primate ovaj email jer ste zatražili resetovanje lozinke za svoj korisnički "
+"nalog na %(site_name)s."
+
+#: .\email\my_password_reset.html:10 .\email\my_password_reset.html:22
+msgid "Please go to the following page and choose a new password:"
+msgstr "Idite na sledeću stranicu i izaberite novu lozinku:"
+
+#: .\email\my_password_reset.html:12 .\email\my_password_reset.html:24
+msgid "Your username(email), in case you've forgotten:"
+msgstr "Vaše korisničko ime (email), u slučaju da ste zaboravili:"

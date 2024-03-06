@@ -69,3 +69,9 @@ def validate_address(recipient_address):
         raise ValidationError(
             {"restaurant": "Внесите адрес доставки."}
         )
+
+def validate_address_w_google(recipient_address):
+    if recipient_address is None:
+        raise ValidationError(
+            "Внесите адрес доставки."
+        )

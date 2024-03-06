@@ -19,6 +19,10 @@ from users.validators import validate_first_and_last_name
 from django.shortcuts import get_object_or_404
 from datetime import date, datetime, timedelta
 from django.db.models import Max, Sum
+from .utils import get_next_item_id_today
+from delivery_contacts.utils import (get_delivery_cost_zone,
+                                     get_delivery_zone,
+                                     get_delivery_cost)
 
 
 User = get_user_model()
@@ -156,22 +160,6 @@ class ShoppingCart(models.Model):
         self.items_qty = 0
         self.save()
 
-    @staticmethod
-    def get_base_profile_and_shopping_cart(user):
-        base_profile = BaseProfile.objects.filter(
-                        web_account=user
-                    ).select_related(
-                        'shopping_cart'
-                    ).prefetch_related(
-                        'shopping_cart__cartdishes'
-                    ).first()
-
-        if base_profile and base_profile.shopping_cart:
-            cart = base_profile.shopping_cart
-        else:
-            cart = None
-        return base_profile, cart
-
 
 class CartDish(models.Model):
     """ Модель для сопоставления связи корзины и блюд."""
@@ -300,19 +288,33 @@ class Order(models.Model):
         'Дата добавления',
         auto_now_add=True
     )
-    dishes = models.ManyToManyField(
-        Dish,
-        through='OrderDish',
-        # related_name='dish',
-        verbose_name='Товары в заказе',
-        help_text='Добавьте блюда в заказ.'
-    )
     status = models.CharField(
         max_length=3,
         verbose_name="Статус",
         choices=ORDER_STATUS_CHOICES,
         default=WAITING_CONFIRMATION
     )
+    city = models.CharField(
+        max_length=20,
+        verbose_name="город *",
+        choices=settings.CITY_CHOICES
+    )
+
+    recipient_name = models.CharField(
+        max_length=400,
+        verbose_name='имя получателя *',
+        validators=[validate_first_and_last_name,]
+    )
+    recipient_phone = PhoneNumberField(
+        verbose_name='телефон получателя *',
+        help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
+    )
+    recipient_address = models.CharField(
+        verbose_name='адрес доставки',
+        max_length=100,
+        blank=True, null=True
+    )
+
     delivery = models.ForeignKey(
         Delivery,
         on_delete=models.PROTECT,
@@ -343,47 +345,23 @@ class Order(models.Model):
         max_digits=7, decimal_places=2,
         blank=True, null=True,
     )
-    payment_type = models.CharField(
-        max_length=20,
-        verbose_name="способ оплаты *",
-        choices=settings.PAYMENT_METHODS
-    )
-    recipient_name = models.CharField(
-        max_length=400,
-        verbose_name='имя получателя *',
-        validators=[validate_first_and_last_name,]
-    )
-    recipient_phone = PhoneNumberField(
-        verbose_name='телефон получателя *',
-        help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
-    )
-    recipient_address = models.CharField(
-        verbose_name='адрес доставки',
-        max_length=100,
-        blank=True, null=True
-    )
-    city = models.CharField(
-        max_length=20,
-        verbose_name="город *",
-        choices=settings.CITY_CHOICES
-    )
+    delivery_address_data = models.JSONField(
+        default=dict,
+        verbose_name='Данные доставки',
+        help_text="для хранения адреса и координат доставки",
+        blank=True, null=True,
+        )
     time = models.DateTimeField(
         verbose_name='время доставки',
         blank=True, null=True,
     )
-    comment = models.TextField(
-        max_length=400,
-        verbose_name='Комментарий',
-        help_text='Уточнение по адресу доставки: частный дом / этаж, квартира, домофон. Прочие комм к заказу',
-        blank=True, null=True
-    )
+
     restaurant = models.ForeignKey(
         Restaurant,
         on_delete=models.PROTECT,
         verbose_name='точка ',
         help_text="Подтянется автоматически.",
         related_name='заказы',
-
         blank=True,
         null=True,
     )
@@ -391,6 +369,7 @@ class Order(models.Model):
         verbose_name='Кол-во приборов *',
         validators=[MaxValueValidator(10)]
     )
+
     amount = models.DecimalField(
         default=0.00,
         blank=True,
@@ -425,19 +404,38 @@ class Order(models.Model):
         blank=True,
         max_digits=8, decimal_places=2
     )
+    payment_type = models.CharField(
+        max_length=20,
+        verbose_name="способ оплаты *",
+        choices=settings.PAYMENT_METHODS
+    )
 
+    dishes = models.ManyToManyField(
+        Dish,
+        through='OrderDish',
+        # related_name='dish',
+        verbose_name='Товары в заказе',
+        help_text='Добавьте блюда в заказ.'
+    )
     items_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во ед-ц заказа, шт',
         help_text="Посчитается автоматически.",
         default=0,
         blank=True,
     )
+
     language = models.CharField(
         'lg',
         max_length=10,
         choices=settings.LANGUAGES,
         help_text="Язык общения.",
         null=True, blank=True,
+    )
+    comment = models.TextField(
+        max_length=400,
+        verbose_name='Комментарий',
+        help_text='Уточнение по адресу доставки: частный дом / этаж, квартира, домофон. Прочие комм к заказу',
+        blank=True, null=True
     )
 
     class Meta:
@@ -476,12 +474,15 @@ class Order(models.Model):
         Рассчитывает final_amount с учетом скидки от промокода.
         """
         if self.delivery.type == 'delivery':
-            self.delivery_cost = self.delivery.get_delivery_cost(
-                self.city,
-                self.discounted_amount,
-                self.recipient_address
+            self.delivery_cost = (
+                get_delivery_cost(
+                    self.discounted_amount,
+                    self.delivery,
+                    self.delivery_zone
+                )
             )
             self.delivery_zone_db = self.delivery_zone.pk
+
         elif self.delivery.type == 'takeaway':
             if self.delivery.discount:
                 takeaway_discount = (
@@ -493,13 +494,15 @@ class Order(models.Model):
                 )
             else:
                 self.delivery_cost = Decimal(0)
+
         self.final_amount_with_shipping = (
             Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
         )
         self.delivery_db = self.delivery.pk
 
-    def clean(self):
-        super().clean()
+    # def clean(self):
+    #     super().clean()
+
         # Проверяем, время доставки
         # from django.db.models.fields.related import ObjectDoesNotExist
         # try:
@@ -515,41 +518,53 @@ class Order(models.Model):
         """
         self.full_clean()
         if self.pk is None:  # Если объект новый
-            self.items_qty = 0
-            self.order_number = self.get_next_item_id_today()
 
-        else:
-            # Если объект уже существует, выполнить рассчеты и другие действия
-            self.get_restaurant(self.restaurant,
-                                self.delivery.type,
-                                self.recipient_address)
+            self.order_number = get_next_item_id_today(Order, 'order_number')
 
-            self.calculate_discontinued_amount()
-            self.calculate_final_amount_with_shipping()
-            itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
-            self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+            if self.delivery.type == 'delivery':
+                lat = self.delivery_address_data.get('lat')
+                lon = self.delivery_address_data.get('lon')
 
+                delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
+                self.delivery_zone = get_delivery_zone(
+                                            delivery_zones,
+                                            self.recipient_address,
+                                            lat, lon
+                                        )
 
-        super().save(*args, **kwargs)
+        # Если объект уже существует, выполнить рассчеты и другие действия
+        self.get_restaurant(self.restaurant,
+                            self.delivery.type,
+                            self.recipient_address)
+
+        self.calculate_discontinued_amount()
+
+        self.calculate_final_amount_with_shipping()
+
+        itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
+        self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+
+        # if self.delivery.type == 'delivery':
+        #     delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
+        #     self.delivery_zone = get_delivery_zone(
+        #                                 delivery_zones,
+        #                                 self.recipient_address,
+        #                                 self.lat, self.lon
+        #                             )
+
+        super(Order, self).save(*args, **kwargs)
 
     def get_restaurant(self, restaurant, delivery_type, recipient_address=None):
-        if delivery_type == 'takeaway':
-            self.restaurant = restaurant
-        if delivery_type == 'delivery':
-            self.restaurant = Restaurant.objects.get(id=1)
-
-    def get_next_item_id_today(self):
-        today_start = datetime.combine(date.today(), datetime.min.time())  # Начало текущего дня
-        today_end = today_start + timedelta(days=1) - timedelta(microseconds=1)  # Конец текущего дня
-
-        max_id = Order.objects.filter(
-            created__range=(today_start, today_end)
-        ).aggregate(Max('order_number'))['order_number__max']
-        # Устанавливаем номер заказа на единицу больше MAX текущей даты
-        if max_id is None:
-            return 1
+        """Метод получения ресторана, исходя из запроса.
+        Если есть ресторан, с отметкой is_default, то все заказы переводятся на него."""
+        default_restaurant = Restaurant.objects.filter(is_default=True).first()
+        if default_restaurant:
+            self.restaurant = default_restaurant
         else:
-            return max_id + 1
+            if delivery_type == 'takeaway':
+                self.restaurant = restaurant
+            if delivery_type == 'delivery':
+                self.restaurant = Restaurant.objects.get(id=1)
 
 
 class OrderDish(models.Model):
@@ -637,6 +652,7 @@ class OrderDish(models.Model):
             'discounted_amount',
             'final_amount_with_shipping',
             'delivery_cost',
+            'items_qty',
             ])
 
     @staticmethod

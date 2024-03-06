@@ -12,7 +12,8 @@ from .views import (
                     UserOrdersViewSet,
                     ClientAddressesViewSet,
                     get_unit_price,
-                    TakeawayOrderViewSet,)
+                    TakeawayOrderViewSet,
+                    DeliveryOrderViewSet)
 
 app_name = 'api'
 
@@ -58,7 +59,12 @@ v1_router.register(
 v1_router.register(
     'create_order_takeaway',
     TakeawayOrderViewSet,
-    basename='create-order'
+    basename='create-order-takeaway'
+)
+v1_router.register(
+    'create_order_delivery',
+    DeliveryOrderViewSet,
+    basename='create-order-delivery'
 )
 
 # v1_router.register('auth/users/me/delete', DeleteUserViewSet.as_view({'delete': 'destroy'}), basename='users')

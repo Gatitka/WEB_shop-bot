@@ -18,6 +18,7 @@ class Command(BaseCommand):
             phone="+381 61 271 4798",
             city='Beograd',
             is_active=True,
+            is_default=True,
             image=os.path.join('contacts', 'shop1.jpg')
         )
         shop2, created = Restaurant.objects.get_or_create(

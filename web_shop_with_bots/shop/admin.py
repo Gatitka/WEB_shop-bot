@@ -18,6 +18,8 @@ from delivery_contacts.models import Delivery
 from .models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import UserAddress
 from django.conf import settings
+from delivery_contacts.utils import google_validate_address_and_get_coordinates
+from django.core.exceptions import ValidationError
 
 
 if settings.ENVIRONMENT == 'development':
@@ -139,11 +141,25 @@ class OrderAdminForm(forms.ModelForm):
         fields = '__all__'
 
     def clean_recipient_address(self):
-        delivery = self.cleaned_data.get('delivery')
         recipient_address = self.cleaned_data.get('recipient_address')
-        if (delivery is not None and delivery.type == 'delivery') and (
-                recipient_address is None or recipient_address == ''):
-            raise forms.ValidationError("Проверьте указан ли адрес доставки клиенту.")
+        if recipient_address != self.instance.recipient_address:
+            delivery = self.cleaned_data.get('delivery')
+            recipient_address = self.cleaned_data.get('recipient_address')
+            if (delivery is not None and delivery.type == 'delivery') and (
+                    recipient_address is None or recipient_address == ''):
+                raise forms.ValidationError("Проверьте указан ли адрес доставки клиенту.")
+            try:
+                lat, lon, status = google_validate_address_and_get_coordinates(
+                    recipient_address
+                )
+            except Exception as e:
+                raise forms.ValidationError(
+                    ("Ошибка в получении координат адреса, невозможно "
+                    "посчитать стоимость доставки."
+                    "Введите снова адрес или внесите его вручную, определите зону доставки и цену.")
+                )
+            self.lat = lat
+            self.lon = lon
         return recipient_address
 
     def clean(self):
@@ -152,6 +168,21 @@ class OrderAdminForm(forms.ModelForm):
         if not delivery:
             raise forms.ValidationError("Выберите способ доставки.")
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        # Используем сохраненные значения lat и lon из атрибутов формы
+        recipient_address = self.cleaned_data.get('recipient_address')
+        if recipient_address != self.instance.recipient_address:
+            instance.delivery_address_data = {
+                "lat": self.lat,
+                "lon": self.lon
+            }
+
+        if commit:
+            instance.save()
+
+        return instance
 
 
 
@@ -190,15 +221,18 @@ class OrderAdmin(admin.ModelAdmin):
         }),
         ('Доставка', {
             'classes': ['wide'],
-            'fields':
-                ('recipient_address',)
+            'fields': (
+                ('recipient_address'),
+                ('delivery_address_data'),
+                ('delivery_zone'),
+                ('delivery_cost'),
+            )
         }),
         ('Расчет суммы заказа', {
             'fields': (
                 ('amount'),
                 ('promocode', 'discount'),
                 ('discounted_amount'),
-                ('delivery_cost'),
             )
         }),
         ('ИТОГО', {

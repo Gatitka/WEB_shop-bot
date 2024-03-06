@@ -15,7 +15,9 @@ from phonenumber_field.modelfields import PhoneNumberField
 from django.core.validators import MinValueValidator
 from django.contrib.gis.geos import Point
 from datetime import time
-
+from .utils import (google_validate_address_and_get_coordinates,
+                    get_delivery_cost_zone)
+from django.core.exceptions import ValidationError
 
 
 DELIVERY_CHOICES = (
@@ -103,72 +105,38 @@ class Delivery(TranslatableModel):
     admin_photo.short_description = 'Image'
     admin_photo.allow_tags = True
 
-    def get_delivery_cost(self, city, discounted_amount, address):
-        """
-        Рассчитывает стоимость доставки с учетом суммы заказа и адреса доставки.
+    # def get_delivery_cost_zone(self, city, discounted_amount, address,
+    #                            lat=None, lon=None):
+    #     """
+    #     Рассчитывает стоимость доставки с учетом суммы заказа и адреса доставки.
 
-        Параметры:
-            discounted_amount (Decimal): Сумма заказа с учетом скидки.
-            address (str): Адрес доставки.
+    #     Параметры:
+    #         discounted_amount (Decimal): Сумма заказа с учетом скидки.
+    #         address (str): Адрес доставки.
 
-        Возвращает:
-            Decimal: Стоимость доставки для указанного адреса и суммы заказа.
-        """
-        # Получаем координаты адреса доставки
-        lat, lon = self.get_coordinates(address)
+    #     Возвращает:
+    #         Decimal: Стоимость доставки для указанного адреса и суммы заказа.
+    #     """
+    #     # Получаем координаты адреса доставки
+    #     if lat is None and lon is None:
+    #         try:
+    #             lat, lan, status = google_validate_address_and_get_coordinates(
+    #                 address
+    #             )
+    #         except Exception as e:
+    #             raise ValidationError(
+    #                 ("Ошибка в получении координат адреса, невозможно "
+    #                  "посчитать стоимость доставки."
+    #                  "Введите снова адрес или внесите его вручную, определите зону доставки и цену.")
+    #             )
 
-        # Получаем все районы доставки из базы данных
-        delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
-
-        # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
-        for zone in delivery_zones:
-            if zone.is_point_inside(lat, lon):
-                # Если адрес входит в текущий район доставки, проверяем условия промо-акции
-                if zone.is_promo and discounted_amount >= zone.promo_min_order_amount:
-                    # Если для района установлена промо-акция и сумма заказа больше или равна
-                    # минимальной сумме для промо-акции, доставка бесплатная
-                    return Decimal(0)
-                else:
-                    # Если промо-акция не действует или сумма заказа меньше минимальной,
-                    # возвращаем стоимость доставки для данного района
-                    return zone.delivery_cost
-
-        # Если адрес не входит ни в один из районов доставки, возвращаем стоимость доставки
-        # по умолчанию (например, стандартная стоимость для города)
-        return self.default_delivery_cost
-
-    def get_coordinates(self, address):
-        params = {
-            'key': GOOGLE_API_KEY,
-            'address': address
-        }
-
-        base_url = 'https://maps.googleapis.com/maps/api/geocode/json?'
-
-        try:
-            response = requests.get(base_url, params=params)
-            response.raise_for_status()  # Проверяем успешность запроса
-            data = response.json()  # Парсим ответ в формате JSON
-
-            if data['status'] == 'OK':
-                geometry = data['results'][0]['geometry']
-                lat = geometry['location']['lat']
-                lon = geometry['location']['lng']
-                return lat, lon
-            else:
-                # Если статус ответа не 'OK', выбрасываем исключение с сообщением об ошибке
-                raise Exception(f'Ошибка получения координат:'
-                                f'{data["status"]}, {address}')
-
-        except requests.exceptions.RequestException as e:
-            # Если произошла ошибка при выполнении запроса, возвращаем None
-            print(f'Ошибка при запросе к API Google Maps: {e}')
-            return None
-
-        except KeyError as e:
-            # Если произошла ошибка из-за отсутствия ожидаемых ключей в ответе, возвращаем None
-            print(f'Ошибка при разборе ответа от API Google Maps: {e}')
-            return None
+    #     delivery_zones = DeliveryZone.objects.filter(city=city).all()
+    #     self.default_delivery_cost, self.delivery_zone = (
+    #         get_delivery_cost_zone(
+    #             delivery_zones, city, discounted_amount,
+    #             self.delivery, address,  lat, lon)
+    #     )
+    #     return
 
     @staticmethod
     def get_delivery_conditions(type):
@@ -237,7 +205,12 @@ class DeliveryZone(models.Model):
         verbose_name_plural = 'районы доставки'
 
     def __str__(self):
-        return f'{self.id}'
+        return f'{self.name}'
+
+    def get_city_delivery_zones(self, city):
+        return DeliveryZone.objects.filter(
+            city=city
+            ).all()
 
 
 class Restaurant(models.Model):
@@ -296,6 +269,10 @@ class Restaurant(models.Model):
         default=False,
         verbose_name='перегружен'
     )
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name='ПО ДЕФОЛТУ'
+    )
 
     def admin_photo(self):
         if self.image:
@@ -318,7 +295,6 @@ class Restaurant(models.Model):
         return self.short_name
 
     def save(self, *args, **kwargs):
-        delivery = Delivery()
-        lat, lon = delivery.get_coordinates(self.address)
+        lat, lon, status = google_validate_address_and_get_coordinates(self.address)
         self.coordinates = Point(lon, lat)
         return super().save()
