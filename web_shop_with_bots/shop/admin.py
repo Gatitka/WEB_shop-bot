@@ -50,7 +50,7 @@ class CartDishInline(admin.TabularInline):
     model = CartDish
     min_num = 1   # хотя бы 1 блюдо должно быть добавлено
     extra = 0   # чтобы не добавлялись путые поля
-    readonly_fields = ['amount', 'unit_price', 'dish_article', 'cart_number', 'base_profile']
+    readonly_fields = ['amount', 'unit_price', 'dish_article', 'cart_number',]
     autocomplete_fields = ['dish']
 
     verbose_name = 'товар корзины'
@@ -120,7 +120,7 @@ class OrderDishInline(admin.TabularInline):
     min_num = 1   # хотя бы 1 блюдо должно быть добавлено
     extra = 0   # чтобы не добавлялись путые поля
     fields = ['dish', 'quantity', 'unit_price', 'amount']
-    readonly_fields = ['amount', 'unit_price', 'dish_article', 'order_number', 'base_profile']
+    readonly_fields = ['amount', 'unit_price', 'dish_article', 'order_number']
     verbose_name = 'товар заказа'
     verbose_name_plural = 'товары заказа'
     # raw_id_fields = ['dish',]

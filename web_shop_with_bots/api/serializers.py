@@ -27,11 +27,13 @@ from tm_bot.validators import (validate_msngr_username,
                                 # validate_msngr_type_username,
 from django.utils.translation import gettext_lazy as _
 from django.shortcuts import get_object_or_404
-from shop.validators import validate_delivery_data
+from shop.validators import (validate_selected_month,
+                             validate_delivery_time)
 from django.utils.translation import get_language
 from django.db import transaction
 from shop.utils import get_base_profile_cartdishes_promocode
-from delivery_contacts.utils import google_validate_address_and_get_coordinates
+from delivery_contacts.utils import (google_validate_address_and_get_coordinates,
+                                     combine_date_and_time)
 
 User = get_user_model()
 
@@ -515,6 +517,17 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                                            many=True)
     recipient_phone = PhoneNumberField(required=True)
 
+    selected_month = serializers.DateField(format="%d.%B",
+                                           required=True,
+                                           allow_null=True,
+                                           write_only=True,
+                                           validators=[validate_selected_month,])
+
+    selected_time = serializers.TimeField(format="%H:%M",
+                                          required=True,
+                                          allow_null=True,
+                                          write_only=True)
+
     class Meta:
         fields = ('items_qty',
                   'recipient_name', 'recipient_phone',
@@ -525,17 +538,29 @@ class BaseOrderSerializer(serializers.ModelSerializer):
     def validate(self, data):
         request = self.context.get('request')
 
-        if request:
-            request = self.context['request']
-            if request.user.is_authenticated:
+        if request.user.is_authenticated:
 
-                base_profile, cart, cartdishes, promocode = (
-                    get_base_profile_cartdishes_promocode(request.user)
-                )
-                self.initial_data['base_profile'] = base_profile
-                self.initial_data['cart'] = cart
-                self.initial_data['cartdishes'] = cartdishes
-                self.initial_data['promocode'] = promocode
+            base_profile, cart, cartdishes, promocode = (
+                get_base_profile_cartdishes_promocode(request.user)
+            )
+            data['base_profile'] = base_profile
+            data['cart'] = cart
+            data['cartdishes'] = cartdishes
+            data['promocode'] = promocode
+
+        delivery = self.context.get('extra_kwargs', {}).get('delivery')
+        data['delivery'] = delivery
+
+        time = combine_date_and_time(
+            self.initial_data['selected_month'],
+            self.initial_data['selected_time']
+            )
+
+        if time is not None:
+            restaurant = data.get('restaurant', None)
+            validate_delivery_time(time, delivery, restaurant)
+        data['time'] = time
+
         return data
 
 
@@ -573,10 +598,6 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
         # Получаем разъяснение статуса заказа по его значению
         status_display = dict(ORDER_STATUS_CHOICES).get(obj.status)
         return status_display
-
-    def validate(self, data):
-
-        return data
 
     def create(self, validated_data):
 
@@ -701,30 +722,18 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
         status_display = dict(ORDER_STATUS_CHOICES).get(obj.status)
         return status_display
 
-    def validate_recipient_address(self, value):
-        lat, lon, status = google_validate_address_and_get_coordinates(value)
-        self.initial_data['lat'] = lat
-        self.initial_data['lon'] = lon
-        return value
-
     def create(self, validated_data):
 
         language = self.context.get('request').LANGUAGE_CODE
         request = self.context.get('request')
 
-        if request:
-            request = self.context['request']
+        if request.data:
             if request.user.is_authenticated:
 
-                base_profile = self.initial_data.get('base_profile')
-                cart = self.initial_data.get('cart')
+                user = validated_data.pop('base_profile')
+                cart = validated_data.pop('cart')
+                cartdishes = validated_data.pop('cartdishes')
 
-                validated_data['delivery'] = get_object_or_404(
-                                            Delivery,
-                                            city=self.initial_data['city'],
-                                            type='delivery')
-
-                validated_data['promocode'] = cart.promocode
                 validated_data['delivery_address_data'] = {
                     "lat": self.initial_data.get('lat'),
                     "lon": self.initial_data.get('lon')
@@ -732,12 +741,11 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
 
                 with transaction.atomic():
                     order = Order.objects.create(**validated_data,
-                                                 user=base_profile,
+                                                 user=user,
                                                  language=language)
 
                     OrderDish.create_orderdishes_from_cartdishes(
-                        order, cart.cartdishes.all(),
-                        base_profile=base_profile.pk)
+                        order, cartdishes)
                     # проверить единство расчетов фронт и бэк
                     # validated_data['discount'] = cart.discount
                     # validated_data['discounted_amount'] = cart.discounted_amount

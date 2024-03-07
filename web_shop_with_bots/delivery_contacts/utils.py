@@ -2,6 +2,7 @@ from web_shop_with_bots.settings import GOOGLE_API_KEY
 import requests
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+from datetime import datetime
 
 
 def receive_responce_from_google(address):
@@ -52,7 +53,7 @@ def google_validate_address_and_get_coordinates(address):
 
 
 def get_delivery_cost_zone(delivery_zones, discounted_amount, delivery,
-                           address,  lat=None, lon=None):
+                           lat, lon):
     """
     Рассчитывает стоимость доставки и зону с учетом суммы заказа и адреса доставки.
     """
@@ -61,7 +62,7 @@ def get_delivery_cost_zone(delivery_zones, discounted_amount, delivery,
     #     lat, lon, status = google_validate_address_and_get_coordinates(address)
 
     delivery_zone = get_delivery_zone(delivery_zones,
-                                      lat=None, lon=None)
+                                      lat, lon)
 
     delivery_cost = get_delivery_cost(discounted_amount, delivery,
                                       delivery_zone)
@@ -106,3 +107,39 @@ def get_delivery_cost(discounted_amount, delivery, delivery_zone):
             return delivery.default_delivery_cost
 
         return Decimal(0)
+
+
+def combine_date_and_time(date_str, time_str):
+
+    if date_str is None and time_str is None:
+        return None
+
+    if date_str is not None and time_str is None:
+        return None
+        #error с фронта не получено время
+
+
+    # Получаем текущую дату
+    current_date = datetime.now()
+
+    # Преобразуем строку даты в объект datetime
+    date = datetime.strptime(date_str, "%d.%m")
+
+    # Определяем год для объединения
+    if current_date.month == 12 and date.month in [1, 2]:
+        # Если текущий месяц - декабрь, а дата - январь, то следующий год
+        year = current_date.year + 1
+    else:
+        # Иначе оставляем текущий год
+        year = current_date.year
+
+    # Преобразуем строку времени в объект datetime
+    time = datetime.strptime(time_str, "%H:%M").time()
+
+    # Комбинируем дату и время в один объект datetime
+    combined_datetime = datetime(year, date.month, date.day, time.hour, time.minute)
+
+    # Преобразуем объединенную дату и время обратно в строку
+    # combined_datetime_str = combined_datetime.strftime("%d.%m.%Y %H:%M")
+
+    return combined_datetime

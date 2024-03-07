@@ -3,43 +3,39 @@ from django.utils.translation import gettext_lazy as _
 from datetime import datetime, time, timezone
 
 
-def validate_order_time(value, delivery, restaurant=None):
+def validate_delivery_time(value, delivery, restaurant=None):
     if value is not None:
         try:
             if value <= datetime.now(value.tzinfo):
-                raise ValidationError(
-                    'Время доставки не может быть в прошлом.',
-                    code='delivery_time_in past'
-                )
+                raise ValidationError("Delivery time can't be in the past.")
 
+            if delivery is None:
+                raise ValidationError(
+                        'Delivery method is not chosen.'
+                    )
             # Проверяем, что время находится в диапазоне
             # работы доставки в модели доставки
             if delivery.type == 'delivery':
-                order_time = value.time()
+                delivery_time = value.time()
                 min_time = delivery.min_time
                 max_time = delivery.max_time
-                if not min_time <= order_time <= max_time:
+                if not min_time <= delivery_time <= max_time:
                     raise ValidationError(
-                        (f'Выберите время в диапозоне '
-                        f'{str(min_time)} до {str(max_time)}'),
+                        (f'Choose time '
+                        f'{str(min_time)} - {str(max_time)}'),
 
                         code='invalid_order_time'
                     )
             elif delivery.type == 'takeaway':
-                order_time = value.time()
+                delivery_time = value.time()
                 min_time = restaurant.open_time
                 max_time = restaurant.close_time
-                if not min_time <= order_time <= max_time:
+                if not min_time <= delivery_time <= max_time:
                     raise ValidationError(
-                        (f'Выберите время в диапозоне '
-                         f'{str(min_time)} до {str(max_time)}'),
+                        (f'Choose time '
+                        f'{str(min_time)} до {str(max_time)}'),
 
                         code='invalid_delivery_time'
-                    )
-            else:
-                raise ValidationError(
-                        'Выберите способ доставки',
-                        code='no_delivery_provided'
                     )
 
         except Exception as e:
@@ -70,8 +66,28 @@ def validate_address(recipient_address):
             {"restaurant": "Внесите адрес доставки."}
         )
 
+
 def validate_address_w_google(recipient_address):
     if recipient_address is None:
         raise ValidationError(
             "Внесите адрес доставки."
         )
+
+
+def validate_selected_month(value):
+    if value is not None:
+        try:
+            datetime_obj = datetime.strptime(value, '%d %b')
+        except ValueError:
+            raise ValidationError(
+                "Invalid date format. Date should be in the format 'dd MMM'.",
+                code='invalid_date_format'
+            )
+
+        now = timezone.now()
+        if datetime_obj <= now:
+            raise ValidationError(
+                "Delivery time cannot be in the past.",
+                code='delivery_time_in_past'
+            )
+    return value

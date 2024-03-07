@@ -450,6 +450,8 @@ CITY_CHOICES = [
     ('Novi_sad', 'Novi Sad'),
 ]
 
+DEFAULT_CITY = 'Beograd'
+
 PAYMENT_METHODS = [
     ('cash', 'cash'),
     ('card', 'card'),

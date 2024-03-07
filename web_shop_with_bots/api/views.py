@@ -46,6 +46,8 @@ from decimal import Decimal
 from shop.utils import get_cart, get_reply_data
 from delivery_contacts.utils import get_delivery_cost_zone
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.conf import settings
+from delivery_contacts.services import get_delivery
 
 
 logger = logging.getLogger(__name__)
@@ -163,7 +165,7 @@ class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
                 user=self.request.user.base_profile
             ).all().prefetch_related(
                 Prefetch(
-                    'order_dishes',
+                    'orderdishes',
                     queryset=OrderDish.objects.all().select_related(
                         'dish'
                     ).only(
@@ -585,6 +587,23 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         elif self.action == 'pre_checkout':
             return TakeawayOrderSerializer
 
+    def create(self, request, *args, **kwargs):
+        if not request.data:
+            return Response({'error': 'Request data is missing'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        delivery = get_delivery(request, 'takeaway')
+
+        context = {'extra_kwargs': {'delivery': delivery},
+                   'request': request}
+
+        serializer = self.get_serializer(data=request.data,
+                                         context=context)
+        if serializer.is_valid(raise_exception=True):
+            serializer.save()
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=False,
             methods=['post'])
     def pre_checkout(self, request, *args, **kwargs):
@@ -599,20 +618,27 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
             "order_final_amount_with_shipping": 4455.0
         }
         """
+        if not request.data:
+            return Response({'error': 'Request is missing'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = self.get_serializer(data=request.data)
+        delivery = get_delivery(request, 'takeaway')
+        context = {'extra_kwargs': {'delivery': delivery},
+                   'request': request}
+
+        serializer = self.get_serializer(data=request.data,
+                                         context=context)
         serializer.is_valid(raise_exception=True)
 
         current_user = self.request.user
         reply_data = {}
         if current_user.is_authenticated:
             cart = get_cart(current_user)
+
+            promocode = None
             if cart.promocode is not None:
                 promocode = cart.promocode.promocode
 
-            delivery = get_object_or_404(Delivery,
-                                         city='Beograd',
-                                         type='takeaway')
             if delivery.discount:
                 delivery_discount = (
                     Decimal(cart.discounted_amount)
@@ -670,6 +696,23 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         elif self.action == 'pre_checkout':
             return DeliveryOrderSerializer
 
+    def create(self, request, *args, **kwargs):
+        if not request.data:
+            return Response({'error': 'Request data is missing'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        delivery = get_delivery(request, 'delivery')
+
+        context = {'extra_kwargs': {'delivery': delivery},
+                   'request': request}
+
+        serializer = self.get_serializer(data=request.data,
+                                         context=context)
+        if serializer.is_valid(raise_exception=True):
+            serializer.save()
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=False,
             methods=['post'])
     def pre_checkout(self, request, *args, **kwargs):
@@ -684,29 +727,30 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
             "order_final_amount_with_shipping": 4455.0
         }
         """
-        serializer = self.get_serializer(data=request.data)
+        if not request.data:
+            return Response({'error': 'Request is missing'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        delivery = get_delivery(request, 'delivery')
+        context = {'extra_kwargs': {'delivery': delivery},
+                   'request': request}
+
+        serializer = self.get_serializer(data=request.data,
+                                         context=context)
         serializer.is_valid(raise_exception=True)
 
         current_user = self.request.user
         if current_user.is_authenticated:
-            cart = serializer.initial_data.get('cart')
-            city = serializer.initial_data['city']
+            cart = serializer.validated_data.get('cart')
+            city = serializer.validated_data.get('city')
+            lat = serializer.initial_data.get('lat')
+            lon = serializer.initial_data.get('lon')
 
-            delivery = get_object_or_404(Delivery,
-                                         city=city,
-                                         type='delivery')
-
-            lat=serializer.initial_data.get('lat')
-            lon=serializer.initial_data.get('lon')
-
-            delivery_zones = DeliveryZone.objects.filter(city=city).all()
             delivery_cost, delivery_zone = get_delivery_cost_zone(
-                delivery_zones,
+                DeliveryZone.objects.filter(city=city).all(),
                 discounted_amount=cart.discounted_amount,
                 delivery=delivery,
-                address=serializer.initial_data.get('recipient_address'),
-                lat=serializer.initial_data.get('lat'),
-                lon=serializer.initial_data.get('lon'))
+                lat=lat, lon=lon)
 
             reply_data = get_reply_data(
                 cart, delivery, delivery_zone, delivery_cost

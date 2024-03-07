@@ -12,7 +12,7 @@ from catalog.models import Dish
 from delivery_contacts.models import Delivery, DeliveryZone, Restaurant
 from promos.models import Promocode
 from users.models import BaseProfile
-from .validators import validate_order_time
+from .validators import validate_delivery_time
 from exceptions import NoDeliveryDataException
 from django.core.exceptions import ValidationError
 from users.validators import validate_first_and_last_name
@@ -208,12 +208,6 @@ class CartDish(models.Model):
         help_text="Подтянется автоматически.",
         null=True, blank=True,
     )
-    base_profile = models.PositiveSmallIntegerField(
-        verbose_name='Запись baseprofile в БД',
-        help_text="Подтянется автоматически.",
-        null=True, blank=True,
-    )
-
 
     class Meta:
         ordering = ['cart']
@@ -234,7 +228,6 @@ class CartDish(models.Model):
         self.unit_price = self.dish.final_price
         self.dish_article = self.dish.pk
         self.cart_number = self.cart.pk
-        self.base_profile = self.cart.user.pk
 
         super(CartDish, self).save(*args, **kwargs)
         self.update_shopping_cart()
@@ -481,7 +474,8 @@ class Order(models.Model):
                     self.delivery_zone
                 )
             )
-            self.delivery_zone_db = self.delivery_zone.pk
+            if self.delivery_zone:
+                self.delivery_zone_db = self.delivery_zone.pk
 
         elif self.delivery.type == 'takeaway':
             if self.delivery.discount:
@@ -604,10 +598,6 @@ class OrderDish(models.Model):
         verbose_name='# заказа/БД',
         null=True, blank=True,
     )
-    base_profile = models.PositiveSmallIntegerField(
-        verbose_name='ID baseprofile/БД',
-        null=True, blank=True,
-    )
 
     class Meta:
         ordering = ['dish']
@@ -655,12 +645,11 @@ class OrderDish(models.Model):
             ])
 
     @staticmethod
-    def create_orderdishes_from_cartdishes(order, cartdishes, base_profile):
+    def create_orderdishes_from_cartdishes(order, cartdishes):
         for cartdish in cartdishes:
 
             OrderDish.objects.create(
                 order=order,
                 dish=cartdish.dish,
-                quantity=cartdish.quantity,
-                base_profile=base_profile
+                quantity=cartdish.quantity
             )
