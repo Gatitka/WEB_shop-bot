@@ -2,8 +2,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.validators import EmailValidator
-from django.db.models import F, QuerySet
-from djoser.compat import get_user_email, get_user_email_field_name
+from django.db.models import QuerySet
 from parler_rest.fields import \
     TranslatedFieldsField  # для переводов текста parler
 from parler_rest.serializers import \
@@ -23,8 +22,6 @@ from users.validators import (validate_birthdate,
                               validate_first_and_last_name)
 from tm_bot.validators import (validate_msngr_username,
                                validate_messenger_account)
-                                # validate_msngr_account,
-                                # validate_msngr_type_username,
 from django.utils.translation import gettext_lazy as _
 from django.shortcuts import get_object_or_404
 from shop.validators import (validate_selected_month,
@@ -36,6 +33,7 @@ from delivery_contacts.utils import (
     google_validate_address_and_get_coordinates,
     combine_date_and_time)
 from delivery_contacts.services import get_delivery_zone
+from catalog.validators import validator_dish_exists_active
 
 User = get_user_model()
 
@@ -396,7 +394,8 @@ class DishCartDishSerializer(serializers.ModelSerializer):
         translations_short_name = {}
         for translation in translations:
             if translation.short_name:
-                translations_short_name[f'{translation.language_code}'] = translation.short_name
+                translations_short_name[
+                    f'{translation.language_code}'] = translation.short_name
         rep['translations'] = translations_short_name
         return rep
 
@@ -469,6 +468,10 @@ class OrderDishWriteSerializer(serializers.ModelSerializer):
         fields = ('dish', 'quantity')
         model = OrderDish
 
+    def validate_dish(self, value):
+        validator_dish_exists_active(value)
+        return value
+
 
 class BaseOrderSerializer(serializers.ModelSerializer):
     amount = serializers.DecimalField(required=False,
@@ -514,8 +517,6 @@ class BaseOrderSerializer(serializers.ModelSerializer):
             data['cart'] = cart
             data['cartdishes'] = cartdishes
             data['promocode'] = promocode
-
-
 
         delivery = self.context.get('extra_kwargs', {}).get('delivery')
         data['delivery'] = delivery
@@ -627,7 +628,6 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
         }
 
         return rep
-
 
 
 class TakeawayConditionsSerializer(serializers.ModelSerializer):

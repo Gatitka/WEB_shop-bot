@@ -336,7 +336,7 @@ class Order(models.Model):
     delivery_cost = models.DecimalField(
         verbose_name='стоимость доставки',
         help_text="Посчитается автоматически. Для доставки будет +, для самовывоза -.",
-        default=0.00,
+        default=0,
         max_digits=7, decimal_places=2,
         blank=True, null=True,
     )
@@ -382,21 +382,21 @@ class Order(models.Model):
     discount = models.DecimalField(
         verbose_name='Доп скидка, DIN',
         help_text="Опциональная доп скидка вводится вручную в формате '0000.00'.",
-        default=0.00,
+        default=0,
         null=True,
         max_digits=8, decimal_places=2
     )
     discounted_amount = models.DecimalField(
         verbose_name='Сумма заказа после скидок, DIN',
         help_text="Посчитается автоматически.",
-        default=0.00,
+        default=0,
         blank=True,
         max_digits=8, decimal_places=2
     )
     final_amount_with_shipping = models.DecimalField(
         verbose_name='Сумма заказа с учетом скидок и доставки, DIN',
         help_text="Посчитается автоматически.",
-        default=0.00,
+        default=0,
         blank=True,
         max_digits=8, decimal_places=2
     )
@@ -501,10 +501,10 @@ class Order(models.Model):
                 takeaway_discount = (
                     Decimal(self.discounted_amount)
                     * Decimal(self.delivery.discount) / Decimal(100)
-                )
+                ).quantize(Decimal('0.01'))
                 self.delivery_cost = (
                     Decimal(0 - takeaway_discount)
-                )
+                ).quantize(Decimal('0.01'))
             else:
                 self.delivery_cost = Decimal(0)
 
