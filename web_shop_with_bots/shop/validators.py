@@ -5,43 +5,44 @@ from datetime import datetime, time, timezone
 
 def validate_delivery_time(value, delivery, restaurant=None):
     if value is not None:
-        try:
-            if value <= datetime.now(value.tzinfo):
-                raise ValidationError("Delivery time can't be in the past.")
 
-            if delivery is None:
+        if value <= datetime.now(value.tzinfo):
+            raise ValidationError("Delivery time can't be in the past.")
+
+        if delivery is None:
+            raise ValidationError(
+                    'Delivery method is not chosen.'
+                )
+        # Проверяем, что время находится в диапазоне
+        # работы доставки в модели доставки
+        if delivery.type == 'delivery':
+            delivery_time = value.time()
+            min_time = delivery.min_time
+            max_time = delivery.max_time
+
+            if not min_time <= delivery_time <= max_time:
+                min_time_str = min_time.strftime('%H:%M')
+                max_time_str = max_time.strftime('%H:%M')
+
                 raise ValidationError(
-                        'Delivery method is not chosen.'
-                    )
-            # Проверяем, что время находится в диапазоне
-            # работы доставки в модели доставки
-            if delivery.type == 'delivery':
-                delivery_time = value.time()
-                min_time = delivery.min_time
-                max_time = delivery.max_time
-                if not min_time <= delivery_time <= max_time:
-                    raise ValidationError(
-                        (f'Choose time '
-                        f'{str(min_time)} - {str(max_time)}'),
+                    (f'Choose time '
+                     f"Choose time {min_time_str} - {max_time_str}"),
+                    code='invalid_order_time'
+                )
 
-                        code='invalid_order_time'
-                    )
-            elif delivery.type == 'takeaway':
-                delivery_time = value.time()
+        elif delivery.type == 'takeaway':
+            delivery_time = value.time()
+            if restaurant is not None:
                 min_time = restaurant.open_time
                 max_time = restaurant.close_time
                 if not min_time <= delivery_time <= max_time:
                     raise ValidationError(
                         (f'Choose time '
-                        f'{str(min_time)} до {str(max_time)}'),
+                         f'{str(min_time)} до {str(max_time)}'),
 
                         code='invalid_delivery_time'
                     )
 
-        except Exception as e:
-            raise ValidationError(
-                f'{e}'
-            )
     else:
         return value
 
@@ -91,3 +92,23 @@ def validate_selected_month(value):
                 code='delivery_time_in_past'
             )
     return value
+
+
+def cart_valiation(cart, half_validation=False):
+    validate_cart_is_not_none(cart)
+    if not half_validation:
+        validate_cartdishes_exist(cart)
+
+
+def validate_cart_is_not_none(cart):
+    if cart is None:
+        raise ValidationError(
+            "Mistake while handling the cart. Try to pick the cart one more time."
+        )
+
+
+def validate_cartdishes_exist(cart):
+    if not cart.cartdishes.exists():
+        raise ValidationError(
+            "Your cart is empty. Please add something into your cart."
+        )

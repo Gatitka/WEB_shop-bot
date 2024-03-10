@@ -20,9 +20,9 @@ from django.shortcuts import get_object_or_404
 from datetime import date, datetime, timedelta
 from django.db.models import Max, Sum
 from .utils import get_next_item_id_today
-from delivery_contacts.utils import (get_delivery_cost_zone,
-                                     get_delivery_zone,
-                                     get_delivery_cost)
+from delivery_contacts.services import get_delivery_zone
+from delivery_contacts.utils import get_delivery_cost
+from shop.utils import get_first_item_true
 
 
 User = get_user_model()
@@ -151,13 +151,14 @@ class ShoppingCart(models.Model):
             self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
         super().save(*args, **kwargs)
 
-    def empty_cart(self, *args, **kwargs):
+    def empty_cart(self, clean_promocode=True):
         self.dishes.clear()  # Очищаем связанные товары
         self.amount = 0.00
-        self.promocode = None
         self.discount = 0.00
         self.discounted_amount = 0.00
         self.items_qty = 0
+        if clean_promocode:
+            self.promocode = None
         self.save()
 
 
@@ -290,7 +291,8 @@ class Order(models.Model):
     city = models.CharField(
         max_length=20,
         verbose_name="город *",
-        choices=settings.CITY_CHOICES
+        choices=settings.CITY_CHOICES,
+        default=settings.DEFAULT_CITY
     )
 
     recipient_name = models.CharField(
@@ -344,7 +346,7 @@ class Order(models.Model):
         help_text="для хранения адреса и координат доставки",
         blank=True, null=True,
         )
-    time = models.DateTimeField(
+    delivery_time = models.DateTimeField(
         verbose_name='время доставки',
         blank=True, null=True,
     )
@@ -357,6 +359,7 @@ class Order(models.Model):
         related_name='заказы',
         blank=True,
         null=True,
+        default=settings.DEFAULT_RESTAURANT
     )
     persons_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во приборов *',
@@ -431,6 +434,11 @@ class Order(models.Model):
         blank=True, null=True
     )
 
+    is_first_order = models.BooleanField(
+        verbose_name='Первый заказ',
+        default=False
+    )
+
     class Meta:
         ordering = ['-created']
         verbose_name = 'заказ'
@@ -443,7 +451,11 @@ class Order(models.Model):
         ]
 
     def __str__(self):
-        return f'{self.id}'
+        #return f'{self.id}'
+        created = self.created.strftime('%H:%M  %Y.%m.%d')
+        if self.is_first_order:
+            return f"Заказ №  {self.id} от {created} /       ПЕРВЫЙ ЗАКАЗ"
+        return f"Заказ №  {self.id} от {created}"
 
     def calculate_discontinued_amount(self):
         """
@@ -467,11 +479,18 @@ class Order(models.Model):
         Рассчитывает final_amount с учетом скидки от промокода.
         """
         if self.delivery.type == 'delivery':
+
+            # self.delivery_zone = get_delivery_zone(
+            #     self.city,
+            #     self.delivery_address_data['lat'],
+            #     self.delivery_address_data['lon'])
+
             self.delivery_cost = (
                 get_delivery_cost(
                     self.discounted_amount,
                     self.delivery,
-                    self.delivery_zone
+                    self.delivery_zone,
+                    self.delivery_cost
                 )
             )
             if self.delivery_zone:
@@ -494,18 +513,6 @@ class Order(models.Model):
         )
         self.delivery_db = self.delivery.pk
 
-    # def clean(self):
-    #     super().clean()
-
-        # Проверяем, время доставки
-        # from django.db.models.fields.related import ObjectDoesNotExist
-        # try:
-        #     delivery = self.cleaned_data.get('delivery')
-        # except Exception as ex:
-        #     raise ValidationError(f"{ex} Объект доставки не существует")
-        # if delivery and self.time and self.restaurant:
-        #     validate_order_time(self.time, self.delivery, self.restaurant)
-
     def save(self, *args, **kwargs):
         """
         Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
@@ -515,15 +522,7 @@ class Order(models.Model):
 
             self.order_number = get_next_item_id_today(Order, 'order_number')
 
-            if self.delivery.type == 'delivery':
-                lat = self.delivery_address_data.get('lat')
-                lon = self.delivery_address_data.get('lon')
-
-                delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
-                self.delivery_zone = get_delivery_zone(
-                                            delivery_zones,
-                                            lat, lon
-                                        )
+            self.is_first_order = get_first_item_true(self)
 
         # Если объект уже существует, выполнить рассчеты и другие действия
         self.get_restaurant(self.restaurant,
@@ -536,14 +535,6 @@ class Order(models.Model):
 
         itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
         self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
-
-        # if self.delivery.type == 'delivery':
-        #     delivery_zones = DeliveryZone.objects.filter(city=self.city).all()
-        #     self.delivery_zone = get_delivery_zone(
-        #                                 delivery_zones,
-        #                                 self.recipient_address,
-        #                                 self.lat, self.lon
-        #                             )
 
         super(Order, self).save(*args, **kwargs)
 

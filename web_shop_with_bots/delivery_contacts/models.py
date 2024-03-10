@@ -15,8 +15,7 @@ from phonenumber_field.modelfields import PhoneNumberField
 from django.core.validators import MinValueValidator
 from django.contrib.gis.geos import Point
 from datetime import time
-from .utils import (google_validate_address_and_get_coordinates,
-                    get_delivery_cost_zone)
+from .utils import (google_validate_address_and_get_coordinates)
 from django.core.exceptions import ValidationError
 
 
@@ -105,39 +104,6 @@ class Delivery(TranslatableModel):
     admin_photo.short_description = 'Image'
     admin_photo.allow_tags = True
 
-    # def get_delivery_cost_zone(self, city, discounted_amount, address,
-    #                            lat=None, lon=None):
-    #     """
-    #     Рассчитывает стоимость доставки с учетом суммы заказа и адреса доставки.
-
-    #     Параметры:
-    #         discounted_amount (Decimal): Сумма заказа с учетом скидки.
-    #         address (str): Адрес доставки.
-
-    #     Возвращает:
-    #         Decimal: Стоимость доставки для указанного адреса и суммы заказа.
-    #     """
-    #     # Получаем координаты адреса доставки
-    #     if lat is None and lon is None:
-    #         try:
-    #             lat, lan, status = google_validate_address_and_get_coordinates(
-    #                 address
-    #             )
-    #         except Exception as e:
-    #             raise ValidationError(
-    #                 ("Ошибка в получении координат адреса, невозможно "
-    #                  "посчитать стоимость доставки."
-    #                  "Введите снова адрес или внесите его вручную, определите зону доставки и цену.")
-    #             )
-
-    #     delivery_zones = DeliveryZone.objects.filter(city=city).all()
-    #     self.default_delivery_cost, self.delivery_zone = (
-    #         get_delivery_cost_zone(
-    #             delivery_zones, city, discounted_amount,
-    #             self.delivery, address,  lat, lon)
-    #     )
-    #     return
-
     @staticmethod
     def get_delivery_conditions(type):
         if type == 'takeaway':
@@ -178,7 +144,9 @@ class DeliveryZone(models.Model):
             db_index=True,
             verbose_name='Название'
     )
-    polygon = MultiPolygonField()
+    polygon = MultiPolygonField(
+         null=True, blank=True
+    )
 
     is_promo = models.BooleanField(
         verbose_name='PROMO',

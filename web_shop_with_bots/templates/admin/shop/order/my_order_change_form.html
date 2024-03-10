@@ -5,6 +5,10 @@
 <html lang="ru" dir="ltr">
 <head>
     <title>Order Form</title>
+    <!-- Вставляем скрипт с GOOGLE_API_KEY перед подключением JavaScript файла -->
+    <script>
+        const GOOGLE_API_KEY = "{{ GOOGLE_API_KEY }}";
+    </script>
     <!-- Подключаем ваш JavaScript файл -->
     <script src="{% static 'js/address_autocomplete.js' %}"></script>
     {{ block.super }}

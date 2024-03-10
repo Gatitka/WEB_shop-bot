@@ -31,9 +31,11 @@ from shop.validators import (validate_selected_month,
                              validate_delivery_time)
 from django.utils.translation import get_language
 from django.db import transaction
-from shop.utils import get_base_profile_cartdishes_promocode
-from delivery_contacts.utils import (google_validate_address_and_get_coordinates,
-                                     combine_date_and_time)
+from shop.utils import get_base_profile_cartdishes_promocode, get_rep_dic
+from delivery_contacts.utils import (
+    google_validate_address_and_get_coordinates,
+    combine_date_and_time)
+from delivery_contacts.services import get_delivery_zone
 
 User = get_user_model()
 
@@ -48,40 +50,6 @@ class MessengerAccountSerializer(serializers.ModelSerializer):
         model = MessengerAccount
         fields = ('msngr_username', 'msngr_type')
         read_only_fields = ('msngr_type',)
-
-    # def validate_msngr_username(self, data: dict) -> dict:
-    #     """
-    #     Проверка данных в поле Messenger_account.
-    #     Если телеграмм, то ID wbahjdjt
-    #     """
-    #     # msngr_type = data.get('msngr_type')
-    #     msngr_username = data.get('msngr_username')
-
-    #     # if msngr_type:
-    #     #     if msngr_username:
-    #     #         validate_msngr_type_username(msngr_type, msngr_username)
-
-    #     if msngr_username:
-    #         validate_msngr_username(msngr_username)
-
-    #     return data
-
-    # def validate(self, data: dict) -> dict:
-    #     """
-    #     Проверка данных в поле Messenger_account.
-    #     Если телеграмм, то ID wbahjdjt
-    #     """
-    #     # msngr_type = data.get('msngr_type')
-    #     msngr_username = data.get('msngr_username')
-
-    #     # if msngr_type:
-    #     #     if msngr_username:
-    #     #         validate_msngr_type_username(msngr_type, msngr_username)
-
-    #     if msngr_username:
-    #         validate_msngr_username(msngr_username)
-
-    #     return data
 
 
 class MyUserSerializer(serializers.ModelSerializer):
@@ -204,10 +172,10 @@ class UserOrdersSerializer(serializers.ModelSerializer):
     status = serializers.CharField(source='get_status_display')
 
     class Meta:
-        fields = ('order_number', 'created', 'status',
+        fields = ('id', 'order_number', 'created', 'status',
                   'orderdishes', 'final_amount_with_shipping')
         model = Order
-        read_only_fields = ('order_number', 'created', 'status',
+        read_only_fields = ('id', 'order_number', 'created', 'status',
                             'orderdishes', 'final_amount_with_shipping')
 
     def get_orer_dishes(self, order: Order) -> QuerySet[dict]:
@@ -370,7 +338,6 @@ class RestaurantSerializer(serializers.ModelSerializer):
         return repr
 
 
-
 class DeliverySerializer(TranslatableModelSerializer):
     """
     Базовый сериализатор для модели Delivery, только чтение!
@@ -531,7 +498,7 @@ class BaseOrderSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ('items_qty',
                   'recipient_name', 'recipient_phone',
-                  'city', 'time', 'comment', 'persons_qty',
+                  'city', 'delivery_time', 'comment', 'persons_qty',
                   'orderdishes', 'amount', 'promocode')
         model = Order
 
@@ -548,18 +515,20 @@ class BaseOrderSerializer(serializers.ModelSerializer):
             data['cartdishes'] = cartdishes
             data['promocode'] = promocode
 
+
+
         delivery = self.context.get('extra_kwargs', {}).get('delivery')
         data['delivery'] = delivery
 
-        time = combine_date_and_time(
+        delivery_time = combine_date_and_time(
             self.initial_data['selected_month'],
             self.initial_data['selected_time']
             )
 
-        if time is not None:
+        if delivery_time is not None:
             restaurant = data.get('restaurant', None)
-            validate_delivery_time(time, delivery, restaurant)
-        data['time'] = time
+            validate_delivery_time(delivery_time, delivery, restaurant)
+        data['delivery_time'] = delivery_time
 
         return data
 
@@ -580,11 +549,11 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
     class Meta:
         fields = ('order_number', 'created',
                   'status_display',
-                  'final_amount_with_shipping',
+                  'discounted_amount',
                   'payment_type',
                   'items_qty',
                   'recipient_name', 'recipient_phone',
-                  'city', 'time', 'restaurant',
+                  'city', 'delivery_time', 'restaurant',
                   'comment', 'persons_qty',
                   'orderdishes', 'amount', 'promocode',
                   )
@@ -604,29 +573,31 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
         language = self.context.get('request').LANGUAGE_CODE
         request = self.context.get('request')
 
-        if request:
-            request = self.context['request']
+        if request.data:
             if request.user.is_authenticated:
 
                 base_profile, cart, cartdishes, promocode = (
                     get_base_profile_cartdishes_promocode(request.user)
                 )
 
-                validated_data['delivery'] = get_object_or_404(
-                                            Delivery,
-                                            city=self.initial_data['city'],
-                                            type='takeaway')
+                user = validated_data.pop('base_profile')
+                cart = validated_data.pop('cart')
+                cartdishes = validated_data.pop('cartdishes')
 
-                validated_data['promocode'] = promocode
+                # validated_data['delivery'] = get_object_or_404(
+                #                             Delivery,
+                #                             city=self.initial_data['city'],
+                #                             type='takeaway')
+
+                # validated_data['promocode'] = promocode
 
                 with transaction.atomic():
                     order = Order.objects.create(**validated_data,
-                                                 user=base_profile,
+                                                 user=user,
                                                  language=language)
 
                     OrderDish.create_orderdishes_from_cartdishes(
-                        order, cartdishes,
-                        base_profile=base_profile.pk)
+                        order, cartdishes)
                     # проверить единство расчетов фронт и бэк
                     # validated_data['discount'] = cart.discount
                     # validated_data['discounted_amount'] = cart.discounted_amount
@@ -647,6 +618,16 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
 
         # Если что-то пошло не так или не было найдено корзины, возвращаем None
         return None
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        rep["total"] = {
+            "title": "Total amount",
+            "total_amount": instance.final_amount_with_shipping
+        }
+
+        return rep
+
 
 
 class TakeawayConditionsSerializer(serializers.ModelSerializer):
@@ -702,11 +683,12 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
         fields = ('order_number', 'created',
                   'status_display',
                   'final_amount_with_shipping',
+                  'discounted_amount',
                   'delivery_cost',
                   'payment_type',
                   'items_qty',
                   'recipient_name', 'recipient_phone',
-                  'city', 'time',
+                  'city', 'delivery_time',
                   'comment', 'persons_qty',
                   'orderdishes', 'amount', 'promocode',
                   'recipient_address'
@@ -738,6 +720,11 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
                     "lat": self.initial_data.get('lat'),
                     "lon": self.initial_data.get('lon')
                 }
+                validated_data['delivery_zone'] = get_delivery_zone(
+                    self.validated_data.get('city'),
+                    self.initial_data.get('lat'),
+                    self.initial_data.get('lon')
+                )
 
                 with transaction.atomic():
                     order = Order.objects.create(**validated_data,
@@ -766,6 +753,15 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
 
         # Если что-то пошло не так или не было найдено корзины, возвращаем None
         return None
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        rep = get_rep_dic(rep, instance=instance)
+
+        del rep["final_amount_with_shipping"]
+        del rep["delivery_cost"]
+
+        return rep
 
 
 class DeliveryConditionsSerializer(serializers.ModelSerializer):

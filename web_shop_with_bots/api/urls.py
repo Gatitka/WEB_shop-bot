@@ -1,93 +1,62 @@
 from django.conf import settings
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+from django.urls import re_path
+from djoser import views
 
 from .views import (
                     ContactsDeliveryViewSet,
-                    DeleteUserViewSet,
+                    # DeleteUserViewSet,
                     MenuViewSet,
                     PromoNewsViewSet,
                     ShoppingCartViewSet,
                     MyAddressViewSet,
-                    UserOrdersViewSet,
+                    MyOrdersViewSet,
                     ClientAddressesViewSet,
                     get_unit_price,
                     TakeawayOrderViewSet,
-                    DeliveryOrderViewSet)
+                    DeliveryOrderViewSet,
+                    MyUserViewSet)
 
 app_name = 'api'
 
-v1_router = DefaultRouter()
+# Создание роутеров для разных разделов API
+menu_router = DefaultRouter()
+menu_router.register(r'menu', MenuViewSet, basename='menu')
 
+cart_router = DefaultRouter()
+cart_router.register(r'shopping_cart', ShoppingCartViewSet, basename='shopping_cart')
 
-v1_router.register(
-    r'menu',
-    MenuViewSet,
-    basename='menu'
-)
-v1_router.register(
-    r'shopping_cart',
-    ShoppingCartViewSet,
-    basename='shopping_cart'
-)
-v1_router.register(
-    r'contacts',
-    ContactsDeliveryViewSet,
-    basename='contacts'
-)
+contacts_router = DefaultRouter()
+contacts_router.register(r'contacts', ContactsDeliveryViewSet, basename='contacts')
 
-v1_router.register(
-    'me/my_addresses',
-    MyAddressViewSet,
-    basename='user_addresses'
-)
-v1_router.register(
-    'me/my_orders',
-    UserOrdersViewSet,
-    basename='user_orders'
-)
-v1_router.register(
-    r'promonews',
-    PromoNewsViewSet,
-    basename='promonews'
-)
-v1_router.register(
-    r'get_client_addresses/(?P<user_id>\d+)',
-    ClientAddressesViewSet,
-    basename='client-addresses'
-)
-v1_router.register(
-    'create_order_takeaway',
-    TakeawayOrderViewSet,
-    basename='create-order-takeaway'
-)
-v1_router.register(
-    'create_order_delivery',
-    DeliveryOrderViewSet,
-    basename='create-order-delivery'
-)
+profile_router = DefaultRouter()
+profile_router.register(r'me/my_addresses', MyAddressViewSet, basename='user_addresses')
+profile_router.register(r'me/my_orders', MyOrdersViewSet, basename='user_orders')
 
-# v1_router.register('auth/users/me/delete', DeleteUserViewSet.as_view({'delete': 'destroy'}), basename='users')
+promos_router = DefaultRouter()
+promos_router.register(r'promonews', PromoNewsViewSet, basename='promonews')
 
-# v1_router.register('auth/users', CustomUserViewSet)
-# menu
-# delivery contacts
-# promos (b-day, takeaway discount)
-# profile  (register/login/logout, contacts, addresses, orders, promocodes)
-# cart
-# order (contact -> address -> delivery date/time, choose payment, order success)
-# payment
+order_router = DefaultRouter()
+order_router.register(r'create_order_takeaway', TakeawayOrderViewSet, basename='create-order-takeaway')
+order_router.register(r'create_order_delivery', DeliveryOrderViewSet, basename='create-order-delivery')
 
+users_router = DefaultRouter()
+users_router.register(r'auth/users', MyUserViewSet, basename='users')
 
+# Сборка всех роутеров в один URL-конфиг
 urlpatterns = [
-    path('v1/', include(v1_router.urls)),
-    path('v1/auth/users/me/delete/', DeleteUserViewSet.as_view(), name='users'),
+    path('v1/', include(menu_router.urls)),
+    path('v1/', include(cart_router.urls)),
+    path('v1/', include(contacts_router.urls)),
+    path('v1/', include(profile_router.urls)),
+    path('v1/', include(promos_router.urls)),
+    path('v1/', include(order_router.urls)),
+    path('v1/', include(users_router.urls)),
     path('v1/get_unit_price/', get_unit_price, name='get_unit_price'),
-    # Djoser создаст набор необходимых эндпоинтов.
-    # базовые, для управления пользователями в Django:
-    path('v1/auth/', include('djoser.urls')),
-    # JWT-эндпоинты, для управления JWT-токенами:
     path('v1/auth/', include('djoser.urls.jwt')),
+    path('v1/token/login/', views.TokenCreateView.as_view(), name='login'),
+    path('v1/token/logout/', views.TokenDestroyView.as_view(), name='logout'),
 ]
 
 if settings.DEBUG:

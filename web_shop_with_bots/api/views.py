@@ -1,13 +1,9 @@
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404, redirect
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_protect
 from django_filters.rest_framework import DjangoFilterBackend
-from djoser.serializers import UserSerializer
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.generics import DestroyAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -40,35 +36,24 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                          DeliveryOrderSerializer,
                          DeliveryConditionsSerializer,
                          DeliveryOrderWriteSerializer,
-                         )
-                         # PreOrderDataSerializer,)
+                        )
 from decimal import Decimal
 from shop.utils import get_cart, get_reply_data
-from delivery_contacts.utils import get_delivery_cost_zone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.conf import settings
-from delivery_contacts.services import get_delivery
+from delivery_contacts.services import (get_delivery, get_delivery_cost_zone)
+from djoser.views import UserViewSet
+from djoser import utils
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken)
+from shop.utils import (get_base_profile_and_shopping_cart,
+                        get_repeat_order_form_data)
 
 
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
-
-
-DATE_TIME_FORMAT = '%d/%m/%Y %H:%M'
-
-
-class DeleteUserViewSet(DestroyAPIView):
-    serializer_class = [UserSerializer]
-    permission_classes = [IsAuthenticated]
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.request.user
-        instance.is_deleted = True
-        logger.debug('web_account проставлена отметка is_deleted = True')
-        instance.save()
-        logger.debug('web_account сохранен')
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ContactsDeliveryViewSet(mixins.ListModelMixin,
@@ -83,21 +68,19 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
     serializer_class = ContatsDeliverySerializer
 
     def list(self, request, *args, **kwargs):
-        restaurants = Restaurant.objects.filter(is_active=True).all()
-        logger.debug('получен список ресторанов')
+        restaurants = Restaurant.objects.filter(is_active=True)
+
         delivery = Delivery.objects.filter(
             is_active=True,
-            ).all().prefetch_related('translations')
-        logger.debug('получен список доставок')
-        response_data = {}
-        response_data['restaurants'] = RestaurantSerializer(
-            restaurants,
-            many=True).data
-        response_data['delivery'] = DeliverySerializer(
-            delivery,
-            many=True).data
-        logger.debug('списки ресторанов и доставки успешно сериализированны')
-        return Response(response_data)
+            ).prefetch_related('translations')
+
+        response_data = {
+            'restaurants': RestaurantSerializer(restaurants,
+                                                many=True).data,
+            'delivery': DeliverySerializer(delivery,
+                                           many=True).data
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class MyAddressViewSet(mixins.ListModelMixin,
@@ -115,7 +98,7 @@ class MyAddressViewSet(mixins.ListModelMixin,
     def get_queryset(self):
         return UserAddress.objects.filter(
             base_profile=self.request.user.base_profile
-        ).all()
+        )
 
     def perform_create(self, serializer):
         serializer.save(base_profile=self.request.user.base_profile)
@@ -153,7 +136,7 @@ class PromoNewsViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny,]
 
 
-class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
+class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Вьюсет модели Orders для просмотра истории заказов.
     """
@@ -177,6 +160,51 @@ class UserOrdersViewSet(viewsets.ReadOnlyModelViewSet):
             )[:3]
         if my_orders:
             return my_orders
+
+    @action(detail=True,
+            methods=['post'])   # , 'delete'])
+    def repeat(self, request, pk=None):
+        """
+        Повторение заказа зарегистрированного пользователя.\n
+        Корзина очищается и наполняется позициями из выбранного заказа.
+        Responce содержит информацию заказа для заполнения формы заказа.
+        """
+        current_user = request.user
+
+        if not current_user.is_authenticated:
+            logger.warning("User is not authenticated.")
+            return Response({}, status=status.HTTP_401_UNAUTHORIZED)
+
+        order = Order.objects.filter(
+            user=current_user.base_profile, id=pk).first()
+        if order is None:
+            logger.warning("No such order ID in user's history.")
+            return Response("There's no such order ID in you history.",
+                            status=status.HTTP_204_NO_CONTENT)
+
+        base_profile, cart = get_base_profile_and_shopping_cart(
+            current_user, validation=True, half_validation=True)
+
+        cart.empty_cart(clean_promocode=False)
+        cart_dishes_to_create = [
+            CartDish(dish=cartdish.dish, quantity=cartdish.quantity, cart=cart)
+            for cartdish in order.orderdishes.all()
+            if cartdish.dish.is_active
+        ]
+        try:
+            created_cartdishes = CartDish.objects.bulk_create(
+                cart_dishes_to_create)
+            for cartdish in created_cartdishes:
+                cartdish.save()
+        except Exception as e:
+            logger.error(f"Failed to repeat the order. Error {e}",
+                         exc_info=True)
+            return Response("Failed to repeat the order.",
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        repeat_order_form_data = get_repeat_order_form_data(order)
+        return Response(repeat_order_form_data,
+                        status=status.HTTP_200_OK)
 
 
 class MenuViewSet(mixins.ListModelMixin,
@@ -212,7 +240,7 @@ class MenuViewSet(mixins.ListModelMixin,
     http_method_names = ['get', 'post']
 
     def list(self, request, *args, **kwargs):
-        user = request.user
+        current_user = request.user
 
         response_data = {
                 'dishes': None,
@@ -220,9 +248,9 @@ class MenuViewSet(mixins.ListModelMixin,
             }
         context = {'request': request}
 
-        if user.is_authenticated:
-            base_profile = BaseProfile.objects.select_related('shopping_cart').get(web_account=request.user)
-
+        if current_user.is_authenticated:
+            base_profile = BaseProfile.objects.select_related(
+                'shopping_cart').get(web_account=current_user)
 
             context['extra_kwargs'] = {'cart_items':
                                        base_profile.shopping_cart.dishes.all()}
@@ -784,9 +812,33 @@ def get_unit_price(request):
 # Возвращаем ошибку, если метод запроса не GET
 
 
+class MyUserViewSet(UserViewSet):
 
+    def perform_update(self, serializer):
+        validated_data = serializer.validated_data
+        serializer.save()
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data)
+        serializer.is_valid(raise_exception=True)
 
+        if instance == request.user:
+            utils.logout_user(self.request)
+            instance.is_deleted = True
+            instance.is_active = False
+            instance.base_profile.is_active = False
+            logger.debug('web_account проставлена отметка is_deleted = True')
+            instance.save()
+            instance.base_profile.save(update_fields=['is_active'])
+            logger.debug('web_account сохранен')
+
+            active_tokens = OutstandingToken.objects.filter(user=instance)
+            # Добавляем каждый активный токен в черный список
+            for token in active_tokens:
+                BlacklistedToken.objects.create(token=token)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 ######-------------------------------------------------------------------------------------------------------#####

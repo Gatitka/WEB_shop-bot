@@ -52,25 +52,25 @@ def google_validate_address_and_get_coordinates(address):
             )
 
 
-def get_delivery_cost_zone(delivery_zones, discounted_amount, delivery,
-                           lat, lon):
-    """
-    Рассчитывает стоимость доставки и зону с учетом суммы заказа и адреса доставки.
-    """
-    # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
-    # if lat is None and lon is None:
-    #     lat, lon, status = google_validate_address_and_get_coordinates(address)
+# def get_delivery_cost_zone(delivery_zones, discounted_amount, delivery,
+#                            lat, lon):
+#     """
+#     Рассчитывает стоимость доставки и зону с учетом суммы заказа и адреса доставки.
+#     """
+#     # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
+#     # if lat is None and lon is None:
+#     #     lat, lon, status = google_validate_address_and_get_coordinates(address)
 
-    delivery_zone = get_delivery_zone(delivery_zones,
-                                      lat, lon)
+#     delivery_zone = get_delivery_zone(delivery_zones,
+#                                       lat, lon)
 
-    delivery_cost = get_delivery_cost(discounted_amount, delivery,
-                                      delivery_zone)
+#     delivery_cost = get_delivery_cost(discounted_amount, delivery,
+#                                       delivery_zone)
 
-    return delivery_cost, delivery_zone
+#     return delivery_cost, delivery_zone
 
 
-def get_delivery_zone(delivery_zones, lat=None, lon=None):
+def _get_delivery_zone(delivery_zones, lat=None, lon=None):
     """
     Функция возвращает зону доставки по адресу или координатам.
     """
@@ -78,18 +78,20 @@ def get_delivery_zone(delivery_zones, lat=None, lon=None):
 
     if lat is not None and lon is not None:
         for zone in delivery_zones:
-            if zone.is_point_inside(lat, lon):
+            if (zone.name in ['zone1', 'zone2', 'zone3']
+               and zone.is_point_inside(lat, lon)):
+
                 delivery_zone = zone
 
     return delivery_zone
 
 
-def get_delivery_cost(discounted_amount, delivery, delivery_zone):
+def get_delivery_cost(discounted_amount, delivery, delivery_zone, delivery_cost=None):
     """
     Рассчитывает стоимость доставки с учетом суммы заказа и зоны доставки.
     """
     # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
-    if delivery_zone:
+    if delivery_zone.name not in ['уточнить', 'по запросу'] :
 
         if delivery_zone.is_promo and discounted_amount >= delivery_zone.promo_min_order_amount:
             # Если для района установлена промо-акция и сумма заказа больше или равна
@@ -99,6 +101,9 @@ def get_delivery_cost(discounted_amount, delivery, delivery_zone):
             # Если промо-акция не действует или сумма заказа меньше минимальной,
             # возвращаем стоимость доставки для данного района
             return delivery_zone.delivery_cost
+
+    elif delivery_zone.name == 'по запросу':
+        return Decimal(delivery_cost)
 
     else:
         if delivery.default_delivery_cost:

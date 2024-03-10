@@ -207,10 +207,13 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
+
+    'BLACKLIST_AFTER_ROTATION': True,
+
 }
 
 TOKEN_MODEL = None
-
+BLACKLIST_MODEL = 'yourapp.BlacklistedToken'
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.getenv('EMAIL_HOST')
@@ -252,7 +255,7 @@ DJOSER = {
         'username_changed_confirmation': 'api.utils.email.MyUsernameChangedConfirmationEmail',
     },
     'PERMISSIONS': {
-        'user_delete': ['api.permissions.DenyAllPermission'],
+        # 'user_delete': ['api.permissions.DenyAllPermission'],
         'username_reset': ['api.permissions.DenyAllPermission'],
         'username_reset_confirm': ['api.permissions.DenyAllPermission'],
         # запрет на удаление пользователей стандартным способом,
@@ -451,6 +454,7 @@ CITY_CHOICES = [
 ]
 
 DEFAULT_CITY = 'Beograd'
+DEFAULT_RESTAURANT = 1
 
 PAYMENT_METHODS = [
     ('cash', 'cash'),
