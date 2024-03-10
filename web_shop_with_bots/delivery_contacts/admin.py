@@ -78,8 +78,11 @@ class DeliveryZoneAdmin(OSMGeoAdmin):
         if obj.pk is not None:
             if obj.polygon is not None:
                 polygon_str = str(obj.polygon)
-                polygon_data = polygon_str.split("MULTIPOLYGON (((")[1]
-                return str("MULTIPOLYGON (((" + polygon_data)
+                try:
+                    polygon_data = polygon_str.split("MULTIPOLYGON (((")[1]
+                    return str("MULTIPOLYGON (((" + polygon_data)
+                except IndexError:
+                    return "нет координат"
         return ''
     polygon_coordinates.short_description = 'WKT координаты полигона'
 

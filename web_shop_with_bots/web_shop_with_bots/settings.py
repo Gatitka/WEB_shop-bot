@@ -33,6 +33,7 @@ LOGGING = {
             'class': 'logging.FileHandler',
             'filename': LOG_FILE_PATH,
             'formatter': 'verbose',
+            'encoding': 'utf-8',
         }
     },
     "loggers": {
