@@ -135,7 +135,7 @@ class DishShortSerializer(TranslatableModelSerializer):
                                          read_only=True)
 
     class Meta:
-        fields = ('translations', 'image')
+        fields = ('article', 'id', 'translations', 'image')
         model = Dish
 
     def to_representation(self, instance):
