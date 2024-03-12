@@ -10,44 +10,48 @@ from users.validators import AlphanumericPasswordValidator
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-LOG_FILE_PATH = os.path.join(
-    BASE_DIR, '/tmp', 'yume.log'
-    ) if os.name != 'nt' else os.path.join(BASE_DIR, 'tmp', 'yume.log')
-
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "console": {
-            "level": "WARNING",
-            "class": "logging.StreamHandler",
-        },
-        "file": {
-            'level': 'DEBUG',
-            'class': 'logging.FileHandler',
-            'filename': LOG_FILE_PATH,
-            'formatter': 'verbose',
-            'encoding': 'utf-8',
-        }
-    },
-    "loggers": {
-        "django": {
-            "handlers": ["console", "file"],
-            "level": "DEBUG",
-            "propagate": True,
-        },
-    },
-}
-
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))),
                          'infra',
                          '.env'), verbose=True)
+
+ENVIRONMENT = os.getenv('ENVIRONMENT')
+
+if ENVIRONMENT == 'development':
+
+    LOG_FILE_PATH = os.path.join(
+        BASE_DIR, '/tmp', 'yume.log'
+        ) if os.name != 'nt' else os.path.join(BASE_DIR, 'tmp', 'yume.log')
+
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "verbose": {
+                "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+                "style": "{",
+            },
+        },
+        "handlers": {
+            "console": {
+                "level": "WARNING",
+                "class": "logging.StreamHandler",
+            },
+            "file": {
+                'level': 'DEBUG',
+                'class': 'logging.FileHandler',
+                'filename': LOG_FILE_PATH,
+                'formatter': 'verbose',
+                'encoding': 'utf-8',
+            }
+        },
+        "loggers": {
+            "django": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+        },
+    }
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -55,7 +59,6 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 DEBUG = os.getenv('DEBUG')
 TEST_SERVER = os.getenv('TEST_SERVER')
 SERVER = os.getenv('SERVER')
-ENVIRONMENT = os.getenv('ENVIRONMENT')
 
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 
@@ -364,7 +367,9 @@ CORS_ALLOW_CREDENTIALS = True
 
 # -------------------------------- CSRF --------------------------------------------
 
-# CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
+if ENVIRONMENT != 'development':
+    CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
+
 # CSRF_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
 
