@@ -286,9 +286,13 @@ AUTH_USER_MODEL = 'users.WEBAccount'
 SESSION_COOKIE_AGE = 60*60*24    # срок годности кук для админа, чтобы не перелогиниваться в админке
 
 
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))),
+                         'sushi-frontend-rs',
+                         '.env'), verbose=True)
+
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static/')]
-# STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'my_static/')]
+STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
