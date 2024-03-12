@@ -533,7 +533,8 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
             if promocode is None:
                 return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-            if Promocode.is_valid(promocode):
+            promocode = Promocode.is_valid(promocode)
+            if promocode:
                 return Response(
                     {"promocode_disc": f"{promocode.discount}",
                      "promocode_code": f"{promocode.promocode}"},
