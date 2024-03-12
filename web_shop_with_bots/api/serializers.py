@@ -526,16 +526,20 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                                            )
     recipient_phone = PhoneNumberField(required=True)
 
-    selected_month = serializers.DateField(format="%d.%B",
-                                           required=True,
-                                           allow_null=True,
-                                           write_only=True,
-                                           validators=[validate_selected_month,])
+    # selected_month = serializers.DateField(format="%d.%B",
+    #                                        required=True,
+    #                                        allow_null=True,
+    #                                        write_only=True,
+    #                                        validators=[validate_selected_month,])
 
-    selected_time = serializers.TimeField(format="%H:%M",
-                                          required=True,
-                                          allow_null=True,
-                                          write_only=True)
+    # selected_time = serializers.TimeField(format="%H:%M",
+    #                                       required=True,
+    #                                       allow_null=True,
+    #                                       write_only=True)
+
+    delivery_time = serializers.DateTimeField(format="%d.%B.%Y %H:%M",
+                                              required=False,
+                                              allow_null=True)
 
     class Meta:
         fields = ('items_qty',
@@ -543,6 +547,14 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                   'city', 'delivery_time', 'comment', 'persons_qty',
                   'orderdishes', 'amount', 'promocode')
         model = Order
+
+    def validate_delivery_time(self, value):
+        delivery = self.context.get('extra_kwargs', {}).get('delivery')
+
+        if value is not None:
+            restaurant = self.initial_data.get('restaurant', None)
+            validate_delivery_time(value, delivery, restaurant)
+        return value
 
     def validate(self, data):
         request = self.context.get('request')
@@ -556,19 +568,6 @@ class BaseOrderSerializer(serializers.ModelSerializer):
             data['cart'] = cart
             data['cartdishes'] = cartdishes
             data['promocode'] = promocode
-
-        delivery = self.context.get('extra_kwargs', {}).get('delivery')
-        data['delivery'] = delivery
-
-        delivery_time = combine_date_and_time(
-            self.initial_data['selected_month'],
-            self.initial_data['selected_time']
-            )
-
-        if delivery_time is not None:
-            restaurant = data.get('restaurant', None)
-            validate_delivery_time(delivery_time, delivery, restaurant)
-        data['delivery_time'] = delivery_time
 
         return data
 

@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from datetime import datetime, time, timezone
+from delivery_contacts.models import Restaurant
 
 
 def validate_delivery_time(value, delivery, restaurant=None):
@@ -11,7 +12,7 @@ def validate_delivery_time(value, delivery, restaurant=None):
 
         if delivery is None:
             raise ValidationError(
-                    'Delivery method is not chosen.'
+                    'Delivery method is required to validate the delivery time.'
                 )
         # Проверяем, что время находится в диапазоне
         # работы доставки в модели доставки
@@ -25,23 +26,27 @@ def validate_delivery_time(value, delivery, restaurant=None):
                 max_time_str = max_time.strftime('%H:%M')
 
                 raise ValidationError(
-                    (f'Choose time '
-                     f"Choose time {min_time_str} - {max_time_str}"),
+                    (f"Choose time {min_time_str} - {max_time_str}"),
                     code='invalid_order_time'
                 )
 
         elif delivery.type == 'takeaway':
             delivery_time = value.time()
             if restaurant is not None:
-                min_time = restaurant.open_time
-                max_time = restaurant.close_time
-                if not min_time <= delivery_time <= max_time:
-                    raise ValidationError(
-                        (f'Choose time '
-                         f'{str(min_time)} до {str(max_time)}'),
+                restaurant = Restaurant.objects.filter(id=restaurant).first()
+                if restaurant:
+                    min_time = restaurant.open_time
+                    max_time = restaurant.close_time
 
-                        code='invalid_delivery_time'
-                    )
+                    if not min_time <= delivery_time <= max_time:
+                        min_time_str = min_time.strftime('%H:%M')
+                        max_time_str = max_time.strftime('%H:%M')
+                        raise ValidationError(
+                            (f'Choose time '
+                             f'{min_time_str} - {max_time_str}'),
+
+                            code='invalid_delivery_time'
+                        )
 
     else:
         return value
