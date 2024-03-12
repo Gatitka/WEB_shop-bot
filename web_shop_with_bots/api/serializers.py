@@ -459,18 +459,55 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
 
 
 # --------------------------- ЗАКАЗ ------------------------------
+class DishOrderDishSerializer(serializers.ModelSerializer):
+    """
+    Сериализатор для краткого отображения блюд.
+    """
+    translations = TranslatedFieldsField(shared_model=Dish,
+                                         read_only=True)
+
+    class Meta:
+        fields = ('article', 'translations',
+                  'image')
+        model = Dish
+        read_only_fields = ('translations',
+                            'image')
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        translations = instance.translations.all()
+        translations_short_name = {}
+        for translation in translations:
+            if translation.short_name:
+                translations_short_name[
+                    f'{translation.language_code}'] = translation.short_name
+        rep['translations'] = translations_short_name
+        return rep
+
 
 class OrderDishWriteSerializer(serializers.ModelSerializer):
     """
     Сериализатор для записи Orderdishes в заказ.
     """
+    dish = serializers.PrimaryKeyRelatedField(queryset=Dish.objects.filter(is_active=True),
+                                              required=True)
+
     class Meta:
         fields = ('dish', 'quantity')
         model = OrderDish
 
-    def validate_dish(self, value):
-        validator_dish_exists_active(value)
-        return value
+    # def validate_dish(self, value):
+
+    #     validator_dish_exists_active(value)
+    #     return value
+
+
+class PromoCodeField(serializers.RelatedField):
+    def to_representation(self, value):
+        return value.promocode
+
+    def to_internal_value(self, data):
+        return Promocode.objects.get(promocode=data)
 
 
 class BaseOrderSerializer(serializers.ModelSerializer):
@@ -479,12 +516,14 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                                       max_digits=8,
                                       decimal_places=2,
                                       write_only=True)
-    promocode = serializers.CharField(required=False,
-                                      allow_null=True,
-                                      write_only=True)
+    promocode = PromoCodeField(
+        queryset=Promocode.objects.all(),
+        required=False, allow_null=True, write_only=True)
+                                      #source='promocode.promocode')
     orderdishes = OrderDishWriteSerializer(required=False,
                                            allow_null=True,
-                                           many=True)
+                                           many=True,
+                                           )
     recipient_phone = PhoneNumberField(required=True)
 
     selected_month = serializers.DateField(format="%d.%B",
@@ -546,6 +585,7 @@ class TakeawayOrderSerializer(BaseOrderSerializer):
 
 class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
     status_display = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
 
     class Meta:
         fields = ('order_number', 'created',
@@ -557,11 +597,11 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
                   'city', 'delivery_time', 'restaurant',
                   'comment', 'persons_qty',
                   'orderdishes', 'amount', 'promocode',
+                  'total'
                   )
         model = Order
         read_only_fields = ('order_number', 'created',
-                            'status',
-                            'final_amount_with_shipping',
+                            'status'
                             )
 
     def get_status_display(self, obj):
@@ -574,51 +614,45 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
         language = self.context.get('request').LANGUAGE_CODE
         request = self.context.get('request')
 
-        if request.data:
-            if request.user.is_authenticated:
+        if not request.data:
+            return None
+            # Если что-то пошло не так или не было найдено корзины, возвращаем None
 
-                base_profile, cart, cartdishes, promocode = (
-                    get_base_profile_cartdishes_promocode(request.user)
-                )
+        if request.user.is_authenticated:
 
-                user = validated_data.pop('base_profile')
-                cart = validated_data.pop('cart')
-                cartdishes = validated_data.pop('cartdishes')
+            user = validated_data.pop('base_profile')
+            cart = validated_data.pop('cart')
+            cartdishes = validated_data.pop('cartdishes')
 
-                # validated_data['delivery'] = get_object_or_404(
-                #                             Delivery,
-                #                             city=self.initial_data['city'],
-                #                             type='takeaway')
+            with transaction.atomic():
+                order = Order.objects.create(**validated_data,
+                                                user=user,
+                                                language=language)
 
-                # validated_data['promocode'] = promocode
+                OrderDish.create_orderdishes_from_cartdishes(
+                    order, cartdishes=cartdishes)
+
+                # проверить единство расчетов фронт и бэк
+
+                cart.empty_cart()
+
+        else:
+            # Если пользователь не аутентифицирован, получаем данные
+            # orderdishes из сериализатора
+            if 'orderdishes' in validated_data:
+                orderdishes = validated_data.pop('orderdishes')
 
                 with transaction.atomic():
                     order = Order.objects.create(**validated_data,
-                                                 user=user,
-                                                 language=language)
+                                                    user=None,
+                                                    language=language)
 
                     OrderDish.create_orderdishes_from_cartdishes(
-                        order, cartdishes)
+                        order, no_cart_cartdishes=orderdishes)
+
                     # проверить единство расчетов фронт и бэк
-                    # validated_data['discount'] = cart.discount
-                    # validated_data['discounted_amount'] = cart.discounted_amount
-                    # validated_data['items_qty'] = cart.items_qty
-                    # validated_data['amount'] = cart.amount
-                    cart.empty_cart()
 
-            else:
-                # Если пользователь не аутентифицирован, получаем данные корзины из запроса
-                if 'cartdishes' in validated_data:
-                    cartdishes = validated_data.pop('cartdishes')
-                    order = Order.objects.create(**validated_data,
-                                                 user=None,
-                                                 language=language)
-                    OrderDish.create_orderdishes_from_cartdishes(
-                        order, cartdishes, base_profile=None)
-            return order
-
-        # Если что-то пошло не так или не было найдено корзины, возвращаем None
-        return None
+        return order
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
@@ -672,6 +706,10 @@ class DeliveryOrderSerializer(BaseOrderSerializer):
             lat, lon, status = None, None, None
 
         self.initial_data['lat'], self.initial_data['lon'] = lat, lon
+        self.initial_data['delivery_address_data'] = {
+                "lat": lat,
+                "lon": lon
+        }
 
         return value
 
@@ -682,7 +720,6 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
     class Meta:
         fields = ('order_number', 'created',
                   'status_display',
-                  'final_amount_with_shipping',
                   'discounted_amount',
                   'delivery_cost',
                   'payment_type',
@@ -696,7 +733,6 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
         model = Order
         read_only_fields = ('order_number', 'created',
                             'status', 'delivery_cost',
-                            'final_amount_with_shipping',
                             )
 
     def get_status_display(self, obj):
@@ -709,57 +745,58 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
         language = self.context.get('request').LANGUAGE_CODE
         request = self.context.get('request')
 
-        if request.data:
-            if request.user.is_authenticated:
+        if not request.data:
+            return None
+            # Если что-то пошло не так или не было найдено корзины, возвращаем None
 
-                user = validated_data.pop('base_profile')
-                cart = validated_data.pop('cart')
-                cartdishes = validated_data.pop('cartdishes')
+        if request.user.is_authenticated:
 
-                validated_data['delivery_address_data'] = {
-                    "lat": self.initial_data.get('lat'),
-                    "lon": self.initial_data.get('lon')
-                }
-                validated_data['delivery_zone'] = get_delivery_zone(
-                    self.validated_data.get('city'),
-                    self.initial_data.get('lat'),
-                    self.initial_data.get('lon')
-                )
+            user = validated_data.pop('base_profile')
+            cart = validated_data.pop('cart')
+            cartdishes = validated_data.pop('cartdishes')
+
+            # validated_data['delivery_address_data'] = {
+            #     "lat": self.initial_data.get('lat'),
+            #     "lon": self.initial_data.get('lon')
+            # }
+            validated_data['delivery_zone'] = get_delivery_zone(
+                self.validated_data.get('city'),
+                self.initial_data.get('lat'),
+                self.initial_data.get('lon')
+            )
+
+            with transaction.atomic():
+                order = Order.objects.create(**validated_data,
+                                                user=user,
+                                                language=language)
+
+                OrderDish.create_orderdishes_from_cartdishes(
+                    order, cartdishes)
+
+                # проверить единство расчетов фронт и бэк
+
+                cart.empty_cart()
+
+        else:
+            # Если пользователь не аутентифицирован, получаем данные
+            # orderdishes из сериализатора
+            if 'orderdishes' in validated_data:
+                orderdishes = validated_data.pop('orderdishes')
 
                 with transaction.atomic():
                     order = Order.objects.create(**validated_data,
-                                                 user=user,
-                                                 language=language)
+                                                    user=None,
+                                                    language=language)
 
                     OrderDish.create_orderdishes_from_cartdishes(
-                        order, cartdishes)
+                        order, no_cart_cartdishes=orderdishes)
+
                     # проверить единство расчетов фронт и бэк
-                    # validated_data['discount'] = cart.discount
-                    # validated_data['discounted_amount'] = cart.discounted_amount
-                    # validated_data['items_qty'] = cart.items_qty
-                    # validated_data['amount'] = cart.amount
-                    cart.empty_cart()
-
-            else:
-                # Если пользователь не аутентифицирован, получаем данные корзины из запроса
-                if 'cartdishes' in validated_data:
-                    cartdishes = validated_data.pop('cartdishes')
-                    order = Order.objects.create(**validated_data,
-                                                 user=None,
-                                                 language=language)
-                    OrderDish.create_orderdishes_from_cartdishes(
-                        order, cartdishes, base_profile=None)
-            return order
-
-        # Если что-то пошло не так или не было найдено корзины, возвращаем None
-        return None
+        return order
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         rep = get_rep_dic(rep, instance=instance)
-
-        del rep["final_amount_with_shipping"]
-        del rep["delivery_cost"]
 
         return rep
 

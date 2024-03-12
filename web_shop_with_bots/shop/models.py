@@ -636,11 +636,23 @@ class OrderDish(models.Model):
             ])
 
     @staticmethod
-    def create_orderdishes_from_cartdishes(order, cartdishes):
-        for cartdish in cartdishes:
+    def create_orderdishes_from_cartdishes(order,
+                                           cartdishes=None,
+                                           no_cart_cartdishes=None):
+        if cartdishes:
+            for cartdish in cartdishes:
 
-            OrderDish.objects.create(
-                order=order,
-                dish=cartdish.dish,
-                quantity=cartdish.quantity
-            )
+                OrderDish.objects.create(
+                    order=order,
+                    dish=cartdish.dish,
+                    quantity=cartdish.quantity
+                )
+
+        elif no_cart_cartdishes:
+            for cartdish in no_cart_cartdishes:
+
+                OrderDish.objects.create(
+                    order=order,
+                    dish=cartdish['dish'],
+                    quantity=cartdish['quantity']
+                )

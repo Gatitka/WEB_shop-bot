@@ -38,17 +38,18 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                          DeliveryOrderWriteSerializer,
                         )
 from decimal import Decimal
-from shop.utils import get_cart, get_reply_data
+from shop.utils import get_cart, get_reply_data_delivery
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.conf import settings
-from delivery_contacts.services import (get_delivery, get_delivery_cost_zone)
+from delivery_contacts.services import (get_delivery)
 from djoser.views import UserViewSet
 from djoser import utils
 from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
     OutstandingToken)
 from shop.utils import (get_base_profile_and_shopping_cart,
-                        get_repeat_order_form_data)
+                        get_repeat_order_form_data,
+                        get_reply_data_takeaway)
 
 
 logger = logging.getLogger(__name__)
@@ -640,10 +641,11 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         Ответ либо ошибки валидации данных, либо расчет заказа:
         {
             "amount": 5500.0,
-            "promocode_discount": 550.0,
-            "delivery_discount": 495.0,
-            "total_discount": 1045.0,
-            "order_final_amount_with_shipping": 4455.0
+            "promocode": "take10",
+            "total_discount": 495.0,
+            "total": {
+                "title": "order_final_amount_with_shipping",
+                "total_amount": 4455.0
         }
         """
         if not request.data:
@@ -659,35 +661,20 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         serializer.is_valid(raise_exception=True)
 
         current_user = self.request.user
-        reply_data = {}
+
         if current_user.is_authenticated:
             cart = get_cart(current_user)
 
-            promocode = None
-            if cart.promocode is not None:
-                promocode = cart.promocode.promocode
+            reply_data = get_reply_data_takeaway(delivery,
+                                                 cart=cart)
 
-            if delivery.discount:
-                delivery_discount = (
-                    Decimal(cart.discounted_amount)
-                    * Decimal(delivery.discount) / Decimal(100)
-                )
-            else:
-                delivery_discount = Decimal(0)
+        else:
+            orderdishes = serializer.validated_data.get('orderdishes')
+            promocode = serializer.validated_data.get('promocode')
 
-            total = (
-                Decimal(cart.discounted_amount) - Decimal(delivery_discount)
-            )
-
-            reply_data = {}
-            reply_data['amount'] = cart.amount
-            reply_data['promocode'] = promocode
-            reply_data['total_discount'] = (
-                cart.discount + delivery_discount)
-            reply_data['total'] = {
-                "title": "Total amount",
-                "total_amount": total
-                }
+            reply_data = get_reply_data_takeaway(delivery,
+                                                 orderdishes=orderdishes,
+                                                 promocode=promocode)
 
         return Response(reply_data, status=status.HTTP_200_OK)
 
@@ -749,10 +736,12 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         Ответ либо ошибки валидации данных, либо расчет заказа:
         {
             "amount": 5500.0,
-            "promocode_discount": 550.0,
-            "delivery_discount": 495.0,
+            "promocode": "take10",
             "total_discount": 1045.0,
-            "order_final_amount_with_shipping": 4455.0
+            "delivery_cost": 500.0,
+            "total": {
+                "title: "order_final_amount_with_shipping"
+                "total_amount: 4955.0
         }
         """
         if not request.data:
@@ -767,22 +756,24 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
                                          context=context)
         serializer.is_valid(raise_exception=True)
 
+        city = serializer.validated_data.get('city')
+        lat = serializer.initial_data.get('lat')
+        lon = serializer.initial_data.get('lon')
+
         current_user = self.request.user
         if current_user.is_authenticated:
             cart = serializer.validated_data.get('cart')
-            city = serializer.validated_data.get('city')
-            lat = serializer.initial_data.get('lat')
-            lon = serializer.initial_data.get('lon')
 
-            delivery_cost, delivery_zone = get_delivery_cost_zone(
-                DeliveryZone.objects.filter(city=city).all(),
-                discounted_amount=cart.discounted_amount,
-                delivery=delivery,
-                lat=lat, lon=lon)
+            reply_data = get_reply_data_delivery(delivery, city, lat, lon,
+                                                 cart=cart)
+        else:
+            orderdishes = serializer.validated_data.get('orderdishes')
+            promocode = serializer.validated_data.get('promocode')
 
-            reply_data = get_reply_data(
-                cart, delivery, delivery_zone, delivery_cost
-            )
+            reply_data = get_reply_data_delivery(delivery, city, lat, lon,
+                                                 orderdishes=orderdishes,
+                                                 promocode=promocode)
+
         return Response(reply_data, status=status.HTTP_200_OK)
 
 
