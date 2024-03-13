@@ -85,7 +85,7 @@ class ShoppingCartAdmin(admin.ModelAdmin):
     change_form_template = 'admin/shop/shoppingcart/my_shoping_cart_change_form.html'
 
     class Media:
-        js = ('js/shop/cartitem_data_admin_request.js',)
+        js = ('my_admin/js/shop/cartitem_data_admin_request.js',)
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
         return super().get_queryset(request).prefetch_related('user')
