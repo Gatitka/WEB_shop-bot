@@ -8,6 +8,7 @@ from django.db import models
 
 from phonenumber_field.modelfields import PhoneNumberField
 
+
 from catalog.models import Dish
 from delivery_contacts.models import Delivery, DeliveryZone, Restaurant
 from promos.models import Promocode
@@ -132,8 +133,13 @@ class ShoppingCart(models.Model):
         """
         if self.promocode:
             # Если есть промокод, применяем скидку
-            self.discount = Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
-            self.discounted_amount = Decimal(self.amount) - self.discount
+            self.discount = (
+                Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
+            ).quantize(Decimal('0.01'))
+
+            self.discounted_amount = (
+                Decimal(self.amount) - self.discount
+            ).quantize(Decimal('0.01'))
         else:
             # Если нет промокода и вручную внесенной скидки, final_amount равен общей сумме
             self.discounted_amount = self.amount
@@ -463,8 +469,13 @@ class Order(models.Model):
         """
         if self.promocode:
             # Если есть промокод, применяем скидку
-            discount_amount = Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
-            self.discounted_amount = Decimal(self.amount) - discount_amount
+            discount_amount = (
+                Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
+            ).quantize(Decimal('0.01'))
+
+            self.discounted_amount = (
+                Decimal(self.amount) - discount_amount
+            ).quantize(Decimal('0.01'))
         else:
             # Если нет промокода, final_amount равен общей сумме
             self.discounted_amount = Decimal(self.amount)
@@ -472,7 +483,7 @@ class Order(models.Model):
             # Если есть вручную внесенная скидка, применяем её
             self.discounted_amount = (
                 Decimal(self.discounted_amount) - Decimal(self.discount)
-            )
+            ).quantize(Decimal('0.01'))
 
     def calculate_final_amount_with_shipping(self):
         """
@@ -502,15 +513,18 @@ class Order(models.Model):
                     Decimal(self.discounted_amount)
                     * Decimal(self.delivery.discount) / Decimal(100)
                 ).quantize(Decimal('0.01'))
+
                 self.delivery_cost = (
                     Decimal(0 - takeaway_discount)
                 ).quantize(Decimal('0.01'))
+
             else:
                 self.delivery_cost = Decimal(0)
 
         self.final_amount_with_shipping = (
             Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
-        )
+        ).quantize(Decimal('0.01'))
+
         self.delivery_db = self.delivery.pk
 
     def save(self, *args, **kwargs):

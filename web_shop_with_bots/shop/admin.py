@@ -387,7 +387,7 @@ class OrderAdmin(admin.ModelAdmin):
     change_form_template = 'order/change_form.html'
 
     class Media:
-        js = ('my_admin/js/shop/google_key_window.js',
+        js = (# 'my_admin/js/shop/google_key_window.js',
               'my_admin/js/shop/google_key_check.js',
               'my_admin/js/shop/address_autocomplete.js',)
 

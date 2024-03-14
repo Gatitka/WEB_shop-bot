@@ -750,6 +750,12 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
             return None
             # Если что-то пошло не так или не было найдено корзины, возвращаем None
 
+        validated_data['delivery_zone'] = get_delivery_zone(
+                self.validated_data.get('city'),
+                self.initial_data.get('lat'),
+                self.initial_data.get('lon')
+            )
+
         if request.user.is_authenticated:
 
             user = validated_data.pop('base_profile')
@@ -760,11 +766,6 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
             #     "lat": self.initial_data.get('lat'),
             #     "lon": self.initial_data.get('lon')
             # }
-            validated_data['delivery_zone'] = get_delivery_zone(
-                self.validated_data.get('city'),
-                self.initial_data.get('lat'),
-                self.initial_data.get('lon')
-            )
 
             with transaction.atomic():
                 order = Order.objects.create(**validated_data,

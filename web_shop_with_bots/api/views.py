@@ -736,7 +736,7 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         serializer = self.get_serializer(data=request.data,
                                          context=context)
         if serializer.is_valid(raise_exception=True):
-            serializer.save()
+            serializer.save(delivery=delivery)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
