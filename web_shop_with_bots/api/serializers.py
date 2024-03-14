@@ -586,7 +586,6 @@ class TakeawayOrderSerializer(BaseOrderSerializer):
 
 class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
     status_display = serializers.SerializerMethodField()
-    total = serializers.SerializerMethodField()
 
     class Meta:
         fields = ('order_number', 'created',
@@ -598,7 +597,6 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
                   'city', 'delivery_time', 'restaurant',
                   'comment', 'persons_qty',
                   'orderdishes', 'amount', 'promocode',
-                  'total'
                   )
         model = Order
         read_only_fields = ('order_number', 'created',
