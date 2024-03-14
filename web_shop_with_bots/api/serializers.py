@@ -300,7 +300,6 @@ class DishMenuSerializer(TranslatableModelSerializer):
 
 # ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
 
-
 class RestaurantSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели Restaurant, только чтение!
@@ -308,17 +307,19 @@ class RestaurantSerializer(serializers.ModelSerializer):
     coordinates = serializers.SerializerMethodField()
     open_time = serializers.TimeField(format='%H:%M')
     close_time = serializers.TimeField(format='%H:%M')
+    workhours = serializers.SerializerMethodField()
 
     class Meta:
-        fields = ('id', 'short_name',
-                  'city', 'address', 'coordinates',
+        fields = ('id',
+                  'address', 'coordinates',
                   'open_time', 'close_time', 'phone',
-                  'image')
+                  'workhours')
         model = Restaurant
-        read_only_fields = ('id', 'short_name',
-                            'city', 'address', 'coordinates',
+        geo_field = 'coordinates'
+        read_only_fields = ('id',
+                            'address', 'coordinates',
                             'open_time', 'close_time', 'phone',
-                            'image')
+                            'workhours')
 
     def get_coordinates(self, obj):
         # Извлекаем координаты из объекта модели и сериализуем их без SRID
@@ -330,10 +331,15 @@ class RestaurantSerializer(serializers.ModelSerializer):
         else:
             return None
 
-    def to_representation(self, instance):
-        repr = super().to_representation(instance)
-        repr['work_hours'] = f"{repr['open_time']} - {repr['close_time']}"
-        return repr
+    def get_workhours(self, obj):
+        # Извлекаем координаты из объекта модели и сериализуем их без SRID
+        min_time = obj.open_time
+        max_time = obj.close_time
+
+        min_time_str = min_time.strftime('%H:%M')
+        max_time_str = max_time.strftime('%H:%M')
+
+        return f"{min_time_str} - {max_time_str}"
 
 
 class DeliverySerializer(TranslatableModelSerializer):
@@ -343,16 +349,23 @@ class DeliverySerializer(TranslatableModelSerializer):
     translations = TranslatedFieldsField(shared_model=Delivery)
 
     class Meta:
-        fields = ('id', 'city', 'type', 'translations', 'image')
+        fields = ('id', 'type', 'translations', 'image')
         model = Delivery
         read_only_fields = ('id', 'city', 'type', 'translations', 'image')
-        # добавить данные по мин стоимостям и пр
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        if rep.get('type') == 'takeaway':
+            del rep['image']
+
+        return rep
 
 
-class ContatsDeliverySerializer(serializers.Serializer):
+class ContactsDeliverySerializer(serializers.Serializer):
     """
     Базовый сериализатор для модели Delivery, только чтение!
     """
+    city = serializers.CharField()
     restaurants = RestaurantSerializer(many=True)
     delivery = DeliverySerializer(many=True)
 
@@ -519,23 +532,12 @@ class BaseOrderSerializer(serializers.ModelSerializer):
     promocode = PromoCodeField(
         queryset=Promocode.objects.all(),
         required=False, allow_null=True, write_only=True)
-                                      #source='promocode.promocode')
+
     orderdishes = OrderDishWriteSerializer(required=False,
                                            allow_null=True,
                                            many=True,
                                            )
     recipient_phone = PhoneNumberField(required=True)
-
-    # selected_month = serializers.DateField(format="%d.%B",
-    #                                        required=True,
-    #                                        allow_null=True,
-    #                                        write_only=True,
-    #                                        validators=[validate_selected_month,])
-
-    # selected_time = serializers.TimeField(format="%H:%M",
-    #                                       required=True,
-    #                                       allow_null=True,
-    #                                       write_only=True)
 
     delivery_time = serializers.DateTimeField(format="%d.%B.%Y %H:%M",
                                               required=False,

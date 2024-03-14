@@ -354,7 +354,7 @@ class OrderAdmin(admin.ModelAdmin):
             )
         }),
         ('Доставка', {
-            "classes": ["collapse"],
+            # "classes": ["collapse"],
             "description": "Заполните 'адрес' для автоматического расчета зоны доставки и стоимости.",
             'fields': (
                 ('recipient_address'),
@@ -383,11 +383,13 @@ class OrderAdmin(admin.ModelAdmin):
     )
 
     form = OrderAdminForm
-    add_form_template = 'admin/shop/order/my_order_change_form.html'
-    change_form_template = 'admin/shop/order/my_order_change_form.html'
+    # add_form_template = 'order/my_order_change_add_form.html'
+    change_form_template = 'order/change_form.html'
 
     class Media:
-        js = ('my_admin/js/shop/address_autocomplete.js',)
+        js = ('my_admin/js/shop/google_key_window.js',
+              'my_admin/js/shop/google_key_check.js',
+              'my_admin/js/shop/address_autocomplete.js',)
 
     def get_queryset(self, request):
         qs = super().get_queryset(
@@ -418,6 +420,7 @@ class OrderAdmin(admin.ModelAdmin):
         extra_context = extra_context or {}
         # Добавление ключа API Google Maps в контекст
         extra_context["GOOGLE_API_KEY"] = self.get_google_api_key()
+        # self.change_form_template = 'order/change_form.html'
         return super().change_view(
             request,
             object_id,
@@ -432,7 +435,7 @@ class OrderAdmin(admin.ModelAdmin):
         return super().add_view(
             request,
             form_url,
-            extra_context=extra_context,
+            extra_context=extra_context
         )
 
     def formfield_for_dbfield(self, db_field, **kwargs):

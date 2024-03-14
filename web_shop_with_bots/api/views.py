@@ -29,7 +29,7 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                          RestaurantSerializer,
                          UserAddressSerializer,
                          UserOrdersSerializer,
-                         ContatsDeliverySerializer,
+                         ContactsDeliverySerializer,
                          TakeawayOrderSerializer,
                          TakeawayConditionsSerializer,
                          TakeawayOrderWriteSerializer,
@@ -63,25 +63,36 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
     Вьюсет для адреса /contacts.
     Отображает список всех активных ресторанов
     и условия самовывоза во всех городах.
-    Доступно только чтение спика
+    Доступно только чтение списка
     """
     permission_classes = [AllowAny,]
-    serializer_class = ContatsDeliverySerializer
+    serializer_class = ContactsDeliverySerializer
 
     def list(self, request, *args, **kwargs):
-        restaurants = Restaurant.objects.filter(is_active=True)
+        contacts_delivery_data = []
 
-        delivery = Delivery.objects.filter(
-            is_active=True,
-            ).prefetch_related('translations')
+        # Получаем уникальные города из ресторанов
+        cities = set(Restaurant.objects.values_list('city', flat=True))
 
-        response_data = {
-            'restaurants': RestaurantSerializer(restaurants,
-                                                many=True).data,
-            'delivery': DeliverySerializer(delivery,
-                                           many=True).data
-        }
-        return Response(response_data, status=status.HTTP_200_OK)
+        for city in cities:
+            # Получаем все активные рестораны для данного города
+            restaurants = Restaurant.objects.filter(city=city, is_active=True)
+            # Получаем условия доставки для данного города
+            delivery = Delivery.objects.filter(city=city, is_active=True)
+
+            # Сериализуем данные о ресторанах и усл доставки для данного города
+            city_contacts_delivery_data = {
+                'city': city,
+
+                'restaurants': RestaurantSerializer(
+                    restaurants, many=True).data,
+
+                'delivery': DeliverySerializer(
+                    delivery, many=True).data if delivery else None
+            }
+            contacts_delivery_data.append(city_contacts_delivery_data)
+
+        return Response(contacts_delivery_data, status=status.HTTP_200_OK)
 
 
 class MyAddressViewSet(mixins.ListModelMixin,
