@@ -547,8 +547,9 @@ class Order(models.Model):
 
         self.calculate_final_amount_with_shipping()
 
-        itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
-        self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+        if self.pk is not None:
+            itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
+            self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
 
         super(Order, self).save(*args, **kwargs)
         # далее есть сигнал на сохранение актуальной корзины пользователя,

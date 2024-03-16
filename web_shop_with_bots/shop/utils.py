@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from django.utils import timezone
 from django.db.models import Max
 from decimal import Decimal
 from delivery_contacts.services import get_delivery_cost_zone
@@ -213,12 +213,19 @@ def get_repeat_order_form_data(order):
 
 
 def get_next_item_id_today(model, field):
-    today_start = datetime.combine(date.today(), datetime.min.time())  # Начало текущего дня
-    today_end = today_start + timedelta(days=1) - timedelta(microseconds=1)  # Конец текущего дня
+    today_start = timezone.localtime(
+        timezone.now()).replace(hour=0, minute=0, second=0, microsecond=0)
+    # Начало текущего дня
+
+    today_end = (
+        today_start + timezone.timedelta(days=1)
+        - timezone.timedelta(microseconds=1)  # Конец текущего дня
+    )
 
     max_id = model.objects.filter(
         created__range=(today_start, today_end)
     ).aggregate(Max(field))[f'{field}__max']
+
     # Устанавливаем номер заказа на единицу больше MAX текущей даты
     if max_id is None:
         return 1
