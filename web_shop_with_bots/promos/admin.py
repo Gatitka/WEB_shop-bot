@@ -5,7 +5,7 @@ from parler.admin import (SortedRelatedFieldListFilter, TranslatableAdmin,
 
 from utils.utils import activ_actions
 
-from .models import Promocode, PromoNews
+from .models import Promocode, PromoNews, PrivatPromocode
 
 
 # class SummerAdmin(SummernoteModelAdmin):
@@ -56,3 +56,13 @@ class PromocodeAdmin(admin.ModelAdmin):
     actions = [*activ_actions]
     search_fields = ('promocode', 'title_rus')
     list_filter = ('is_active',)
+
+
+@admin.register(PrivatPromocode)
+class PrivatPromocodeAdmin(admin.ModelAdmin):
+    """Настройки админ панели промо-новостей."""
+    list_display = ('id', 'promocode', 'base_profile', 'is_active', 'is_used')
+    readonly_fields = ('created',)
+    actions = [*activ_actions]
+    search_fields = ('promocode', 'base_profile')
+    list_filter = ('is_active', 'is_used')

@@ -1,12 +1,12 @@
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
+from shop.services import find_uncomplited_cart_to_complete
+from shop.models import Order
 
-from .models import Order, ShoppingCart
-from users.models import BaseProfile
 
-
-@receiver(post_save, sender=BaseProfile)
+@receiver(post_save, sender=Order)
 def create_cart(sender, instance, created, **kwargs):
     """ Создание ShoppingCart при создании BaseProfile"""
     if created:
-        cart, created = ShoppingCart.objects.get_or_create(user=instance)
+        if instance.user is not None:
+            find_uncomplited_cart_to_complete(instance.user)

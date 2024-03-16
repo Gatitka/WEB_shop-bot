@@ -12,6 +12,7 @@ from .views import (
                     ShoppingCartViewSet,
                     MyAddressViewSet,
                     MyOrdersViewSet,
+                    MyPromocodesViewSet,
                     ClientAddressesViewSet,
                     get_unit_price,
                     TakeawayOrderViewSet,
@@ -33,6 +34,7 @@ contacts_router.register(r'contacts', ContactsDeliveryViewSet, basename='contact
 profile_router = DefaultRouter()
 profile_router.register(r'me/my_addresses', MyAddressViewSet, basename='user_addresses')
 profile_router.register(r'me/my_orders', MyOrdersViewSet, basename='user_orders')
+profile_router.register(r'me/my_promocodes', MyPromocodesViewSet, basename='user_orders')
 
 promos_router = DefaultRouter()
 promos_router.register(r'promonews', PromoNewsViewSet, basename='promonews')

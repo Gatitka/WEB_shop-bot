@@ -3,6 +3,7 @@ from django.utils.safestring import mark_safe
 from parler.models import TranslatableModel, TranslatedFields
 from django.conf import settings
 from django.utils import timezone
+from users.models import BaseProfile
 
 
 class PromoNews(TranslatableModel):
@@ -142,3 +143,34 @@ class Promocode(models.Model):
             pass
 
         return False
+
+
+class PrivatPromocode(models.Model):
+    """ Модель для промокодов."""
+    base_profile = models.ForeignKey(
+        BaseProfile,
+        on_delete=models.CASCADE,
+        verbose_name='пользователь'
+    )
+    promocode = models.ForeignKey(
+        Promocode,
+        on_delete=models.PROTECT,
+        verbose_name='промокод'
+    )
+    created = models.DateField(
+        'Дата добавления', auto_now_add=True
+    )
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name='активен'
+    )
+    valid_from = models.DateTimeField(
+        'Начало действия'
+    )
+    valid_to = models.DateTimeField(
+        'Окончание действия'
+    )
+    is_used = models.BooleanField(
+        default=False,
+        verbose_name='использован'
+    )

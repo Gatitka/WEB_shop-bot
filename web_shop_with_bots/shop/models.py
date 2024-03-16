@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 class ShoppingCart(models.Model):
     """ Модель для добавления блюд в корзину покупок."""
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         BaseProfile,
         on_delete=models.CASCADE,
         verbose_name='ID клиента',
@@ -551,6 +551,8 @@ class Order(models.Model):
         self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
 
         super(Order, self).save(*args, **kwargs)
+        # далее есть сигнал на сохранение актуальной корзины пользователя,
+        # если есть, в completed
 
     def get_restaurant(self, restaurant, delivery_type, recipient_address=None):
         """Метод получения ресторана, исходя из запроса.

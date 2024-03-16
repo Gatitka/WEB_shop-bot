@@ -13,7 +13,7 @@ from rest_framework.serializers import SerializerMethodField
 
 from catalog.models import Category, Dish, UOM
 from delivery_contacts.models import Delivery, Restaurant
-from promos.models import PromoNews, Promocode
+from promos.models import PromoNews, Promocode, PrivatPromocode
 from shop.models import (CartDish, Order, OrderDish,
                          ShoppingCart, ORDER_STATUS_CHOICES)
 from tm_bot.models import MessengerAccount
@@ -28,7 +28,8 @@ from shop.validators import (validate_selected_month,
                              validate_delivery_time)
 from django.utils.translation import get_language
 from django.db import transaction
-from shop.utils import get_base_profile_cartdishes_promocode, get_rep_dic
+from shop.utils import get_rep_dic
+from shop.services import get_base_profile_cartdishes_promocode
 from delivery_contacts.utils import (
     google_validate_address_and_get_coordinates,
     combine_date_and_time)
@@ -78,7 +79,7 @@ class MyUserSerializer(serializers.ModelSerializer):
                   'email', 'phone',
                   'date_of_birth',
                   'web_language',
-                  'messenger_account',
+                  'messenger_account', 'is_subscribed'
                   )
         read_only_fields = ('email', 'date_of_birth')
 
@@ -206,8 +207,15 @@ class UserAddressSerializer(serializers.ModelSerializer):
 
 # --------       свои купоны   ---------
 #
-#
-#
+class UserPromocodeSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для UserPromocodes.
+    Возможно только чтение.
+    """
+    class Meta:
+        fields = ('id', 'promocode',
+                  'valid_from', 'valid_to')
+        model = PrivatPromocode
 
 
 # ---------------- МЕНЮ: БЛЮДА и КАТЕГОРИИ --------------------
@@ -633,8 +641,6 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
 
                 # проверить единство расчетов фронт и бэк
 
-                cart.empty_cart()
-
         else:
             # Если пользователь не аутентифицирован, получаем данные
             # orderdishes из сериализатора
@@ -774,8 +780,6 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
                     order, cartdishes)
 
                 # проверить единство расчетов фронт и бэк
-
-                cart.empty_cart()
 
         else:
             # Если пользователь не аутентифицирован, получаем данные

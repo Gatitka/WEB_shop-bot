@@ -12,7 +12,7 @@ from django.utils.translation import get_language_from_request
 from django.db.models import Prefetch
 from catalog.models import Dish
 from delivery_contacts.models import Delivery, Restaurant, DeliveryZone
-from promos.models import PromoNews, Promocode
+from promos.models import PromoNews, Promocode, PrivatPromocode
 from shop.models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import BaseProfile, UserAddress
 from django.urls import reverse
@@ -29,6 +29,7 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                          RestaurantSerializer,
                          UserAddressSerializer,
                          UserOrdersSerializer,
+                         UserPromocodeSerializer,
                          ContactsDeliverySerializer,
                          TakeawayOrderSerializer,
                          TakeawayConditionsSerializer,
@@ -38,7 +39,8 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
                          DeliveryOrderWriteSerializer,
                         )
 from decimal import Decimal
-from shop.utils import get_cart, get_reply_data_delivery
+from shop.utils import get_reply_data_delivery
+from shop.services import get_cart
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.conf import settings
 from delivery_contacts.services import (get_delivery)
@@ -47,9 +49,10 @@ from djoser import utils
 from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
     OutstandingToken)
-from shop.utils import (get_base_profile_and_shopping_cart,
-                        get_repeat_order_form_data,
+from shop.utils import (get_repeat_order_form_data,
                         get_reply_data_takeaway)
+from shop.services import (get_base_profile_and_shopping_cart,
+                           get_cart_detailed,)
 
 
 logger = logging.getLogger(__name__)
@@ -184,7 +187,7 @@ class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
         current_user = request.user
 
         if not current_user.is_authenticated:
-            logger.warning("User is not authenticated.")
+            logger.warning("Reordering is invalid for not authenticated.")
             return Response({}, status=status.HTTP_401_UNAUTHORIZED)
 
         order = Order.objects.filter(
@@ -217,6 +220,21 @@ class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
         repeat_order_form_data = get_repeat_order_form_data(order)
         return Response(repeat_order_form_data,
                         status=status.HTTP_200_OK)
+
+
+class MyPromocodesViewSet(mixins.ListModelMixin,
+                          viewsets.GenericViewSet):
+    """
+    Вьюсет для просмотра личных промокодов.
+    """
+    serializer_class = UserPromocodeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return PrivatPromocode.objects.filter(
+            base_profile=self.request.user.base_profile,
+            is_active=True, is_used=False
+        )
 
 
 class MenuViewSet(mixins.ListModelMixin,
@@ -261,18 +279,17 @@ class MenuViewSet(mixins.ListModelMixin,
         context = {'request': request}
 
         if current_user.is_authenticated:
-            base_profile = BaseProfile.objects.select_related(
-                'shopping_cart').get(web_account=current_user)
+            shopping_cart = get_cart(current_user, validation=False)
 
             context['extra_kwargs'] = {'cart_items':
-                                       base_profile.shopping_cart.dishes.all()}
+                                       shopping_cart.dishes.all()}
 
             dish_serializer = self.get_serializer(self.get_queryset(),
                                                   many=True,
                                                   context=context,
                                                   )
 
-            items_qty = base_profile.shopping_cart.items_qty
+            items_qty = shopping_cart.items_qty
             response_data['cart'] = {'items_qty': items_qty}
         else:
             dish_serializer = self.get_serializer(self.get_queryset(),
@@ -311,13 +328,12 @@ class MenuViewSet(mixins.ListModelMixin,
 
         if current_user.is_authenticated:
             dish = get_object_or_404(Dish, article=pk)
-            cart, state = ShoppingCart.objects.get_or_create(user=current_user.base_profile)
+            # cart = get_cart(current_user, validation=False)
+            # не исп, т.к. для доб в корз не нужны ни переводы, ни промокоды, ничего
 
-            # try:
-            #     cart = ShoppingCart.objects.get(session_id=request.session['hi'], completed=False)
-            # except:
-            #     request.session['hi'] = str(uuid.uuid4())
-            #     cart = ShoppingCart.objects.get_or_create(session_id=request.session['hi'], completed=False)
+            cart, state = ShoppingCart.objects.get_or_create(
+                user=current_user.base_profile,
+                complited=False)
 
             if method == 'POST':
                 cartdish, created = CartDish.objects.get_or_create(
@@ -351,31 +367,9 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
 
     def get_queryset(self):
         current_user = self.request.user
+
         if current_user.is_authenticated:
-            cart = ShoppingCart.objects.filter(
-                user=current_user.base_profile
-                ).select_related(
-                    'promocode'
-                ).prefetch_related(
-
-                    Prefetch('cartdishes',
-                             queryset=CartDish.objects.all(
-                             ).select_related(
-                                'dish'
-                             ).prefetch_related(
-                                'dish__translations'
-                             )
-                             )
-                ).first()
-            # попробовать свернуть получение вместе с base_profile
-
-            if cart is None:
-                cart = ShoppingCart.objects.create(
-                    user=current_user.base_profile
-                )
-
-            return cart
-
+            return get_cart_detailed(current_user)
 
         return None
 
@@ -537,7 +531,8 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Редактирование промокода (promocode) корзины.
         Для удаления промокода передать { "promocode": null }.
         """
-        if not request.user.is_authenticated:
+        current_user = request.user
+        if not current_user.is_authenticated:
             data = request.data
             promocode = data.get('promocode', None)
 

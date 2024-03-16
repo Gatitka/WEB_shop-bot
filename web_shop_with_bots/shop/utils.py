@@ -1,76 +1,7 @@
-from users.models import BaseProfile
-from rest_framework import status
-from rest_framework.response import Response
 from datetime import date, datetime, timedelta
 from django.db.models import Max
-from django.core.exceptions import ValidationError
-from rest_framework import serializers
-from django.shortcuts import get_object_or_404
-from delivery_contacts.models import Delivery
 from decimal import Decimal
-from .validators import cart_valiation
 from delivery_contacts.services import get_delivery_cost_zone
-
-
-def get_base_profile_w_cart(current_user):
-    return BaseProfile.objects.filter(
-        web_account=current_user
-    ).select_related(
-        'shopping_cart',
-        'shopping_cart__promocode'
-    ).prefetch_related(
-        'shopping_cart__cartdishes'
-    ).first()
-
-
-def get_cart_base_profile(base_profile, validation=True, half_validation=False):
-    cart = base_profile.shopping_cart
-    if validation:
-        cart_valiation(cart, half_validation)
-
-    return cart
-
-
-def get_cart(current_user, validation=True, half_validation=False):
-    base_profile = get_base_profile_w_cart(current_user)
-    if base_profile:
-        return get_cart_base_profile(base_profile, validation, half_validation)
-    return None
-
-
-def get_base_profile_and_shopping_cart(current_user, validation=True,
-                                       half_validation=False):
-    base_profile = get_base_profile_w_cart(current_user)
-    cart = None
-    if base_profile:
-        cart = get_cart_base_profile(base_profile, validation, half_validation)
-    return base_profile, cart
-
-
-def get_base_profile_cartdishes_promocode(current_user, validation=True,
-                                          half_validation=False):
-    base_profile, cart = get_base_profile_and_shopping_cart(current_user,
-                                                            validation,
-                                                            half_validation)
-    if base_profile and cart:
-        cartdishes = cart.cartdishes.all()
-        promocode = cart.promocode
-
-        return base_profile, cart, cartdishes, promocode
-
-
-def get_next_item_id_today(model, field):
-    today_start = datetime.combine(date.today(), datetime.min.time())  # Начало текущего дня
-    today_end = today_start + timedelta(days=1) - timedelta(microseconds=1)  # Конец текущего дня
-
-    max_id = model.objects.filter(
-        created__range=(today_start, today_end)
-    ).aggregate(Max(field))[f'{field}__max']
-    # Устанавливаем номер заказа на единицу больше MAX текущей даты
-    if max_id is None:
-        return 1
-    else:
-        return max_id + 1
 
 
 def get_reply_data_delivery(delivery, city, lat, lon,
@@ -279,6 +210,20 @@ def get_repeat_order_form_data(order):
         repeat_order_form_data['restaurant'] = order.restaurant
 
     return repeat_order_form_data
+
+
+def get_next_item_id_today(model, field):
+    today_start = datetime.combine(date.today(), datetime.min.time())  # Начало текущего дня
+    today_end = today_start + timedelta(days=1) - timedelta(microseconds=1)  # Конец текущего дня
+
+    max_id = model.objects.filter(
+        created__range=(today_start, today_end)
+    ).aggregate(Max(field))[f'{field}__max']
+    # Устанавливаем номер заказа на единицу больше MAX текущей даты
+    if max_id is None:
+        return 1
+    else:
+        return max_id + 1
 
 
 def get_first_item_true(obj):

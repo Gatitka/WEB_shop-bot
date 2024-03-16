@@ -182,6 +182,7 @@ class CustomWEBAccountManager(BaseUserManager):
 
     def create_user(self, email, password=None, **extra_fields):
         extra_fields.setdefault('is_active', False)
+        extra_fields.setdefault('is_subscribed', True)
         return self._create_user(email, password, **extra_fields)
 
     def create_superuser(self, email, password=None, **extra_fields):
@@ -240,7 +241,7 @@ class WEBAccount(AbstractUser):
         verbose_name='Телефон',
         unique=True,
     )
-    notes = models.CharField(
+    notes = models.TextField(
         'Пометки',
         max_length=400,
         blank=True, null=True
@@ -269,6 +270,11 @@ class WEBAccount(AbstractUser):
         'deleted',
         default=False,
         help_text='Был ли аккаунт удален.'
+    )
+    is_subscribed = models.BooleanField(
+        'подписка',
+        default=True,
+        help_text='Подписка на рассылки.'
     )
 
     class Meta:

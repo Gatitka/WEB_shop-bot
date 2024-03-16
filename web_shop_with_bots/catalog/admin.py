@@ -1,6 +1,7 @@
 from django.contrib import admin
 from parler.admin import (TranslatableAdmin,
                           TranslatableTabularInline)
+from django.utils.html import format_html
 
 from .models import Category, Dish, DishCategory, UOM
 
@@ -35,10 +36,24 @@ class DishCategoryAdmin(admin.TabularInline):
 @admin.register(Dish)
 class DishAdmin(TranslatableAdmin):
     """Настройки админ панели блюд."""
+    def custom_vegan_icon(self, obj):
+        # краткое название поля в list
+        if obj.vegan_icon is False:
+            return '-'
+        return '+'
+    custom_vegan_icon.short_description = format_html('остр<br>икн')
+
+    def custom_spicy_icon(self, obj):
+        # краткое название поля в list
+        if obj.spicy_icon is False:
+            return '-'
+        return '+'
+    custom_spicy_icon.short_description = format_html('остр<br>икн')
+
     readonly_fields = ('id', 'final_price', 'admin_photo', 'created')
     list_display = ('id', 'article', 'is_active', 'priority', 'short_name',
                     'discount', 'final_price',
-                    'spicy_icon', 'vegan_icon', 'admin_photo')
+                    'custom_spicy_icon', 'custom_vegan_icon', 'admin_photo')
     list_filter = ('is_active', 'category__slug',)
     list_per_page = 10
 

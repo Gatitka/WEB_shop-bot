@@ -45,7 +45,7 @@ class BaseProfileAdmin(admin.ModelAdmin):
         }),
         ('Пользователь сайта, мессенджера', {
             'fields': (
-                ('web_account'),
+                ('web_account',),
                 ('messenger_account'),
             )
         }),
@@ -87,7 +87,7 @@ class WEBAccountAdmin(UserAdmin):
                 ('email', 'phone'),
                 ('date_joined', 'last_login'),
                 ('is_superuser', 'is_staff'),
-                ('web_language')
+                ('web_language', 'is_subscribed')
             )
         }),
         ('Пароль', {
@@ -96,6 +96,7 @@ class WEBAccountAdmin(UserAdmin):
             )
         }),
         ('Комментарии', {
+            "classes": ["collapse"],
             'fields': (
                 ('notes'),
             )

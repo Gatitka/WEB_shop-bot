@@ -82,37 +82,13 @@ class ShoppingCartAdmin(admin.ModelAdmin):
               ('promocode', 'discount'),
               ('discounted_amount'),
               )
-    change_form_template = 'admin/shop/shoppingcart/my_shoping_cart_change_form.html'
+    # change_form_template = 'admin/shop/shoppingcart/my_shoping_cart_change_form.html'
 
-    class Media:
-        js = ('my_admin/js/shop/cartitem_data_admin_request.js',)
+    # class Media:
+    #     js = ('my_admin/js/shop/cartitem_data_admin_request.js',)
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
         return super().get_queryset(request).prefetch_related('user')
-
-    # def save_model(self, request, obj, form, change):
-    #     from django.contrib import messages
-    #     from django.utils.html import format_html
-    #     if change:
-    #         # Если объект уже существует и редактируется
-    #         messages.warning(request, format_html(
-    #             '<div style="display: flex; flex-direction: column;">'
-    #             'Вы уверены, что хотите сохранить изменения?'
-    #             '<button style="margin-top: 10px;" type="submit" name="_continue" value="Save and continue editing" class="default">Да</button>'
-    #             '<button style="margin-top: 10px;" type="submit" name="_save" value="Save" class="default">Сохранить</button>'
-    #             '<button style="margin-top: 10px;" type="button" class="cancel-button">Нет</button>'
-    #             '</div>'
-    #         ))
-    #     else:
-    #         # Если объект создается
-    #         messages.info(request, format_html(
-    #             '<div style="display: flex; flex-direction: column;">'
-    #             'Вы уверены, что хотите сохранить объект?'
-    #             '<button style="margin-top: 10px;" type="submit" name="_continue" value="Save and continue editing" class="default">Да</button>'
-    #             '<button style="margin-top: 10px;" type="submit" name="_save" value="Save" class="default">Сохранить</button>'
-    #             '<button style="margin-top: 10px;" type="button" class="cancel-button">Отменить</button>'
-    #             '</div>'
-    #         ))
 
 
 class OrderDishInline(admin.TabularInline):
@@ -318,15 +294,34 @@ class OrderAdmin(admin.ModelAdmin):
     def warning(self, obj):
         # Преобразование поля datetime в строку с помощью strftime()
         if obj.delivery.type == 'delivery' and obj.delivery_zone.name == 'уточнить':
-            return '!!!'
+            return format_html('<span style="color:red;">!!!</span>')
         return ''
     warning.short_description = '!'
+
+    def custom_delivery(self, obj):
+        # краткое название поля в list
+        if obj.delivery.type == 'delivery':
+            return 'D'
+        elif obj.delivery.type == 'takeaway':
+            return 'T'
+    custom_delivery.short_description = 'Дост'
+
+    def custom_delivery_zone(self, obj):
+        # краткое название поля в list
+        if obj.delivery.type == 'delivery':
+            if obj.delivery_zone.name == 'уточнить':
+                return format_html('<span style="color:red;">уточн</span>')
+            return obj.delivery_zone
+        return ''
+    custom_delivery_zone.short_description = format_html('зона')
+
     list_display = ('warning', 'custom_is_first_order',
                     'custom_order_number', 'custom_created', 'custom_status',
                     'custom_language',
                     'custom_recipient_name', 'custom_recipient_phone',
                     'get_msngr_link',
-                    'delivery', 'recipient_address',
+                    'custom_delivery', 'custom_delivery_zone',
+                    'recipient_address',
                     'custom_total', 'id')
     list_display_links = ('custom_order_number',)
     readonly_fields = ['discounted_amount',
@@ -354,7 +349,7 @@ class OrderAdmin(admin.ModelAdmin):
             )
         }),
         ('Доставка', {
-            # "classes": ["collapse"],
+            "classes": ["collapse"],
             "description": "Заполните 'адрес' для автоматического расчета зоны доставки и стоимости.",
             'fields': (
                 ('recipient_address'),
