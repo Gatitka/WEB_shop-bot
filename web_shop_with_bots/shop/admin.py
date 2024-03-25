@@ -1,7 +1,6 @@
 from decimal import Decimal
 from typing import Any, Union
-
-from django import forms
+from django.utils import timezone
 from django.contrib import admin
 from django.db.models import Sum
 from django.db.models.query import QuerySet
@@ -9,25 +8,22 @@ from django.forms.utils import ErrorList
 from django.http.request import HttpRequest
 from django.utils import formats
 from django.utils.html import format_html
-
+from .forms import OrderAdminForm
 from tm_bot.models import MessengerAccount
 from users.models import BaseProfile
 from utils.utils import activ_actions
-from delivery_contacts.models import Delivery
 
 from .models import CartDish, Order, OrderDish, ShoppingCart
 from users.models import UserAddress
 from django.conf import settings
-from delivery_contacts.utils import google_validate_address_and_get_coordinates
-from delivery_contacts.services import get_delivery_zone
+from delivery_contacts.utils import (get_google_api_key)
+
 from django.core.exceptions import ValidationError
-from shop.validators import validate_delivery_time
 
 
 if settings.ENVIRONMENT == 'development':
     admin.site.register(OrderDish)
     admin.site.register(CartDish)
-
 
 class ShopAdminArea(admin.AdminSite):
     site_header = 'YUME Shop Admin'
@@ -42,6 +38,9 @@ shop_site.register(Order)
 #         'id'
 #     ]
 #     search_fields = ['id']
+
+
+
 
 
 class CartDishInline(admin.TabularInline):
@@ -98,151 +97,21 @@ class OrderDishInline(admin.TabularInline):
     min_num = 1   # хотя бы 1 блюдо должно быть добавлено
     extra = 0   # чтобы не добавлялись путые поля
     fields = ['dish', 'quantity', 'unit_price', 'amount']
-    readonly_fields = ['amount', 'unit_price', 'dish_article', 'order_number']
+    readonly_fields = ['dish_widget', 'amount', 'unit_price', 'dish_article', 'order_number']
     verbose_name = 'товар заказа'
     verbose_name_plural = 'товары заказа'
     # raw_id_fields = ['dish',]
     autocomplete_fields = ['dish']
 
+    def dish_widget(self, instance):
+        return instance.dish  # Замените на соответствующее поле блюда
+
+    dish_widget.short_description = 'Dish'
+
+
+
     # def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
     #     return super().get_queryset(request).select_related('dish').prefetch_related('dish__translations')
-
-
-class OrderAdminForm(forms.ModelForm):
-    recipient_address = forms.CharField(
-               required=False,
-               widget=forms.TextInput(attrs={'size': '40',
-                                             'autocomplete': 'on',
-                                             'class': 'basicAutoComplete',
-                                             'style': 'width: 50%;'}))
-    class Meta:
-        model = Order
-        fields = '__all__'
-
-    def clean_recipient_address(self):
-        delivery = self.cleaned_data.get('delivery')
-        recipient_address = self.cleaned_data.get('recipient_address')
-
-        if delivery is not None and delivery.type == 'delivery':
-
-            if recipient_address is None or recipient_address == '':
-                raise forms.ValidationError(
-                    "Проверьте указан ли адрес доставки клиенту.")
-
-            if recipient_address != self.instance.recipient_address:
-
-                try:
-                    lat, lon, status = google_validate_address_and_get_coordinates(
-                        recipient_address
-                    )
-                    self.lat = lat
-                    self.lon = lon
-
-                except Exception as e:
-                    pass
-                #     if (self.cleaned_data.get('delivery_zone') is None
-                #         or self.cleaned_data.get('delivery_cost') is None):
-
-                #         raise forms.ValidationError(
-                #             ("Ошибка в получении координат адреса, невозможно "
-                #                 "посчитать стоимость доставки."
-                #                 "Проверьте адрес или внесите вручную зону доставки и цену.")
-                #         )
-
-        return recipient_address
-
-    def clean_delivery_zone(self):
-        delivery = self.cleaned_data.get('delivery')
-        delivery_zone = self.cleaned_data.get('delivery_zone')
-
-        if delivery is not None and delivery.type == 'delivery':
-            recipient_address = self.cleaned_data.get('recipient_address')
-            if recipient_address != self.instance.recipient_address:
-
-                if delivery_zone is None:
-                    try:
-                        new_delivery_zone = get_delivery_zone(
-                            self.cleaned_data.get('city', 'Beograd'),
-                            self.lat, self.lon)
-                        if new_delivery_zone.name == 'уточнить':
-                            raise forms.ValidationError(
-                                ("Введенный адрес находится вне зоны обслуживания."
-                                "Проверьте адрес или внесите вручную зону и цену доставки.")
-                            )
-                    except AttributeError:
-                        raise forms.ValidationError(
-                                ("Для введенного адреса невозможно получить координаты "
-                                "и расчитать зону доставки. Проверьте адрес или внесите "
-                                "вручную зону и цену доставки.")
-                            )
-
-                elif delivery_zone.name in ['zone1', 'zone2', 'zone3',
-                                            'по запросу', 'уточнить']:
-                    try:
-                        new_delivery_zone = get_delivery_zone(
-                            self.cleaned_data.get('city', 'Beograd'),
-                            self.lat, self.lon)
-                        if new_delivery_zone.name == 'уточнить':
-                            raise forms.ValidationError(
-                                ("Введенный адрес находится вне зоны обслуживания."
-                                "Проверьте адрес или внесите вручную зону и цену доставки.")
-                            )
-                    except AttributeError:
-                        raise forms.ValidationError(
-                                ("Для введенного адреса невозможно получить координаты "
-                                "и расчитать зону доставки. Проверьте адрес или внесите "
-                                "вручную зону и цену доставки.")
-                            )
-
-                    if delivery_zone != new_delivery_zone:
-                        return new_delivery_zone
-
-        return delivery_zone
-
-    def clean_delivery_cost(self):
-        delivery = self.cleaned_data.get('delivery')
-        delivery_cost = self.cleaned_data.get('delivery_cost')
-
-        if delivery is not None and delivery.type == 'delivery':
-            delivery_zone = self.cleaned_data.get('delivery_zone')
-            if delivery_zone and delivery_zone.name == 'по запросу':
-
-                if delivery_cost is None or delivery_cost == 0.0:
-                    raise forms.ValidationError(
-                        ("Для зоны доставки 'по запросу' необходимо "
-                         "внести вручную стоимость доставки.")
-                    )
-        return delivery_cost
-
-    def clean_delivery_time(self):
-        delivery = self.data.get('delivery')
-        delivery_time = self.cleaned_data.get('delivery_time')
-        restaurant = self.cleaned_data.get('restaurant')
-
-        if delivery_time is not None and delivery is not None:
-            delivery = Delivery.objects.filter(id=int(delivery)).first()
-
-            if delivery.type == 'takeaway' and restaurant is not None:
-                validate_delivery_time(delivery_time, delivery, restaurant)
-            else:
-                validate_delivery_time(delivery_time, delivery)
-
-        return delivery_time
-
-    def save(self, commit=True):
-        instance = super().save(commit=False)
-        # Используем сохраненные значения lat и lon из атрибутов формы
-        recipient_address = self.cleaned_data.get('recipient_address')
-        if recipient_address != self.instance.recipient_address:
-            instance.delivery_address_data = {
-                "lat": self.lat,
-                "lon": self.lon
-            }
-
-        if commit:
-            instance.save()
-
-        return instance
 
 
 @admin.register(Order)
@@ -256,6 +125,10 @@ class OrderAdmin(admin.ModelAdmin):
 
     def custom_status(self, obj):
         # краткое название поля в list
+        if obj.status == 'WCO':
+            return format_html(
+                '<span style="color:green; font-weight:bold;">{}</span>',
+                obj.status)
         return obj.status
     custom_status.short_description = 'стат'
 
@@ -268,11 +141,6 @@ class OrderAdmin(admin.ModelAdmin):
         # краткое название поля в list
         return obj.recipient_name
     custom_recipient_name.short_description = format_html('Имя<br>получателя')
-
-    def custom_recipient_phone(self, obj):
-        # краткое название поля в list
-        return obj.recipient_phone
-    custom_recipient_phone.short_description = format_html('Тел<br>получателя')
 
     def custom_total(self, obj):
         # краткое название поля в list
@@ -288,7 +156,16 @@ class OrderAdmin(admin.ModelAdmin):
 
     def custom_created(self, obj):
         # Преобразование поля datetime в строку с помощью strftime()
-        return format_html(obj.created.strftime('%H:%M<br>%Y.%m.%d'))
+
+        local_time = obj.created.astimezone(timezone.get_current_timezone())
+        if obj.status == 'WCO':
+            formatted_time = local_time.strftime('%H:%M')
+            formatted_time = format_html(
+                '<span style="color:green;font-weight:bold;">{}</span>',
+                formatted_time)
+        else:
+            formatted_time = local_time.strftime('%H:%M')
+        return format_html(formatted_time)
     custom_created.short_description = 'создан'
 
     def warning(self, obj):
@@ -315,11 +192,12 @@ class OrderAdmin(admin.ModelAdmin):
         return ''
     custom_delivery_zone.short_description = format_html('зона')
 
+    custom_delivery_zone.short_description = format_html('зона')
+
     list_display = ('warning', 'custom_is_first_order',
                     'custom_order_number', 'custom_created', 'custom_status',
                     'custom_language',
-                    'custom_recipient_name', 'custom_recipient_phone',
-                    'get_msngr_link',
+                    'custom_recipient_name', 'get_contacts',
                     'custom_delivery', 'custom_delivery_zone',
                     'recipient_address',
                     'custom_total', 'id')
@@ -327,7 +205,7 @@ class OrderAdmin(admin.ModelAdmin):
     readonly_fields = ['discounted_amount',
                        'items_qty', 'device_id', 'amount',
                        'final_amount_with_shipping',
-                       'get_msngr_link']
+                       'get_msngr_link',]
     list_filter = ('created', 'status') # user_groups, paid
     search_fields = ('user', 'order_number')
     inlines = (OrderDishInline,)
@@ -353,9 +231,12 @@ class OrderAdmin(admin.ModelAdmin):
             "description": "Заполните 'адрес' для автоматического расчета зоны доставки и стоимости.",
             'fields': (
                 ('recipient_address'),
+                ('my_recipient_address'),
+                ('address_coordinates'),
                 ('delivery_address_data'),
-                ('delivery_zone'),
-                ('delivery_cost'),
+                ('calculate_delivery_button'),
+                ('auto_delivery_zone', 'delivery_zone'),
+                ('auto_delivery_cost', 'delivery_cost'),
             )
         }),
         ('Расчет суммы заказа', {
@@ -378,13 +259,15 @@ class OrderAdmin(admin.ModelAdmin):
     )
 
     form = OrderAdminForm
-    # add_form_template = 'order/my_order_change_add_form.html'
+    add_form_template = 'order/change_form.html'
     change_form_template = 'order/change_form.html'
 
     class Media:
-        js = (# 'my_admin/js/shop/google_key_window.js',
-              'my_admin/js/shop/google_key_check.js',
-              'my_admin/js/shop/address_autocomplete.js',)
+        js = (
+              'my_admin/js/shop/address_autocomplete.js',
+              'my_admin/js/shop/user_data.js',
+              'my_admin/js/shop/calculate_delivery.js',
+              )
 
     def get_queryset(self, request):
         qs = super().get_queryset(
@@ -408,13 +291,10 @@ class OrderAdmin(admin.ModelAdmin):
                 'user__messenger_account')
         return super().get_object(request, object_id, from_field)
 
-    def get_google_api_key(self):
-        return settings.GOOGLE_API_KEY
-
     def change_view(self, request, object_id, form_url="", extra_context=None):
         extra_context = extra_context or {}
         # Добавление ключа API Google Maps в контекст
-        extra_context["GOOGLE_API_KEY"] = self.get_google_api_key()
+        extra_context["GOOGLE_API_KEY"] = get_google_api_key()
         # self.change_form_template = 'order/change_form.html'
         return super().change_view(
             request,
@@ -426,7 +306,7 @@ class OrderAdmin(admin.ModelAdmin):
     def add_view(self, request, form_url="", extra_context=None):
         extra_context = extra_context or {}
         # Добавление ключа API Google Maps в контекст
-        extra_context["GOOGLE_API_KEY"] = self.get_google_api_key()
+        extra_context["GOOGLE_API_KEY"] = get_google_api_key()
         return super().add_view(
             request,
             form_url,
@@ -460,3 +340,17 @@ class OrderAdmin(admin.ModelAdmin):
 
     get_msngr_link.allow_tags = True
     get_msngr_link.short_description = 'Чат'
+
+    def get_contacts(self, instance):
+        try:
+            msngr_link = format_html(instance.user.messenger_account.msngr_link)
+        except:
+            msngr_link = '-'
+
+        return format_html('{}<br>{}', instance.recipient_phone, msngr_link)
+
+        # if MessengerAccount.objects.filter(profile=instance.user).exists():
+        #     return format_html(instance.user.messenger_account.msngr_link)
+
+    get_contacts.allow_tags = True
+    get_contacts.short_description = 'Контакты'

@@ -1,28 +1,2 @@
 {% extends "admin/change_form.html" %}
 {% load static %}
-
-<!DOCTYPE html>
-<html lang="ru" dir="ltr">
-<head>
-    <title>Order Form</title>
-    <!-- Подключаем файл с проверкой загрузки ключа Google API -->
-    <!-- script src="{% static 'js/google_api_key_checker.js' %}"></script-->
-    <!-- Подключаем файл с проверкой загрузки ключа Google API -->
-    <script src="{% static 'js/google_api_key_checker.js' %}"></script>
-    <!-- Подключаем ваш JavaScript файл для автозаполнения адреса -->
-    <script src="{% static 'js/address_autocomplete.js' %}"></script>
-    {{ block.super }}
-</head>
-<body>
-    {{ block.super }}
-    <!-- Обертка для вашего поля адреса -->
-    <div class="form-row field-recipient_address">
-        <div>
-            <!-- Название поля адреса -->
-            <label for="id_recipient_address">Адрес доставки:</label>
-            <!-- Поле для ввода адреса с идентификатором "id_recipient_address" -->
-            <input id="id_recipient_address" name="recipient_address" class="vTextField delivery__input" placeholder="В Ваш полный адрес" minLength="5" maxLength="100" data-google-api-key="{{ GOOGLE_API_KEY }}">
-        </div>
-    </div>
-</body>
-</html>

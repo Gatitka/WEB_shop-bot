@@ -1,13 +1,13 @@
-from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404, redirect
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from api.permissions import MyIsAdmin
+
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils.translation import get_language_from_request
 from django.db.models import Prefetch
 from catalog.models import Dish
@@ -41,18 +41,23 @@ from.serializers import (CartDishSerializer, DeliverySerializer,
 from decimal import Decimal
 from shop.utils import get_reply_data_delivery
 from shop.services import get_cart
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import ValidationError
 from django.conf import settings
-from delivery_contacts.services import (get_delivery)
+from delivery_contacts.services import (get_delivery,
+                                        get_delivery_cost_zone_by_address)
+from delivery_contacts.utils import get_google_api_key
 from djoser.views import UserViewSet
 from djoser import utils
 from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
     OutstandingToken)
 from shop.utils import (get_repeat_order_form_data,
-                        get_reply_data_takeaway)
+                        get_reply_data_takeaway,
+                        get_cart_responce_dict)
 from shop.services import (get_base_profile_and_shopping_cart,
                            get_cart_detailed,)
+from django.http import JsonResponse
+from django.core.exceptions import ObjectDoesNotExist
 
 
 logger = logging.getLogger(__name__)
@@ -327,7 +332,14 @@ class MenuViewSet(mixins.ListModelMixin,
         current_user = request.user
 
         if current_user.is_authenticated:
-            dish = get_object_or_404(Dish, article=pk)
+            try:
+                dish = get_object_or_404(Dish, article=pk, is_active=True)
+
+            except ObjectDoesNotExist:
+                return JsonResponse({"error":
+                                     "Unfortunately the requested dish is currently unavailable."},
+                                     status=404)
+
             # cart = get_cart(current_user, validation=False)
             # не исп, т.к. для доб в корз не нужны ни переводы, ни промокоды, ничего
 
@@ -534,41 +546,30 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         current_user = request.user
         if not current_user.is_authenticated:
             data = request.data
-            promocode = data.get('promocode', None)
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
 
-            if promocode is None:
-                return Response({}, status=status.HTTP_204_NO_CONTENT)
-
-            promocode = Promocode.is_valid(promocode)
-            if promocode:
-                return Response(
-                    {"promocode_disc": f"{promocode.discount}",
-                     "promocode_code": f"{promocode.promocode}"},
-                    status=status.HTTP_200_OK)
-
-            return Response({"No such active promocode."},
-                            status=status.HTTP_204_NO_CONTENT)
+            cart_responce_dict = get_cart_responce_dict(
+                                    serializer.validated_data, request)
+            return Response(cart_responce_dict,
+                            status=status.HTTP_200_OK)
 
         cart = self.get_queryset()
 
         if cart:
             data = request.data
-            serializer = self.get_serializer(cart, data)
+            serializer = self.get_serializer(cart, data=data)
             serializer.is_valid(raise_exception=True)
             serializer.save()
         else:
             return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-        redirect_url = reverse('api:shopping_cart-list')
-
         if cart.promocode:
             return Response({'detail': 'Promocode is succesfylly added.'},
-                            status=status.HTTP_200_OK,
-                            headers={'Location': redirect_url})
+                            status=status.HTTP_200_OK)
         else:
             return Response({'detail': 'Promocode успешно удален.'},
-                            status=status.HTTP_200_OK,
-                            headers={'Location': redirect_url})
+                            status=status.HTTP_200_OK)
 
 
 class ShopViewSet(viewsets.ReadOnlyModelViewSet):
@@ -837,6 +838,123 @@ class MyUserViewSet(UserViewSet):
                 BlacklistedToken.objects.create(token=token)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+
+
+
+
+# @login_required
+# def get_user_data(request):
+#     if request.method == 'GET':
+#         user_id = request.GET.get('user_id')
+#         try:
+#             user = BaseProfile.objects.get(id=user_id)
+#             user_data = {
+#                 'recipient_name': user.first_name,
+#                 'recipient_phone': str(user.phone)
+#             }
+#             return JsonResponse(user_data)
+#         except BaseProfile.DoesNotExist:
+#             return JsonResponse({'error': 'Пользователь не найден'}, status=404)
+#     else:
+#         return JsonResponse({'error': 'Метод не разрешен'}, status=405)
+
+
+class UserDataAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        user_id = request.GET.get('user_id')
+        try:
+            user = BaseProfile.objects.get(id=user_id)
+            # Проверяем, является ли текущий пользователь владельцем
+            # запрашиваемого профиля
+            if user != request.user.base_profile and not request.user.is_admin:
+                return JsonResponse(
+                    {'error':
+                     'У вас нет прав на доступ к этому профилю'},
+                    status=403)
+
+            # Получаем данные пользователя
+            my_addresses = UserAddress.objects.filter(base_profile=user)
+            address_data = []
+            for address in my_addresses:
+                address_data.append({
+                    'address': str(address),
+                    'lat': address.lat,
+                    'lon': address.lon
+                })
+
+            user_data = {
+                'recipient_name': user.first_name,
+                'recipient_phone': str(user.phone),
+                'my_addresses': address_data
+            }
+            return JsonResponse(user_data)
+
+        except BaseProfile.DoesNotExist:
+            return JsonResponse({'error': 'Пользователь не найден'},
+                                status=404)
+
+
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+import json
+
+@csrf_exempt
+@require_POST
+def calculate_delivery(request):
+    # Проверяем, что запрос является AJAX-запросом
+    print(request.headers)  # Добавляем отладочное сообщение
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        # Получаем данные из POST запроса
+        data = json.loads(request.body.decode('utf-8'))
+        recipient_address = data.get('recipient_address', '')
+        discounted_amount = data.get('discounted_amount', '')
+        city = data.get('city', '')
+        delivery = data.get('delivery', '')
+
+        if recipient_address and discounted_amount and city and delivery:
+            discounted_amount = Decimal(discounted_amount)
+            delivery = Delivery.objects.get(id=int(delivery))
+
+        # Выполняем расчет доставки (ваша логика расчета)
+        try:
+            delivery_cost, delivery_zone = (
+                get_delivery_cost_zone_by_address(
+                    city, discounted_amount, delivery, recipient_address
+                )
+            )
+
+            # Возвращаем результат в формате JSON
+            return JsonResponse({
+                'auto_delivery_zone': delivery_zone.name,
+                'auto_delivery_cost': delivery_cost,
+            })
+
+        except:
+            return JsonResponse({
+                'error': ("Невозможно произвести расчет, проверьте "
+                          "корректность заполненных полей: тип доставки, "
+                          "адрес, стоимость заказа, город.")
+            })
+
+    else:
+        # Если запрос не является AJAX-запросом, возвращаем ошибку
+        return JsonResponse({'error': 'This endpoint only accepts AJAX requests'}, status=400)
+
+
+class GetGoogleAPIKeyAPIView(APIView):
+    permission_classes = [MyIsAdmin]
+
+
+    def get(self, request):
+
+        google_api_key = get_google_api_key()
+
+        return JsonResponse({"GOOGLE_API_KEY": google_api_key})
 
 
 ######-------------------------------------------------------------------------------------------------------#####

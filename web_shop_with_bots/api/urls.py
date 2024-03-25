@@ -4,20 +4,20 @@ from rest_framework.routers import DefaultRouter
 from django.urls import re_path
 from djoser import views
 
-from .views import (
-                    ContactsDeliveryViewSet,
-                    # DeleteUserViewSet,
+from .views import (ContactsDeliveryViewSet,
                     MenuViewSet,
                     PromoNewsViewSet,
                     ShoppingCartViewSet,
                     MyAddressViewSet,
                     MyOrdersViewSet,
                     MyPromocodesViewSet,
-                    ClientAddressesViewSet,
-                    get_unit_price,
                     TakeawayOrderViewSet,
                     DeliveryOrderViewSet,
-                    MyUserViewSet)
+                    MyUserViewSet,
+                    get_unit_price,
+                    UserDataAPIView,
+                    GetGoogleAPIKeyAPIView,
+                    calculate_delivery,)
 
 app_name = 'api'
 
@@ -56,6 +56,10 @@ urlpatterns = [
     path('v1/', include(order_router.urls)),
     path('v1/', include(users_router.urls)),
     path('v1/get_unit_price/', get_unit_price, name='get_unit_price'),
+    path('v1/get_user_data/', UserDataAPIView.as_view(), name='get_user_data'),
+    path('v1/get_google_api_key/', GetGoogleAPIKeyAPIView.as_view(), name='get_google_api_key'),
+    path('v1/calculate_delivery/', calculate_delivery, name='calculate_delivery'),
+
     path('v1/auth/', include('djoser.urls.jwt')),
     path('v1/token/login/', views.TokenCreateView.as_view(), name='login'),
     path('v1/token/logout/', views.TokenDestroyView.as_view(), name='logout'),

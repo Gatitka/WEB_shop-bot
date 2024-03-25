@@ -35,6 +35,8 @@ from delivery_contacts.utils import (
     combine_date_and_time)
 from delivery_contacts.services import get_delivery_zone
 from catalog.validators import validator_dish_exists_active
+from promos.validators import validator_promocode
+from promos.services import get_promocode_discount_amount
 
 User = get_user_model()
 
@@ -395,7 +397,7 @@ class PromoNewsSerializer(serializers.ModelSerializer):
 # --------------------------- КОРЗИНА ------------------------------
 
 
-class DishCartDishSerializer(serializers.ModelSerializer):
+class DishShortLocaleSerializer(serializers.ModelSerializer):
     """
     Сериализатор для краткого отображения блюд.
     """
@@ -424,94 +426,83 @@ class DishCartDishSerializer(serializers.ModelSerializer):
 class CartDishSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели CartDish.
-    Все поля обязательны.
     """
-    dish = DishCartDishSerializer(required=False, read_only=True)
+    dish = serializers.PrimaryKeyRelatedField(
+                queryset=Dish.objects.filter(is_active=True),
+                required=True)
 
     class Meta:
-        fields = ('id', 'dish', 'quantity',
-                  'unit_price', 'amount')
+        fields = ('id', 'dish', 'quantity',)
         model = CartDish
-        read_only_fields = ('id', 'dish',
-                            'unit_price', 'amount')
+        read_only_fields = ('id',)
+        #                     'dish', 'unit_price', 'amount')
+
+
+class PromoCodeField(serializers.RelatedField):
+    def to_representation(self, value):
+        return value.code
+
+    def to_internal_value(self, data):
+        if data is not None:
+            promocode = Promocode.objects.filter(code=data, is_active=True).first()
+            if not promocode:
+                raise serializers.ValidationError("Please check the promocode.")
+        return promocode
 
 
 class ShoppingCartSerializer(serializers.ModelSerializer):
     """
     Сериализатор для чтения модели ShoppingCart.
     """
-    promocode = serializers.CharField(allow_null=True)
-    cartdishes = CartDishSerializer(many=True,
-                                    read_only=True)
+    amount = serializers.DecimalField(required=False,
+                                      allow_null=True,
+                                      max_digits=8,
+                                      decimal_places=2,
+                                      )
+    promocode = PromoCodeField(
+        queryset=Promocode.objects.filter(is_active=True),
+        required=False, allow_null=True,
+        validators=[validator_promocode])
+    cartdishes = CartDishSerializer(required=False,
+                                    allow_null=True,
+                                    many=True,
+                                    )
+    message = serializers.SerializerMethodField()
 
     class Meta:
         fields = ('id', 'items_qty',
-                  'amount', 'promocode',
+                  'amount', 'promocode', 'discount',
                   'discounted_amount',
-                  'cartdishes')
+                  'cartdishes', 'message')
         model = ShoppingCart
         read_only_fields = ('id',
-                            'amount',
+                            'discount',
                             'discounted_amount',
-                            'cartdishes',
-                            'items_qty')
-
-    def to_representation(self, instance):
-        rep = super().to_representation(instance)
-        if instance.promocode:
-            rep['promocode'] = instance.promocode.promocode
-        return rep
-
-    def validate_promocode(self, value):
-        if value is not None:
-            if not Promocode.is_valid(value):
-                raise serializers.ValidationError(
-                    {'promocode': ("Please check the promocode.")})
-        return value
+                            'items_qty', 'message')
 
     def update(self, instance, validated_data):
         promocode = validated_data.get('promocode')
         if promocode is not None:
-            instance.promocode = Promocode.objects.get(promocode=promocode)
+            instance.promocode = promocode
         else:
             instance.promocode = None
         instance.save()
         return instance
 
+    def get_message(self, instance):
+        disc_am, message = get_promocode_discount_amount(instance.promocode,
+                                                amount=instance.amount)
+        return message
 
 # --------------------------- ЗАКАЗ ------------------------------
-class DishOrderDishSerializer(serializers.ModelSerializer):
-    """
-    Сериализатор для краткого отображения блюд.
-    """
-    translations = TranslatedFieldsField(shared_model=Dish,
-                                         read_only=True)
-
-    class Meta:
-        fields = ('article', 'translations',
-                  'image')
-        model = Dish
-        read_only_fields = ('translations',
-                            'image')
-
-    def to_representation(self, instance):
-        rep = super().to_representation(instance)
-        translations = instance.translations.all()
-        translations_short_name = {}
-        for translation in translations:
-            if translation.short_name:
-                translations_short_name[
-                    f'{translation.language_code}'] = translation.short_name
-        rep['translations'] = translations_short_name
-        return rep
-
 
 class OrderDishWriteSerializer(serializers.ModelSerializer):
     """
     Сериализатор для записи Orderdishes в заказ.
     """
-    dish = serializers.PrimaryKeyRelatedField(queryset=Dish.objects.filter(is_active=True),
-                                              required=True)
+    dish = serializers.PrimaryKeyRelatedField(
+                queryset=Dish.objects.filter(is_active=True),
+                required=True)
 
     class Meta:
         fields = ('dish', 'quantity')
@@ -523,14 +514,6 @@ class OrderDishWriteSerializer(serializers.ModelSerializer):
     #     return value
 
 
-class PromoCodeField(serializers.RelatedField):
-    def to_representation(self, value):
-        return value.promocode
-
-    def to_internal_value(self, data):
-        return Promocode.objects.get(promocode=data)
-
-
 class BaseOrderSerializer(serializers.ModelSerializer):
     amount = serializers.DecimalField(required=False,
                                       allow_null=True,
@@ -538,7 +521,7 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                                       decimal_places=2,
                                       write_only=True)
     promocode = PromoCodeField(
-        queryset=Promocode.objects.all(),
+        queryset=Promocode.objects.filter(is_active=True),
         required=False, allow_null=True, write_only=True)
 
     orderdishes = OrderDishWriteSerializer(required=False,

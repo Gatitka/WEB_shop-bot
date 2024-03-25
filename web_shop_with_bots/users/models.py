@@ -8,8 +8,18 @@ from django.dispatch import receiver
 from phonenumber_field.modelfields import PhoneNumberField
 from .validators import (validate_first_and_last_name,
                          validate_birthdate)
+from django.contrib.gis.db.models import PointField
+from django.contrib.gis.geos import Point
+from delivery_contacts.utils import (
+    google_validate_address_and_get_coordinates)
+from django.urls import reverse
 
 from tm_bot.models import MessengerAccount
+
+
+class UserRoles(models.TextChoices):
+    ADMIN = ('admin', 'Администратор')
+    USER = ('user', 'Пользователь')
 
 
 class UserAddress(models.Model):
@@ -22,6 +32,24 @@ class UserAddress(models.Model):
         on_delete=models.CASCADE,
         verbose_name='базовый профиль',
     )   # НЕ УДАЛЯТЬ! нужен для правильного отображения админки
+    lat = models.CharField(
+        max_length=60,
+        blank=True,
+        null=True,
+        verbose_name='координаты ШИР (lat)',
+        help_text=(
+            'прим. "44.809000122132566".'
+        ),
+    )
+    lon = models.CharField(
+        max_length=60,
+        blank=True,
+        null=True,
+        verbose_name='координаты ДОЛ (lon)',
+        help_text=(
+            'прим. "20.458040962192968".'
+        ),
+    )
 
     class Meta:
         verbose_name = 'Мой адрес'
@@ -29,6 +57,26 @@ class UserAddress(models.Model):
 
     def __str__(self):
         return f'Адрес {self.address}'
+
+    def save(self, *args, **kwargs):
+        if self.address and (not self.lat or not self.lon):
+            # Если есть адрес, но нет координат, извлекаем координаты из адреса
+            try:
+                lat, lon, status = google_validate_address_and_get_coordinates(self.address)
+                self.lat = lat
+                self.lon = lon
+            except ValidationError as e:
+                # Если произошла ошибка при получении координат, логируем ее
+                # logging.error(f'Ошибка при получении координат для адреса {self.address}: {e}')
+                pass
+        elif self.lat and self.lon:
+            # Если переданы координаты, сохраняем их без изменения адреса
+            pass
+        else:
+            # В противном случае, вызываем исключение или выполняем другую логику по вашему усмотрению
+            pass
+
+        super().save(*args, **kwargs)
 
 
 class BaseProfile(models.Model):
@@ -116,7 +164,12 @@ class BaseProfile(models.Model):
         verbose_name_plural = 'клиенты'
 
     def __str__(self):
-        return (f'{self.first_name}' if self.first_name is not None else f'Клиент id = {self.id}')
+        return (
+            f'{self.first_name}' if self.first_name is not None
+            else f'Клиент id = {self.id}')
+
+    def get_absolute_url(self):
+        return reverse('admin:%s_%s_change' % (self._meta.app_label, self._meta.model_name), args=[self.pk])
 
     @staticmethod
     def base_profile_update(instance):
@@ -183,6 +236,7 @@ class CustomWEBAccountManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         extra_fields.setdefault('is_active', False)
         extra_fields.setdefault('is_subscribed', True)
+        extra_fields.setdefault('role', UserRoles.USER)
         return self._create_user(email, password, **extra_fields)
 
     def create_superuser(self, email, password=None, **extra_fields):
@@ -190,12 +244,15 @@ class CustomWEBAccountManager(BaseUserManager):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
+        extra_fields.setdefault('role', UserRoles.ADMIN)
 
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser must have is_staff=True.')
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must have is_superuser=True.')
         if extra_fields.get('is_active') is not True:
+            raise ValueError('Superuser must have is_active=True.')
+        if extra_fields.get('is_admin') is not True:
             raise ValueError('Superuser must have is_active=True.')
 
         return self._create_user(email, password, **extra_fields)
@@ -252,12 +309,12 @@ class WEBAccount(AbstractUser):
     #     verbose_name='базовый профиль',
     #     blank=True, null=True
     # )
-    # role = models.CharField(
-    #     'Роль',
-    #     max_length=9,
-    #     choices=UserRoles.choices,
-    #     default=UserRoles.USER
-    # )
+    role = models.CharField(
+        'Роль',
+        max_length=9,
+        choices=UserRoles.choices,
+        default=UserRoles.USER
+    )
     is_active = models.BooleanField(
         ('active'),
         default=False,
@@ -282,8 +339,8 @@ class WEBAccount(AbstractUser):
         verbose_name = 'Аккаунт сайта'
         verbose_name_plural = 'Аккаунты сайта'
 
-    # def is_admin(self):
-    #     return self.role == UserRoles.ADMIN or self.is_superuser
+    def is_admin(self):
+        return self.role == UserRoles.ADMIN or self.is_superuser
 
     def __str__(self):
         return f'{self.email}'

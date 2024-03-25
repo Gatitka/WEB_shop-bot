@@ -4,6 +4,7 @@ from parler.models import TranslatableModel, TranslatedFields
 from django.conf import settings
 from django.utils import timezone
 from users.models import BaseProfile
+from .services import get_promocode_discount_amount
 
 
 class PromoNews(TranslatableModel):
@@ -89,26 +90,18 @@ class PromoNews(TranslatableModel):
         return title or f'PromoNews #{self.pk}'
 
 
-class Promocode(models.Model):
+class Promocode(TranslatableModel):
     """ Модель для промокодов."""
-    title_rus = models.CharField(
-        max_length=100,
-        verbose_name='заголовок рус'
-    )
-    promocode = models.CharField(
-        max_length=6,
-        verbose_name='код'
-    )
-    discount = models.DecimalField(
-        verbose_name='Скидка, %',
-        help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
-        max_digits=7, decimal_places=2,
-        null=True,
-        blank=True,
+    translations = TranslatedFields(
+        description=models.CharField(
+            max_length=100,
+            verbose_name='описание',
+            blank=True, null=True
+        )
     )
     is_active = models.BooleanField(
         default=False,
-        verbose_name='активен'
+        verbose_name='Активен'
     )
     created = models.DateField(
         'Дата добавления', auto_now_add=True
@@ -118,6 +111,48 @@ class Promocode(models.Model):
     )
     valid_to = models.DateTimeField(
         'Окончание действия'
+    )
+
+    title_rus = models.CharField(
+        max_length=100,
+        verbose_name='заголовок рус'
+    )
+    code = models.CharField(
+        max_length=8,
+        verbose_name='код',
+        unique=True
+    )
+    ttl_am_discount_percent = models.DecimalField(
+        verbose_name='Скидка на весь заказ, %',
+        help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
+        max_digits=7, decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    ttl_am_discount_amount = models.DecimalField(
+        verbose_name='Скидка на весь заказ, DIN',
+        help_text="Внесите скидку, прим. '300,00'.",
+        max_digits=7, decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    free_delivery = models.BooleanField(
+        default=False,
+        verbose_name='Бесплатная доставка'
+    )
+    gift = models.BooleanField(
+        default=False,
+        verbose_name='Подарок'
+    )
+    gift_description = models.CharField(
+        max_length=100,
+        verbose_name='Описание подарка',
+        null=True,
+        blank=True,
+    )
+    first_order = models.BooleanField(
+        default=False,
+        verbose_name='Первый заказ'
     )
 
     class Meta:
@@ -132,17 +167,20 @@ class Promocode(models.Model):
     def is_valid(cls, promocode):
         now = timezone.now()
         try:
-            promocode_obj = Promocode.objects.get(promocode=promocode)
-            if (promocode_obj.is_active
+            if (promocode.is_active
                     and
-                    promocode_obj.valid_from <= now
-                    <= promocode_obj.valid_to):
-                return promocode_obj
+                    promocode.valid_from <= now
+                    <= promocode.valid_to):
+                return promocode
 
         except Promocode.DoesNotExist:
             pass
 
         return False
+
+    def get_promocode_disc(self, request=None, amount=None):
+        return get_promocode_discount_amount(self, request=None, amount=None)
+
 
 
 class PrivatPromocode(models.Model):

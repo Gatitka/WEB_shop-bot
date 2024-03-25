@@ -1,7 +1,8 @@
 from django.conf import settings
 from delivery_contacts.models import Delivery, DeliveryZone
 from .utils import (_get_delivery_zone,
-                    get_delivery_cost)
+                    get_delivery_cost,
+                    google_validate_address_and_get_coordinates)
 
 
 def get_delivery(request, type):
@@ -35,6 +36,23 @@ def get_delivery_cost_zone(city, discounted_amount, delivery,
     # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
     # if lat is None and lon is None:
     #     lat, lon, status = google_validate_address_and_get_coordinates(address)
+    delivery_zone = get_delivery_zone(city,
+                                      lat, lon)
+
+    delivery_cost = get_delivery_cost(discounted_amount, delivery,
+                                      delivery_zone)
+
+    return delivery_cost, delivery_zone
+
+
+def get_delivery_cost_zone_by_address(city, discounted_amount, delivery,
+                                      address):
+    """
+    Рассчитывает стоимость доставки и зону с учетом суммы заказа и адреса доставки.
+    """
+    # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
+    lat, lon, status = google_validate_address_and_get_coordinates(address)
+
     delivery_zone = get_delivery_zone(city,
                                       lat, lon)
 

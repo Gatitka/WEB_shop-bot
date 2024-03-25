@@ -2,6 +2,7 @@ from django.utils import timezone
 from django.db.models import Max
 from decimal import Decimal
 from delivery_contacts.services import get_delivery_cost_zone
+from promos.services import get_promocode_discount_amount
 
 
 def get_reply_data_delivery(delivery, city, lat, lon,
@@ -102,15 +103,15 @@ def get_rep_dic(reply_data,
     return reply_data
 
 
-def get_amount(cart=None, orderdishes=None):
+def get_amount(cart=None, items=None):
     if cart:
         return cart.amount
 
-    if orderdishes:
+    if items:
         amount = Decimal(0)
-        for orderdish in orderdishes:
-            dish = orderdish['dish']
-            amount += Decimal(dish.final_price * orderdish['quantity'])
+        for item in items:
+            dish = item['dish']
+            amount += Decimal(dish.final_price * item['quantity'])
         return amount
 
 
@@ -234,7 +235,7 @@ def get_next_item_id_today(model, field):
 
 
 def get_first_item_true(obj):
-    # Преобразование поля datetime в строку с помощью strftime()
+    # проверка на первый заказ
     model_class = obj.__class__
     if obj.user is not None:
         if not model_class.objects.filter(user=obj.user).exists():
@@ -245,3 +246,21 @@ def get_first_item_true(obj):
         ).exists():
             return True
     return False
+
+
+def get_cart_responce_dict(data, request):
+
+    amount = get_amount(items=data.get('cartdishes'))
+
+    promoc_disc_amount, message = get_promocode_discount_amount(
+                            data.get('promocode'),
+                            request, amount)
+    cart_responce_dict = {
+        # 'cartdishes': data.get('cartdishes'),
+        'promocode': data.get('promocode').code,
+        'amount': amount,
+        'discount': promoc_disc_amount,
+        'message': message,
+        'discounted_amount': (amount - promoc_disc_amount)
+    }
+    return cart_responce_dict

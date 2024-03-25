@@ -7,7 +7,6 @@ from django.utils.translation import gettext_lazy as _  # for translation
 from dotenv import load_dotenv
 from users.validators import AlphanumericPasswordValidator
 
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))),
@@ -15,43 +14,44 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))),
                          '.env'), verbose=True)
 
 ENVIRONMENT = os.getenv('ENVIRONMENT')
+DEVELOPER = os.getenv('DEVELOPER')
 
-# if ENVIRONMENT == 'development':
+if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
 
-#     LOG_FILE_PATH = os.path.join(
-#         BASE_DIR, '/tmp', 'yume.log'
-#         ) if os.name != 'nt' else os.path.join(BASE_DIR, 'tmp', 'yume.log')
+    LOG_FILE_PATH = os.path.join(
+        BASE_DIR, '/tmp', 'yume.log'
+        ) if os.name != 'nt' else os.path.join(BASE_DIR, 'tmp', 'yume.log')
 
-#     LOGGING = {
-#         "version": 1,
-#         "disable_existing_loggers": False,
-#         "formatters": {
-#             "verbose": {
-#                 "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
-#                 "style": "{",
-#             },
-#         },
-#         "handlers": {
-#             "console": {
-#                 "level": "WARNING",
-#                 "class": "logging.StreamHandler",
-#             },
-#             "file": {
-#                 'level': 'DEBUG',
-#                 'class': 'logging.FileHandler',
-#                 'filename': LOG_FILE_PATH,
-#                 'formatter': 'verbose',
-#                 'encoding': 'utf-8',
-#             }
-#         },
-#         "loggers": {
-#             "django": {
-#                 "handlers": ["console", "file"],
-#                 "level": "DEBUG",
-#                 "propagate": True,
-#             },
-#         },
-#     }
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "verbose": {
+                "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+                "style": "{",
+            },
+        },
+        "handlers": {
+            "console": {
+                "level": "WARNING",
+                "class": "logging.StreamHandler",
+            },
+            "file": {
+                'level': 'DEBUG',
+                'class': 'logging.FileHandler',
+                'filename': LOG_FILE_PATH,
+                'formatter': 'verbose',
+                'encoding': 'utf-8',
+            }
+        },
+        "loggers": {
+            "django": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+        },
+    }
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -66,7 +66,6 @@ default_allowed_hosts = [
     'localhost',
     '127.0.0.1',
     '[::1]',
-    'testserver',  # для тестов
 ]
 
 allowed_hosts = default_allowed_hosts.copy()
@@ -76,11 +75,14 @@ if TEST_SERVER or SERVER:
         allowed_hosts.append(str(TEST_SERVER))
     if SERVER:
         allowed_hosts.append(str(SERVER))
-print(f'allowed_hosts: {allowed_hosts}')
+
+
+if ENVIRONMENT in ['development', 'test_server']:
+    allowed_hosts.append('testserver')   # для тестов
 ALLOWED_HOSTS = allowed_hosts
 
 
-INSTALLED_APPS = [
+default_installed_apps = [
     'catalog.apps.CatalogConfig',
     'shop.apps.ShopConfig',
     'users.apps.UsersConfig',
@@ -107,6 +109,13 @@ INSTALLED_APPS = [
     'parler',   # language
     'django.contrib.gis'
 ]
+installed_apps = default_installed_apps.copy()
+# Insert the TEST_SERVER and SERVER into the list if available
+if SERVER:
+    installed_apps.remove('debug_toolbar',)
+
+INSTALLED_APPS = installed_apps
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -151,10 +160,6 @@ DATABASES = {
         'HOST': os.environ.get('DB_HOST'),
         'PORT': os.environ.get('DB_PORT'),
     }
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.sqlite3',
-    #     'NAME': os.path.join(BASE_DIR, os.getenv('DB_FILE')),
-    # }
 }
 
 
@@ -268,7 +273,7 @@ DJOSER = {
 }
 
 
-TIME_ZONE = 'Europe/Belgrade'
+TIME_ZONE = 'Europe/Oslo'
 
 USE_TZ = True
 
@@ -374,7 +379,7 @@ CORS_ALLOW_CREDENTIALS = True
 if ENVIRONMENT != 'development':
     CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
 
-# CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
 
 default_csrf_trusted_origins = [
@@ -404,12 +409,9 @@ default_internal_ips = [
 internal_ips_origins = default_internal_ips.copy()
 
 # Insert the TEST_SERVER and SERVER into the list if available
-if TEST_SERVER or SERVER:
-    if TEST_SERVER:
-        internal_ips_origins.append(str(TEST_SERVER))
-    if SERVER:
-        internal_ips_origins.append(str(SERVER))
-print(f'internal_ips_origins {internal_ips_origins}')
+if TEST_SERVER:
+    internal_ips_origins.append(str(TEST_SERVER))
+
 INTERNAL_IPS = internal_ips_origins
 
 
@@ -439,7 +441,8 @@ SUMMERNOTE_CONFIG = {
 }
 
 # -------------------------------- GEOCODING --------------------------------------------
-if ENVIRONMENT == 'development':
+
+if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
 
     # GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), 'Program Files', 'GDAL', 'gdal.dll')
 

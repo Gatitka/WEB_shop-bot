@@ -3,6 +3,7 @@ import requests
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 from datetime import datetime
+from django.conf import settings
 
 
 def receive_responce_from_google(address):
@@ -83,6 +84,7 @@ def _get_delivery_zone(delivery_zones, lat=None, lon=None):
 
                 delivery_zone = zone
 
+
     return delivery_zone
 
 
@@ -148,3 +150,7 @@ def combine_date_and_time(date_str, time_str):
     # combined_datetime_str = combined_datetime.strftime("%d.%m.%Y %H:%M")
 
     return combined_datetime
+
+
+def get_google_api_key():
+    return settings.GOOGLE_API_KEY

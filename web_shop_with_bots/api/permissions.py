@@ -1,7 +1,21 @@
 from rest_framework.permissions import BasePermission
 
 
-class DenyAllPermission(BasePermission):
+class IsOwnerOrAdmin(BasePermission):
+    """
+    Запросы доступны только для админа и зарегестрированного пользователя.
+    (для получения информации о клиенте и заполнения формы заказа).
+    """
+    def has_object_permission(self, request, view, obj):
+        if obj == request.user.base_profile:
+            return True
+        return request.user.is_admin()
+
+
+class MyIsAdmin(BasePermission):
+    """
+    Allows access only to admin users.
+    """
     def has_permission(self, request, view):
-        # Всегда запрещаем доступ
-        return False
+        return bool(request.user and request.user.is_authenticated
+                    and request.user.is_admin())

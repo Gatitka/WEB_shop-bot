@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.utils import timezone
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -24,6 +25,7 @@ from .utils import get_next_item_id_today
 from delivery_contacts.services import get_delivery_zone
 from delivery_contacts.utils import get_delivery_cost
 from shop.utils import get_first_item_true
+from promos.services import get_promocode_discount_amount
 
 
 User = get_user_model()
@@ -133,9 +135,13 @@ class ShoppingCart(models.Model):
         """
         if self.promocode:
             # Если есть промокод, применяем скидку
-            self.discount = (
-                Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
-            ).quantize(Decimal('0.01'))
+            self.discount, message = get_promocode_discount_amount(
+                                        self.promocode,
+                                        amount=self.amount)
+
+            # self.discount = (
+            #     Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
+            # ).quantize(Decimal('0.01'))
 
             self.discounted_amount = (
                 Decimal(self.amount) - self.discount
@@ -286,6 +292,7 @@ class Order(models.Model):
     )
     created = models.DateTimeField(
         'Дата добавления',
+        # default=timezone.now,
         auto_now_add=True
     )
     status = models.CharField(

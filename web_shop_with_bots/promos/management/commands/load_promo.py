@@ -51,10 +51,58 @@ class Command(BaseCommand):
         valid_to = today + timedelta(days=365)
 
         promocode1, created = Promocode.objects.get_or_create(
-            title_rus='Takeaway 10%',
-            promocode='take10',
-            discount=10.00,
+            title_rus='процент от общего 10%',
+            code='percnt10',
+            ttl_am_discount_percent=10.00,
             is_active=True,
             valid_from=today,
             valid_to=valid_to,
+        )
+
+        promocode2, created = Promocode.objects.get_or_create(
+            title_rus='сумма от общего 300',
+            code='amnt$300',
+            ttl_am_discount_amount=300.00,
+            is_active=True,
+            valid_from=today,
+            valid_to=valid_to,
+        )
+
+        promocode3, created = Promocode.objects.get_or_create(
+            title_rus='беспл доставка',
+            code='freedlvr',
+            is_active=True,
+            valid_from=today,
+            valid_to=valid_to,
+            free_delivery=True,
+        )
+
+        promocode4, created = Promocode.objects.get_or_create(
+            title_rus='первый заказ процент от общего 10%',
+            code='fstprc10',
+            ttl_am_discount_percent=10.00,
+            is_active=True,
+            valid_from=today,
+            valid_to=valid_to,
+            first_order=True
+        )
+
+        promocode5, created = Promocode.objects.get_or_create(
+            title_rus='первый заказ сумма от общего 300',
+            code='fstam300',
+            ttl_am_discount_amount=300.00,
+            is_active=True,
+            valid_from=today,
+            valid_to=valid_to,
+            first_order=True
+        )
+
+        promocode6, created = Promocode.objects.get_or_create(
+            title_rus='первый заказ беспл доставка',
+            code='fsfrdlvr',
+            is_active=True,
+            valid_from=today,
+            valid_to=valid_to,
+            first_order=True,
+            free_delivery=True
         )

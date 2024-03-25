@@ -51,7 +51,7 @@ class PromoNewsAdmin(TranslatableAdmin):
 @admin.register(Promocode)
 class PromocodeAdmin(admin.ModelAdmin):
     """Настройки админ панели промо-новостей."""
-    list_display = ['id', 'is_active', 'title_rus', 'promocode']
+    list_display = ['id', 'is_active', 'title_rus', 'code']
     readonly_fields = ('id', 'created')
     actions = [*activ_actions]
     search_fields = ('promocode', 'title_rus')

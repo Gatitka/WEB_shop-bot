@@ -22,6 +22,7 @@ class Command(BaseCommand):
             last_name='admin',
             phone='+79055969166',
             web_language='ru',
+            role='admin'
         )
         admin.set_password("adminadmin0")
         admin.save()

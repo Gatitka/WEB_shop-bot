@@ -15,6 +15,7 @@ class UserAddressesAdminInline(admin.TabularInline):
     model = UserAddress
     min_num = 0
     extra = 0   # чтобы не добавлялись путые поля
+    fields = ('address', 'lat', 'lon')
 
 
 @admin.register(BaseProfile)
@@ -24,6 +25,7 @@ class BaseProfileAdmin(admin.ModelAdmin):
     search_fields = ('first_name', 'last_name', 'phone', 'email')
     list_filter = ('is_active',)
     list_select_related = ['web_account', 'my_addresses']
+    ordering = ('id',)
     readonly_fields = ('date_joined', 'orders',
                        'first_name', 'last_name', 'phone', 'email')
     inlines = (UserAddressesAdminInline,)
@@ -75,15 +77,15 @@ class BaseProfileAdmin(admin.ModelAdmin):
 @admin.register(WEBAccount)
 class WEBAccountAdmin(UserAdmin):
     """Настройки отображения данных таблицы User."""
-    list_display = ('id', 'email', 'is_active', 'is_deleted')
+    list_display = ('id', 'email', 'role', 'is_active', 'is_deleted')
     list_search = ('email', 'is_active', 'first_name', 'last_name', 'phone', )
-    list_filter = ('is_active',)
+    list_filter = ('is_active', 'role')
     readonly_fields = ('date_joined', 'last_login')
     fieldsets = (
         ('Основное', {
             'fields': (
                 ('first_name', 'last_name'),
-                ('is_active', 'is_deleted'),
+                ('role', 'is_active', 'is_deleted'),
                 ('email', 'phone'),
                 ('date_joined', 'last_login'),
                 ('is_superuser', 'is_staff'),

@@ -101,9 +101,10 @@ def find_uncomplited_cart_to_complete(base_profile):
     if hasattr(base_profile, 'shopping_cart'):
         # Если есть связанный объект ShoppingCart, используйте его
         cart = ShoppingCart.objects.filter(
-            user=base_profile,
-            complited=False
-        ).first()
+                    user=base_profile,
+                    complited=False
+               ).first()
 
-        cart.complited = True
-        cart.save()
+        if cart:
+            cart.complited = True
+            cart.save()
