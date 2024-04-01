@@ -1,29 +1,28 @@
 from decimal import Decimal
 from typing import Any, Union
-from django.utils import timezone
+from django.conf import settings
 from django.contrib import admin
+from django.core.exceptions import ValidationError
 from django.db.models import Sum
 from django.db.models.query import QuerySet
 from django.forms.utils import ErrorList
 from django.http.request import HttpRequest
-from django.utils import formats
+from django.utils import formats, timezone
 from django.utils.html import format_html
-from .forms import OrderAdminForm
+from delivery_contacts.utils import get_google_api_key
 from tm_bot.models import MessengerAccount
-from users.models import BaseProfile
+from users.models import BaseProfile, UserAddress
 from utils.utils import activ_actions
-
-from .models import CartDish, Order, OrderDish, ShoppingCart
-from users.models import UserAddress
-from django.conf import settings
-from delivery_contacts.utils import (get_google_api_key)
-
-from django.core.exceptions import ValidationError
-
+from .forms import OrderAdminForm
+from .models import CartDish, Order, OrderDish, ShoppingCart, Discount
 
 if settings.ENVIRONMENT == 'development':
     admin.site.register(OrderDish)
     admin.site.register(CartDish)
+
+
+admin.site.register(Discount)
+
 
 class ShopAdminArea(admin.AdminSite):
     site_header = 'YUME Shop Admin'

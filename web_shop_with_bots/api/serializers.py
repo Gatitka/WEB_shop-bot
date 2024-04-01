@@ -1,42 +1,38 @@
 
+from typing import Dict
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.validators import EmailValidator
+from django.db import transaction
 from django.db.models import QuerySet
-from parler_rest.fields import \
-    TranslatedFieldsField  # для переводов текста parler
-from parler_rest.serializers import \
-    TranslatableModelSerializer  # для переводов текста parler
+from django.utils.translation import gettext_lazy as _
+from parler_rest.fields import TranslatedFieldsField
+from parler_rest.serializers import TranslatableModelSerializer
 from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework.serializers import SerializerMethodField
-
-from catalog.models import Category, Dish, UOM
+from catalog.models import UOM, Category, Dish
+from catalog.validators import get_dish_validate_exists_active
 from delivery_contacts.models import Delivery, Restaurant
-from promos.models import PromoNews, Promocode, PrivatPromocode
-from shop.models import (CartDish, Order, OrderDish,
-                         ShoppingCart, ORDER_STATUS_CHOICES)
-from tm_bot.models import MessengerAccount
-from users.models import BaseProfile, UserAddress
-from users.validators import (validate_birthdate,
-                              validate_first_and_last_name)
-from tm_bot.validators import (validate_msngr_username,
-                               validate_messenger_account)
-from django.utils.translation import gettext_lazy as _
-from django.shortcuts import get_object_or_404
-from shop.validators import (validate_selected_month,
-                             validate_delivery_time)
-from django.utils.translation import get_language
-from django.db import transaction
-from shop.utils import get_rep_dic
-from shop.services import get_base_profile_cartdishes_promocode
-from delivery_contacts.utils import (
-    google_validate_address_and_get_coordinates,
-    combine_date_and_time)
 from delivery_contacts.services import get_delivery_zone
-from catalog.validators import validator_dish_exists_active
-from promos.validators import validator_promocode
+from delivery_contacts.utils import google_validate_address_and_get_coordinates
+from promos.models import PrivatPromocode, Promocode, PromoNews
 from promos.services import get_promocode_discount_amount
+from shop.models import (ORDER_STATUS_CHOICES, CartDish, Order, OrderDish,
+                         ShoppingCart)
+from shop.services import get_amount
+from shop.validators import validate_delivery_time
+from tm_bot.models import MessengerAccount
+from tm_bot.validators import (validate_messenger_account,
+                               validate_msngr_username)
+from users.models import BaseProfile, UserAddress
+from users.validators import validate_birthdate, validate_first_and_last_name
+from promos.validators import get_promocode_validate_active_in_timespan
+from .services import get_rep_dic
+# from shop.services import get_base_profile_cartdishes_promocode
+# from promos.validators import validator_promocode
+# from django.utils.translation import get_language
+# from django.core.validators import EmailValidator
+# from django.conf import settings
 
 User = get_user_model()
 
@@ -85,7 +81,13 @@ class MyUserSerializer(serializers.ModelSerializer):
                   )
         read_only_fields = ('email', 'date_of_birth')
 
-    def update(self, instance: User, validated_data: dict) -> User:
+    # def validate(self, attrs):
+    #     req = self.context['request']
+    #     language_code=req.LANGUAGE_CODE
+    #     print(language_code)
+
+    def update(self, instance: User,
+               validated_data: Dict[str, any]) -> User:
         """
         Метод для редакции данных пользователя.
         Args:
@@ -114,7 +116,9 @@ class MyUserSerializer(serializers.ModelSerializer):
                 )
 
             if 'date_of_birth' in base_profile_validated_data:
-                date_of_birth = base_profile_validated_data.get('date_of_birth')
+                date_of_birth = (
+                    base_profile_validated_data.get('date_of_birth')
+                )
 
                 instance.base_profile.date_of_birth = date_of_birth
 
@@ -207,8 +211,15 @@ class UserAddressSerializer(serializers.ModelSerializer):
         fields = ('id', 'address')
         model = UserAddress
 
+    def to_representation(self, instance):
+        if instance is None:
+            return {'detail': 'Адрес не доступен.'}
+            # Возвращаем сообщение об ошибке
+        return super().to_representation(instance)
+
 # --------       свои купоны   ---------
-#
+
+
 class UserPromocodeSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для UserPromocodes.
@@ -279,7 +290,7 @@ class DishMenuSerializer(TranslatableModelSerializer):
                             'spicy_icon', 'vegan_icon',
                             'image',
                             'weight_volume', 'weight_volume_uom',
-                            'units_in_set','units_in_set_uom',
+                            'units_in_set', 'units_in_set_uom',
                             'is_in_shopping_cart',
                             )
 
@@ -309,6 +320,7 @@ class DishMenuSerializer(TranslatableModelSerializer):
         return rep
 
 # ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
+
 
 class RestaurantSerializer(serializers.ModelSerializer):
     """
@@ -423,13 +435,23 @@ class DishShortLocaleSerializer(serializers.ModelSerializer):
         return rep
 
 
+class DishField(serializers.RelatedField):
+    def to_representation(self, value):
+        return value
+
+    def to_internal_value(self, data):
+        if data is not None:
+            dish = get_dish_validate_exists_active(data)
+            return dish
+        return data
+
+
 class CartDishSerializer(serializers.ModelSerializer):
     """
     Базовый сериализатор для модели CartDish.
     """
-    dish = serializers.PrimaryKeyRelatedField(
-                queryset=Dish.objects.filter(is_active=True),
-                required=True)
+    dish = DishField(queryset=Dish.objects.filter(is_active=True),
+                     required=True)
 
     class Meta:
         fields = ('id', 'dish', 'quantity',)
@@ -440,14 +462,15 @@ class CartDishSerializer(serializers.ModelSerializer):
 
 class PromoCodeField(serializers.RelatedField):
     def to_representation(self, value):
-        return value.code
+        return {"promocode": f"{value.code}",
+                "status": "valid"}
 
     def to_internal_value(self, data):
         if data is not None:
-            promocode = Promocode.objects.filter(code=data, is_active=True).first()
-            if not promocode:
-                raise serializers.ValidationError("Please check the promocode.")
-        return promocode
+            promocode = get_promocode_validate_active_in_timespan(data)
+            return promocode
+
+        return data
 
 
 class ShoppingCartSerializer(serializers.ModelSerializer):
@@ -459,59 +482,81 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
                                       max_digits=8,
                                       decimal_places=2,
                                       )
-    promocode = PromoCodeField(
-        queryset=Promocode.objects.filter(is_active=True),
-        required=False, allow_null=True,
-        validators=[validator_promocode])
+    # promocode = PromoCodeField(
+    #     queryset=Promocode.objects.filter(is_active=True),
+    #     required=False, allow_null=True,
+    #     )
     cartdishes = CartDishSerializer(required=False,
                                     allow_null=True,
                                     many=True,
                                     )
-    message = serializers.SerializerMethodField()
 
     class Meta:
-        fields = ('id', 'items_qty',
-                  'amount', 'promocode', 'discount',
-                  'discounted_amount',
-                  'cartdishes', 'message')
+        fields = ('cartdishes',
+                  'amount')
+                  # 'id', 'items_qty',
+                  # , 'promocode', 'discount',
+                  # 'discounted_amount',
+                  # , 'message')
         model = ShoppingCart
-        read_only_fields = ('id',
-                            'discount',
-                            'discounted_amount',
-                            'items_qty', 'message')
+        # read_only_fields = ('id',
+        #                     'discount',
+        #                     'discounted_amount',
+        #                     'items_qty', 'message')
 
-    def update(self, instance, validated_data):
-        promocode = validated_data.get('promocode')
-        if promocode is not None:
-            instance.promocode = promocode
-        else:
-            instance.promocode = None
-        instance.save()
-        return instance
+    # def validate_promocode(self, value):
+    #     if value is None:
+    #         return value
 
-    def get_message(self, instance):
-        disc_am, message = get_promocode_discount_amount(instance.promocode,
-                                                amount=instance.amount)
-        return message
+    #     value.is_valid()
+    #     if value.first_order:
+    #         user = self.context['request'].user
+    #         if user.is_authenticated:
+    #             orders_count = user.base_profile.orders.count()
+    #             if orders_count > 0:
+    #                 raise serializers.ValidationError({
+    #                     "message": _("This promo code is applicable only for "
+    #                                  "the first order."),
+    #                     "status": "invalid"})
+    #         # else:
+    #         #     raise serializers.ValidationError({
+    #         #         "message": ("This promo code is applicable only for "
+    #         #                     "the first order. "
+    #         #                     "Will be applied after order "
+    #         #                     "form filling in."),
+    #         #         "status": "valid"})
+    #     return value
+
+    # def update(self, instance, validated_data):
+    #     promocode = validated_data.get('promocode')
+    #     if promocode is not None:
+    #         instance.promocode = promocode
+    #     else:
+    #         instance.promocode = None
+    #     instance.save()
+    #     return instance
+
+    # def get_message(self, instance):
+    #     disc_am, message, free_delivery = (
+    #         get_promocode_discount_amount(instance.promocode,
+    #                                       amount=instance.amount)
+    #     )
+    #     return message
 
 # --------------------------- ЗАКАЗ ------------------------------
+
 
 class OrderDishWriteSerializer(serializers.ModelSerializer):
     """
     Сериализатор для записи Orderdishes в заказ.
     """
-    dish = serializers.PrimaryKeyRelatedField(
-                queryset=Dish.objects.filter(is_active=True),
-                required=True)
+
+    dish = DishField(queryset=Dish.objects.filter(is_active=True),
+                     required=True)
 
     class Meta:
         fields = ('dish', 'quantity')
         model = OrderDish
-
-    # def validate_dish(self, value):
-
-    #     validator_dish_exists_active(value)
-    #     return value
 
 
 class BaseOrderSerializer(serializers.ModelSerializer):
@@ -522,10 +567,10 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                                       write_only=True)
     promocode = PromoCodeField(
         queryset=Promocode.objects.filter(is_active=True),
-        required=False, allow_null=True, write_only=True)
+        required=False, allow_null=True)
 
-    orderdishes = OrderDishWriteSerializer(required=False,
-                                           allow_null=True,
+    orderdishes = OrderDishWriteSerializer(required=True,
+                                           allow_null=False,
                                            many=True,
                                            )
     recipient_phone = PhoneNumberField(required=True)
@@ -534,45 +579,92 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                                               required=False,
                                               allow_null=True)
 
+    city = serializers.CharField(max_length=20, required=True)
+
+    recipient_phone = PhoneNumberField(write_only=True)
+
     class Meta:
-        fields = ('items_qty',
-                  'recipient_name', 'recipient_phone',
-                  'city', 'delivery_time', 'comment', 'persons_qty',
+        fields = ('recipient_phone',
+                  'city', 'delivery_time',
                   'orderdishes', 'amount', 'promocode')
         model = Order
 
+    def validate_city(self, value):
+        valid_cities = [city[0] for city in settings.CITY_CHOICES]
+        if value not in valid_cities:
+            raise serializers.ValidationError(
+                _("City is incorect."))
+        return value
+
     def validate_delivery_time(self, value):
         delivery = self.context.get('extra_kwargs', {}).get('delivery')
+        self.delivery = delivery
 
         if value is not None:
             restaurant = self.initial_data.get('restaurant', None)
             validate_delivery_time(value, delivery, restaurant)
         return value
 
+    def validate_promocode(self, value):
+        if value is None:
+            return value
+
+        if value.free_delivery:
+            delivery = self.delivery
+            if delivery.type != 'delivery':
+                raise serializers.ValidationError(
+                        _("This promocode is applicable only "
+                          "for delivery orders."))
+
+        if value.first_order:
+            user = self.context['request'].user
+            if user.is_authenticated:
+                if user.base_profile.orders.exists():
+                    raise serializers.ValidationError(
+                        _("This promocode is applicable only "
+                          "for the first order."))
+            else:
+                phone = self.initial_data.get('recipient_phone')
+                if Order.objects.filter(recipient_phone=phone).exists():
+                    raise serializers.ValidationError(
+                        _("This promocode is applicable only "
+                          "for the first order."))
+
+        return value
+
+    # в validate методе может быть просчет и сохранение amount.
+    # валидация промокода на мин сумму, заказа на мин сумму.
     def validate(self, data):
-        request = self.context.get('request')
 
-        if request.user.is_authenticated:
+        if data.get('promocode') and data['promocode'].min_order_amount:
+            amount = get_amount(items=data.get('orderdishes'))
+            if amount < data['promocode'].min_order_amount:
+                raise serializers.ValidationError(
+                        _("This promocode requires order amount ."))
 
-            base_profile, cart, cartdishes, promocode = (
-                get_base_profile_cartdishes_promocode(request.user)
-            )
-            data['base_profile'] = base_profile
-            data['cart'] = cart
-            data['cartdishes'] = cartdishes
-            data['promocode'] = promocode
+        # if request.user.is_authenticated:
+
+        #     base_profile, cart, cartdishes, promocode = (
+        #         get_base_profile_cartdishes_promocode(request.user)
+        #     )
+        #     data['base_profile'] = base_profile
+        #     data['cart'] = cart
+        #     data['cartdishes'] = cartdishes
+        #     data['promocode'] = promocode
 
         return data
 
 
 class TakeawayOrderSerializer(BaseOrderSerializer):
     restaurant = serializers.PrimaryKeyRelatedField(
-        queryset=Restaurant.objects.all(),
+        queryset=Restaurant.objects.filter(is_active=True),
         required=True
     )
 
     class Meta(BaseOrderSerializer.Meta):
-        fields = BaseOrderSerializer.Meta.fields + ('restaurant',)
+        fields = BaseOrderSerializer.Meta.fields + (
+                    'restaurant', 'items_qty',
+                    'recipient_name', 'comment', 'persons_qty')
 
 
 class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
@@ -604,39 +696,48 @@ class TakeawayOrderWriteSerializer(TakeawayOrderSerializer):
         language = self.context.get('request').LANGUAGE_CODE
         request = self.context.get('request')
 
-        if not request.data:
-            return None
-            # Если что-то пошло не так или не было найдено корзины, возвращаем None
-
         if request.user.is_authenticated:
-
             user = validated_data.pop('base_profile')
-            cart = validated_data.pop('cart')
-            cartdishes = validated_data.pop('cartdishes')
+        else:
+            user = None
+
+        if 'orderdishes' in validated_data:
+            orderdishes = validated_data.pop('orderdishes')
 
             with transaction.atomic():
                 order = Order.objects.create(**validated_data,
-                                                user=user,
-                                                language=language)
+                                             user=user,
+                                             language=language)
 
                 OrderDish.create_orderdishes_from_cartdishes(
-                    order, cartdishes=cartdishes)
+                    order, no_cart_cartdishes=orderdishes)
+
+            # cart = validated_data.pop('cart')
+            # cartdishes = validated_data.pop('cartdishes')
+
+            # with transaction.atomic():
+            #     order = Order.objects.create(**validated_data,
+            #                                  user=user,
+            #                                  language=language)
+
+            #     OrderDish.create_orderdishes_from_cartdishes(
+            #         order, cartdishes=cartdishes)
 
                 # проверить единство расчетов фронт и бэк
 
-        else:
-            # Если пользователь не аутентифицирован, получаем данные
-            # orderdishes из сериализатора
-            if 'orderdishes' in validated_data:
-                orderdishes = validated_data.pop('orderdishes')
+        # else:
+        #     # Если пользователь не аутентифицирован, получаем данные
+        #     # orderdishes из сериализатора
+        #     if 'orderdishes' in validated_data:
+        #         orderdishes = validated_data.pop('orderdishes')
 
-                with transaction.atomic():
-                    order = Order.objects.create(**validated_data,
-                                                    user=None,
-                                                    language=language)
+        #         with transaction.atomic():
+        #             order = Order.objects.create(**validated_data,
+        #                                          user=user,
+        #                                          language=language)
 
-                    OrderDish.create_orderdishes_from_cartdishes(
-                        order, no_cart_cartdishes=orderdishes)
+        #             OrderDish.create_orderdishes_from_cartdishes(
+        #                 order, no_cart_cartdishes=orderdishes)
 
                     # проверить единство расчетов фронт и бэк
 
@@ -684,11 +785,15 @@ class DeliveryOrderSerializer(BaseOrderSerializer):
     recipient_address = serializers.CharField(required=True)
 
     class Meta(BaseOrderSerializer.Meta):
-        fields = BaseOrderSerializer.Meta.fields + ('recipient_address',)
+        fields = BaseOrderSerializer.Meta.fields + (
+                    'recipient_address', 'items_qty',
+                    'recipient_name', 'comment', 'persons_qty')
 
     def validate_recipient_address(self, value):
         try:
-            lat, lon, status = google_validate_address_and_get_coordinates(value)
+            lat, lon, status = (
+                google_validate_address_and_get_coordinates(value)
+            )
 
         except Exception as e:
             lat, lon, status = None, None, None
@@ -733,10 +838,6 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
         language = self.context.get('request').LANGUAGE_CODE
         request = self.context.get('request')
 
-        if not request.data:
-            return None
-            # Если что-то пошло не так или не было найдено корзины, возвращаем None
-
         validated_data['delivery_zone'] = get_delivery_zone(
                 self.validated_data.get('city'),
                 self.initial_data.get('lat'),
@@ -744,39 +845,51 @@ class DeliveryOrderWriteSerializer(DeliveryOrderSerializer):
             )
 
         if request.user.is_authenticated:
-
             user = validated_data.pop('base_profile')
-            cart = validated_data.pop('cart')
-            cartdishes = validated_data.pop('cartdishes')
+        else:
+            user = None
+
+        if 'orderdishes' in validated_data:
+            orderdishes = validated_data.pop('orderdishes')
+
+            with transaction.atomic():
+                order = Order.objects.create(**validated_data,
+                                             user=user,
+                                             language=language)
+
+                OrderDish.create_orderdishes_from_cartdishes(
+                    order, no_cart_cartdishes=orderdishes)
+            # cart = validated_data.pop('cart')
+            # cartdishes = validated_data.pop('cartdishes')
 
             # validated_data['delivery_address_data'] = {
             #     "lat": self.initial_data.get('lat'),
             #     "lon": self.initial_data.get('lon')
             # }
 
-            with transaction.atomic():
-                order = Order.objects.create(**validated_data,
-                                                user=user,
-                                                language=language)
+            # with transaction.atomic():
+            #     order = Order.objects.create(**validated_data,
+            #                                  user=user,
+            #                                  language=language)
 
-                OrderDish.create_orderdishes_from_cartdishes(
-                    order, cartdishes)
+            #     OrderDish.create_orderdishes_from_cartdishes(
+            #         order, cartdishes)
 
                 # проверить единство расчетов фронт и бэк
 
-        else:
-            # Если пользователь не аутентифицирован, получаем данные
-            # orderdishes из сериализатора
-            if 'orderdishes' in validated_data:
-                orderdishes = validated_data.pop('orderdishes')
+        # else:
+        #     # Если пользователь не аутентифицирован, получаем данные
+        #     # orderdishes из сериализатора
+        #     if 'orderdishes' in validated_data:
+        #         orderdishes = validated_data.pop('orderdishes')
 
-                with transaction.atomic():
-                    order = Order.objects.create(**validated_data,
-                                                    user=None,
-                                                    language=language)
+        #         with transaction.atomic():
+        #             order = Order.objects.create(**validated_data,
+        #                                          user=None,
+        #                                          language=language)
 
-                    OrderDish.create_orderdishes_from_cartdishes(
-                        order, no_cart_cartdishes=orderdishes)
+        #             OrderDish.create_orderdishes_from_cartdishes(
+        #                 order, no_cart_cartdishes=orderdishes)
 
                     # проверить единство расчетов фронт и бэк
         return order
@@ -800,424 +913,3 @@ class DeliveryConditionsSerializer(serializers.ModelSerializer):
                             'min_time', 'max_time',
                             'default_delivery_cost',
                             'discount')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#############------------------------------------------------------------------------------------------------------------------------#####
-
-# from django.contrib.auth import get_user_model
-# from django.db.models import F, QuerySet
-# from drf_extra_fields.fields import Base64ImageField
-# from rest_framework import serializers
-# from rest_framework.serializers import SerializerMethodField
-
-# from foodgram.settings import DEFAULT_RECIPES_LIMIT
-# from recipe.models import Favorit, Ingredient, Recipe, ShoppingCartUser, Tag
-# from user.models import Subscription
-
-# User = get_user_model()
-
-
-# class UserSerializer(serializers.ModelSerializer):
-#     """
-#     Базовый сериализатор для модели User.
-#     Все поля обязательны
-#     Валидация:
-#     1) проверка, что переданный username не 'me';
-#     2) проверка уникальности полей email и username по БД.
-#     """
-#     is_subscribed = serializers.SerializerMethodField()
-
-#     class Meta:
-#         fields = ('id', 'username', 'email', 'first_name',
-#                   'last_name', 'is_subscribed',
-#                   )
-#         model = User
-
-#     def validate_username(self, value: str) -> str:
-#         if value.lower() == 'me':
-#             raise serializers.ValidationError(
-#                 "Использовать 'me' в качестве username запрещено."
-#             )
-#         return value
-
-#     def get_is_subscribed(self, obj) -> bool:
-#         """Проверка подписки пользователей.
-
-#         Определяет - подписан ли текущий пользователь
-#         на просматриваемого пользователя.
-
-#         Args:
-#             obj (User): Пользователь, на которого проверяется подписка.
-
-#         Returns:
-#             bool: True, если подписка есть. Во всех остальных случаях False.
-#         """
-#         request = self.context['request']
-#         return Subscription.objects.filter(
-#             user=request.user.id,
-#             author=obj.id
-#         ).exists()
-
-
-# class SignUpSerializer(UserSerializer):
-#     """
-#     Сериализатор для регистрации нового пользователя.
-#     Все поля обязательны.
-#     Валидация:
-#      - Если в БД есть пользователи с переданными email или username,
-#     вызывается ошибка.
-#      - Если имя пользователя - me, вызывается ошибка.
-#     """
-#     email = serializers.EmailField(
-#         max_length=254,
-#         required=True
-#     )
-#     username = serializers.RegexField(
-#         regex=r'^[\w.@+-]+$',
-#         max_length=150,
-#         min_length=8
-#     )
-#     password = serializers.CharField(
-#         write_only=True,
-#         required=True,
-#         max_length=150,
-#         min_length=8
-#     )
-
-#     class Meta:
-#         fields = ('id', 'username', 'email', 'first_name',
-#                   'last_name', 'password')
-#         read_only_fields = ('id',)
-#         model = User
-
-#     def validate(self, data: dict) -> dict:
-#         username = data['username']
-#         email = data['email']
-#         password = data['password']
-#         if User.objects.filter(username=username).exists():
-#             raise serializers.ValidationError(
-#                 "Пользователь с таким username уже существует."
-#             )
-#         if User.objects.filter(email=email).exists():
-#             raise serializers.ValidationError(
-#                 "Пользователь с таким email уже существует."
-#             )
-#         if password is None:
-#             raise serializers.ValidationError(
-#                 "Придумайте пароль."
-#             )
-#         return data
-
-#     def create(self, validated_data: dict) -> User:
-#         """ Создаёт нового пользователя с запрошенными полями.
-#         Args:
-#             validated_data (dict): Полученные проверенные данные.
-#         Returns:
-#             User: Созданный пользователь.
-#         """
-#         user = User(
-#             email=validated_data['email'],
-#             username=validated_data['username'],
-#             first_name=validated_data['first_name'],
-#             last_name=validated_data['last_name'],
-#         )
-#         user.set_password(validated_data['password'])
-#         user.save()
-#         return user
-
-
-# class PasswordSerializer(serializers.Serializer):
-#     """
-#     Сериалайзер для данных, получаемых для смены пароля
-#     актуального пользователя.
-#     """
-#     new_password = serializers.CharField(write_only=True)
-#     current_password = serializers.CharField(write_only=True)
-
-#     def validate_current_password(self, value: str) -> str:
-#         user = self.initial_data['user']
-#         if not user.check_password(value):
-#             raise serializers.ValidationError(
-#                 'Введен неверный текущий пароль.'
-#             )
-#         return value
-
-#     def validate_new_password(self, value: str) -> str:
-#         if value == self.initial_data['current_password']:
-#             raise serializers.ValidationError(
-#                 'Новый пароль должен отличаться от старого!'
-#             )
-#         return value
-
-
-# class RecipesShortSerializer(serializers.ModelSerializer):
-#     """
-#     Сериализатор для краткого отображения рецептов.
-#     """
-#     image = Base64ImageField()
-
-#     class Meta:
-#         fields = ('id', 'image', 'cooking_time', 'name')
-#         model = Recipe
-#         read_only_fields = ('id', 'image', 'cooking_time', 'name')
-
-
-# class SubscriptionsSerializer(UserSerializer):
-#     """
-#     Сериализатор для отображения данных о рецептах и их авторов, находящихся
-#     в подписках у актуального пользователя.
-#     """
-#     recipes = serializers.SerializerMethodField()
-#     is_subscribed = serializers.SerializerMethodField()
-#     recipes_count = serializers.SerializerMethodField()
-
-#     class Meta:
-#         fields = ('id', 'username', 'email', 'first_name',
-#                   'last_name', 'is_subscribed', 'recipes',
-#                   'recipes_count',
-#                   )
-#         model = User
-
-#     def get_recipes(self, obj: User) -> dict:
-#         """ Получает список рецептов автора, на которого оформлена подписка
-#         и возвращает кол-во, переданное в параметр запроса recipes_limit,
-#         переданного в URL.
-#         Args:
-#             user (User): Автор на которого подписан пользователь.
-#         Returns:
-#             QuerySet: список рецептов автора из подписки.
-#         """
-#         recipes_limit = self.context['recipes_limit']
-#         if recipes_limit is None:
-#             recipes_limit = DEFAULT_RECIPES_LIMIT
-#         else:
-#             recipes_limit = int(recipes_limit)
-#         serializer = RecipesShortSerializer(
-#             obj.recipes.all()[:recipes_limit],
-#             many=True
-#         )
-#         return serializer.data
-
-#     def get_recipes_count(self, obj: User) -> int:
-#         """Получает количество рецептов всех подписанных авторов.
-#         Args:
-#             obj (User): автор, на которого подписан пользователь.
-#         Returns:
-#             int: Колличество рецептов автора из подписки пользователя.
-#         """
-#         return obj.recipes_count
-
-
-# class TagSerializer(serializers.ModelSerializer):
-#     """ Базовый сериализатор тэгов."""
-#     class Meta:
-#         fields = ('id', 'name', 'color', 'slug')
-#         model = Tag
-#         read_only_fields = ('id', 'name', 'color', 'slug')
-
-
-# class IngredientSerializer(serializers.ModelSerializer):
-#     """ Базовый сериализатор ингредиентов."""
-#     class Meta:
-#         fields = ('id', 'name', 'measurement_unit')
-#         model = Ingredient
-
-
-# class RecipeReadSerializer(serializers.ModelSerializer):
-#     """
-#     Сериализатор для полного отображения рецептов.
-#     Только для чтения.
-#     """
-#     tags = TagSerializer(many=True)
-#     ingredients = SerializerMethodField()
-#     author = UserSerializer()
-#     image = Base64ImageField()
-#     is_favorited = SerializerMethodField()
-#     is_in_shopping_cart = SerializerMethodField()
-
-#     class Meta:
-#         fields = ('id', 'tags', 'author',
-#                   'name', 'image', 'text', 'cooking_time',
-#                   'ingredients', 'is_favorited', 'is_in_shopping_cart'
-#                   )
-#         model = Recipe
-#         read_only_fields = ('id', 'author', 'tags'
-#                             'name', 'image', 'text', 'cooking_time',
-#                             'ingredients')
-
-#     def get_ingredients(self, recipe: Recipe) -> QuerySet[dict]:
-#         """Получает список ингридиентов для рецепта.
-
-#         Args:
-#             recipe (Recipe): Запрошенный рецепт.
-
-#         Returns:
-#             QuerySet[dict]: Список ингридиентов в рецепте.
-#         """
-#         return recipe.ingredients.values(
-#             'id',
-#             'name',
-#             'measurement_unit',
-#             amount=F('recipe__amount')
-#         )
-
-#     def get_is_favorited(self, recipe: Recipe) -> bool:
-#         """Получает булевое значение, если авторизованный пользователь имеет
-#         этот рецепт в избранном.
-#         Args:
-#             recipe (Recipe): Запрошенный рецепт.
-#         Returns:
-#             bool: в избранных или нет.
-#         """
-#         request = self.context['request']
-#         return Favorit.objects.filter(
-#             favoriter=request.user.id,
-#             recipe=recipe.id
-#         ).exists()
-
-#     def get_is_in_shopping_cart(self, recipe: Recipe) -> bool:
-#         """Получает булевое значение, если авторизованный пользователь имеет
-#         этот рецепт в корзине покупок.
-#         Args:
-#             recipe (Recipe): Запрошенный рецепт.
-#         Returns:
-#             bool: в корзине покупок или нет.
-#         """
-#         request = self.context['request']
-#         return ShoppingCartUser.objects.filter(
-#             owner=request.user.id,
-#             recipe=recipe.id
-#         ).exists()
-
-
-# class IngredientAmountSerializer(serializers.Serializer):
-#     """
-#     Сериализатор для записи ингредиентов и их колличества в рецепт.
-#     Валидация проверяет, что колличество ингредиента > 0.
-#     Так же автоматически прверяется наличие полей id, amount.
-#     """
-#     id = serializers.PrimaryKeyRelatedField(
-#         queryset=Ingredient.objects.all()
-#     )
-#     amount = serializers.IntegerField()
-
-#     def validate_amount(self, value: int) -> int:
-#         if value <= 0:
-#             raise serializers.ValidationError(
-#                 "Колличество ингредиента должно быть больше 0."
-#             )
-#         return value
-
-
-# class RecipeSerializer(serializers.ModelSerializer):
-#     """
-#     Сериализатор для записи рецептов.
-#     Валидация полей ingredients, tags на наличией хотя бы 1 записи.
-#     Описаны методы сохранения и изменения рецепта.
-#     Для представления сохраненного/измененного рецепта используется
-#     RecipeReadSerializer.
-#     """
-#     tags = serializers.PrimaryKeyRelatedField(
-#         many=True, queryset=Tag.objects.all()
-#     )
-#     ingredients = IngredientAmountSerializer(many=True, required=True)
-#     author = UserSerializer(read_only=True)
-#     image = Base64ImageField()
-
-#     class Meta:
-#         fields = ('author', 'name', 'image', 'text', 'cooking_time',
-#                   'ingredients', 'tags')
-#         model = Recipe
-
-#     def validate(self, data: dict) -> dict:
-#         """
-#         Проверка данных, введенных в полях ingredients, tags.
-#         Обработка изображения для сохранения в БД.
-#         Проверка колличества проведена в сериализаторе
-#         IngredientAmountSerializer.
-#         Args:
-#             data (dict): непроверенные данные из запроса.
-#         Returns:
-#             dict: данные, прошедшие проверку.
-#         """
-#         ingredients = data.get('ingredients')
-#         tags = data.get('tags')
-#         if len(ingredients) == 0:
-#             raise serializers.ValidationError({
-#                 'ingredients':
-#                     'Выберите хотя бы 1 ингредиент.'
-#             })
-#         ingr_list = []
-#         for ingredient in ingredients:
-#             if ingredient['id'] in ingr_list:
-#                 raise serializers.ValidationError({
-#                     "ingredients": [
-#                         {
-#                             "id": [
-#                                 "Проверьте ингредиенты на повторение."
-#                             ]
-#                         },
-#                     ]
-#                 })
-#             ingr_list.append(ingredient['id'])
-
-#         if len(tags) == 0:
-#             raise serializers.ValidationError({
-#                 'tags': 'Выберите хотя бы 1 тэг.'
-#             })
-#         return data
-
-#     def create(self, validated_data: dict) -> Recipe:
-#         """
-#         Метод для создания рецепта.
-#         Args:
-#             validated_data (dict): проверенные данные из запроса.
-#         Returns:
-#             Recipe: созданный рецепт.
-#         """
-#         ingredients = validated_data.pop('ingredients')
-#         tags = validated_data.pop('tags')
-#         request = self.context['request']
-#         recipe = Recipe.objects.create(**validated_data, author=request.user)
-#         recipe.load_ingredients(ingredients)
-#         recipe.tags.set(tags)
-#         return recipe
-
-#     def update(self, instance: Recipe, validated_data: dict) -> Recipe:
-#         """
-#         Метод для редакции рецепта.
-#         Args:
-#             instance (Recipe): изменяемый рецепт
-#             validated_data (dict): проверенные данные из запроса.
-#         Returns:
-#             Recipe: созданный рецепт.
-#         """
-#         ingredients = validated_data.pop('ingredients')
-#         tags = validated_data.pop('tags')
-#         super().update(instance, validated_data)
-#         instance.ingredients.clear()
-#         instance.load_ingredients(ingredients)
-#         instance.tags.clear()
-#         instance.tags.set(tags)
-#         return instance
-
-#     def to_representation(self, instance: Recipe) -> dict:
-#         """
-#         Метод для выбора RecipeReadSerializer сериализатором для
-#         отображения созданного/измененного рецепта.
-#         """
-#         serializer = RecipeReadSerializer(instance)
-#         serializer.context['request'] = self.context['request']
-#         return serializer.data

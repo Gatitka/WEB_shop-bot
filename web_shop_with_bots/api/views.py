@@ -1,64 +1,40 @@
+import logging
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
-from django.shortcuts import get_object_or_404, redirect
+from django.db.models import Prefetch
+from django.http import JsonResponse
+from django.utils.translation import activate
+from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
+from djoser import utils
+from djoser.views import UserViewSet
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from api.permissions import MyIsAdmin
-
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.utils.translation import get_language_from_request
-from django.db.models import Prefetch
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+from rest_framework_simplejwt.tokens import RefreshToken
+from catalog.validators import validator_dish_exists_active
+from api.exceptions import CustomHttp400
+from api.permissions import MyIsAdmin
 from catalog.models import Dish
-from delivery_contacts.models import Delivery, Restaurant, DeliveryZone
-from promos.models import PromoNews, Promocode, PrivatPromocode
-from shop.models import CartDish, Order, OrderDish, ShoppingCart
-from users.models import BaseProfile, UserAddress
-from django.urls import reverse
-from django.http import JsonResponse
-from django.utils.translation import activate
-import logging
-from .filters import CategoryFilter
-from django.core.exceptions import ValidationError
-from.serializers import (CartDishSerializer, DeliverySerializer,
-                         DishMenuSerializer, PromoNewsSerializer,
-
-                         ShoppingCartSerializer,
-                         RestaurantSerializer,
-                         RestaurantSerializer,
-                         UserAddressSerializer,
-                         UserOrdersSerializer,
-                         UserPromocodeSerializer,
-                         ContactsDeliverySerializer,
-                         TakeawayOrderSerializer,
-                         TakeawayConditionsSerializer,
-                         TakeawayOrderWriteSerializer,
-                         DeliveryOrderSerializer,
-                         DeliveryConditionsSerializer,
-                         DeliveryOrderWriteSerializer,
-                        )
-from decimal import Decimal
-from shop.utils import get_reply_data_delivery
-from shop.services import get_cart
-from rest_framework.exceptions import ValidationError
-from django.conf import settings
+from catalog.validators import validator_dish_exists_active
+from delivery_contacts.models import Delivery, Restaurant
 from delivery_contacts.services import (get_delivery,
                                         get_delivery_cost_zone_by_address)
 from delivery_contacts.utils import get_google_api_key
-from djoser.views import UserViewSet
-from djoser import utils
-from rest_framework_simplejwt.token_blacklist.models import (
-    BlacklistedToken,
-    OutstandingToken)
-from shop.utils import (get_repeat_order_form_data,
-                        get_reply_data_takeaway,
-                        get_cart_responce_dict)
-from shop.services import (get_base_profile_and_shopping_cart,
-                           get_cart_detailed,)
-from django.http import JsonResponse
-from django.core.exceptions import ObjectDoesNotExist
+from promos.models import PrivatPromocode, PromoNews
+from shop.models import CartDish, Order, OrderDish, Discount
+from shop.services import (get_base_profile_and_shopping_cart, get_cart,
+                           base_profile_first_order)
+from .services import (get_promoc_resp_dict, get_repeat_order_form_data,
+                       get_reply_data_delivery, get_reply_data_takeaway)
+from users.models import BaseProfile, UserAddress
 
+from . import serializers as srlz
+from .filters import CategoryFilter
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +50,7 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
     Доступно только чтение списка
     """
     permission_classes = [AllowAny,]
-    serializer_class = ContactsDeliverySerializer
+    serializer_class = srlz.ContactsDeliverySerializer
 
     def list(self, request, *args, **kwargs):
         contacts_delivery_data = []
@@ -92,10 +68,10 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
             city_contacts_delivery_data = {
                 'city': city,
 
-                'restaurants': RestaurantSerializer(
+                'restaurants': srlz.RestaurantSerializer(
                     restaurants, many=True).data,
 
-                'delivery': DeliverySerializer(
+                'delivery': srlz.DeliverySerializer(
                     delivery, many=True).data if delivery else None
             }
             contacts_delivery_data.append(city_contacts_delivery_data)
@@ -112,13 +88,24 @@ class MyAddressViewSet(mixins.ListModelMixin,
     """
     Вьюсет модели UserAddresses для просмотра сохраненных адресов пользователя.
     """
-    serializer_class = UserAddressSerializer
+    serializer_class = srlz.UserAddressSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return UserAddress.objects.filter(
             base_profile=self.request.user.base_profile
         )
+
+    def get_object(self):
+        address_pk = self.kwargs.get('pk')
+        try:
+            # Пытаемся найти адрес
+            address = self.get_queryset().get(id=int(address_pk))
+            return address
+        except UserAddress.DoesNotExist:
+            # Если адрес с указанным идентификатором не найден,
+            # возвращаем ошибку
+            raise CustomHttp400("Such address is unavailable.", code='invalid')
 
     def perform_create(self, serializer):
         serializer.save(base_profile=self.request.user.base_profile)
@@ -132,7 +119,7 @@ class ClientAddressesViewSet(mixins.ListModelMixin,
     """
     Вьюсет для всех пользователей для получения сохраненных адресов клиента.
     """
-    serializer_class = UserAddressSerializer
+    serializer_class = srlz.UserAddressSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
@@ -151,8 +138,9 @@ class PromoNewsViewSet(viewsets.ReadOnlyModelViewSet):
     Вьюсет модели PromoNews доступен только для чтения.
     Отбираются только новости is_active=True.
     """
-    queryset = PromoNews.objects.filter(is_active=True).all().prefetch_related('translations')
-    serializer_class = PromoNewsSerializer
+    queryset = PromoNews.objects.filter(
+                    is_active=True).all().prefetch_related('translations')
+    serializer_class = srlz.PromoNewsSerializer
     permission_classes = [AllowAny,]
 
 
@@ -160,7 +148,7 @@ class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Вьюсет модели Orders для просмотра истории заказов.
     """
-    serializer_class = UserOrdersSerializer
+    serializer_class = srlz.UserOrdersSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -199,13 +187,13 @@ class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
             user=current_user.base_profile, id=pk).first()
         if order is None:
             logger.warning("No such order ID in user's history.")
-            return Response("There's no such order ID in you history.",
+            return Response(_("There's no such order ID in you orders history."),
                             status=status.HTTP_204_NO_CONTENT)
 
         base_profile, cart = get_base_profile_and_shopping_cart(
             current_user, validation=True, half_validation=True)
 
-        cart.empty_cart(clean_promocode=False)
+        cart.empty_cart()
         cart_dishes_to_create = [
             CartDish(dish=cartdish.dish, quantity=cartdish.quantity, cart=cart)
             for cartdish in order.orderdishes.all()
@@ -232,7 +220,7 @@ class MyPromocodesViewSet(mixins.ListModelMixin,
     """
     Вьюсет для просмотра личных промокодов.
     """
-    serializer_class = UserPromocodeSerializer
+    serializer_class = srlz.UserPromocodeSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -256,7 +244,7 @@ class MenuViewSet(mixins.ListModelMixin,
     и выдает список всех рецептов/нахоядщихся в корзине.
     """
     permission_classes = [AllowAny,]
-    serializer_class = DishMenuSerializer
+    serializer_class = srlz.DishMenuSerializer
     filter_backends = (DjangoFilterBackend,)
     filterset_class = CategoryFilter
     queryset = Dish.objects.filter(
@@ -312,7 +300,7 @@ class MenuViewSet(mixins.ListModelMixin,
         return Response(serializer.data)
 
     @action(detail=True,
-            methods=['post'])   # , 'delete'])
+            methods=['post'])
     def add_to_shopping_cart(self, request, pk=None):
         """
         Добавление блюда в корзину из общего меню.\n
@@ -328,40 +316,36 @@ class MenuViewSet(mixins.ListModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
-        method = request.META['REQUEST_METHOD']
-        current_user = request.user
+        # method = request.META['REQUEST_METHOD']
+        validator_dish_exists_active(pk)
 
-        if current_user.is_authenticated:
-            try:
-                dish = get_object_or_404(Dish, article=pk, is_active=True)
+        # dish = get_dish_validate_exists_active(pk)
+        # current_user = request.user
+        # if current_user.is_authenticated:
+        #     # cart = get_cart(current_user, validation=False)
+        #     # не исп, т.к. для доб в корз не нужны ни переводы, ни промокоды, ничего
 
-            except ObjectDoesNotExist:
-                return JsonResponse({"error":
-                                     "Unfortunately the requested dish is currently unavailable."},
-                                     status=404)
+        #     cart, state = ShoppingCart.objects.get_or_create(
+        #         user=current_user.base_profile,
+        #         complited=False)
 
-            # cart = get_cart(current_user, validation=False)
-            # не исп, т.к. для доб в корз не нужны ни переводы, ни промокоды, ничего
+        #     if method == 'POST':
+        #         cartdish, created = CartDish.objects.get_or_create(
+        #             cart=cart, dish=dish)
+        #         if not created:
+        #             cartdish.quantity += 1
+        #             cartdish.save(update_fields=['quantity', 'amount'])
 
-            cart, state = ShoppingCart.objects.get_or_create(
-                user=current_user.base_profile,
-                complited=False)
+        #         return Response({'cartdish': f'{cartdish.id}',
+        #                          'quantity': f'{cartdish.quantity}',
+        #                          'amount': f'{cartdish.amount}',
+        #                          'dish': f'{cartdish.dish.article}'
+        #                          },
+        #                         status=status.HTTP_200_OK)
 
-            if method == 'POST':
-                cartdish, created = CartDish.objects.get_or_create(
-                    cart=cart, dish=dish)
-                if not created:
-                    cartdish.quantity += 1
-                    cartdish.save(update_fields=['quantity', 'amount'])
-
-                return Response({'cartdish': f'{cartdish.id}',
-                                 'quantity': f'{cartdish.quantity}',
-                                 'amount': f'{cartdish.amount}',
-                                 'dish': f'{cartdish.dish.article}'
-                                 },
-                                status=status.HTTP_200_OK)
-
-        return Response({}, status=status.HTTP_204_NO_CONTENT)
+        return Response({"message":
+                         "Dish is successfully added into the cart."},
+                        status=status.HTTP_204_NO_CONTENT)
 
 
 class ShoppingCartViewSet(mixins.UpdateModelMixin,
@@ -374,34 +358,35 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
     Вьюсет для просмотра и редакции товаров в корзине.
     PUT запросы запрещены.
     """
-    queryset = CartDish.objects.all()
+    # queryset = CartDish.objects.all()
     permission_classes = [AllowAny,]
 
     def get_queryset(self):
-        current_user = self.request.user
-
-        if current_user.is_authenticated:
-            return get_cart_detailed(current_user)
-
         return None
+    #     current_user = self.request.user
 
-    def get_object(self):
-        cart = self.get_queryset()
-        if cart:
-            cartdishes = cart.cartdishes.all()
-            cartdish_id = self.kwargs.get('pk')
+    #     if current_user.is_authenticated:
+    #         # return get_cart_detailed(current_user)
 
-            return get_object_or_404(cartdishes, pk=cartdish_id)
+    #     return None
 
-        return None
+    # def get_object(self):
+    #     cart = self.get_queryset()
+    #     if cart:
+    #         cartdishes = cart.cartdishes.all()
+    #         cartdish_id = self.kwargs.get('pk')
+
+    #         return get_object_or_404(cartdishes, pk=cartdish_id)
+
+    #     return None
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return ShoppingCartSerializer
-        elif self.action == 'promocode':
-            return ShoppingCartSerializer
-        elif self.action == 'partial_update':
-            return CartDishSerializer
+            return srlz.ShoppingCartSerializer
+    #     elif self.action == 'promocode':
+    #         return srlz.ShoppingCartSerializer
+    #     elif self.action == 'partial_update':
+    #         return srlz.CartDishSerializer
 
     def list(self, request, *args, **kwargs):
         """
@@ -409,28 +394,56 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         А так же информации о корзине: сумма, сумма с учетом скидки промокода,
         промокод, кол-во позиций.
         """
-        if not request.user.is_authenticated:
-            return Response({}, status=status.HTTP_204_NO_CONTENT)
+        data = request.data
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
 
-        cart = self.get_queryset()
-        if cart:
-            cart_serializer = ShoppingCartSerializer(cart)
-            return Response(cart_serializer.data)
+        current_user = self.request.user
+        if current_user.is_authenticated:
+            if base_profile_first_order(current_user):
+                discount = Discount.orders.get(type='первый заказ')
+                reply = {"first_order": True,
+                         "discount": discount.show_discount()}
+
+            else:
+                reply = {"first_order": False,
+                         "discount": None}
+
+            return Response(reply,
+                            status=status.HTTP_200_OK)
+
+        return Response({}, status=status.HTTP_200_OK)
+
+        # if not request.user.is_authenticated:
+        #     data = request.data
+        #     serializer = self.get_serializer(data=data)
+        #     serializer.is_valid(raise_exception=True)
+
+        #     cart_responce_dict = get_cart_responce_dict(
+        #                             serializer.validated_data, request)
+        #     return Response(cart_responce_dict,
+        #                     status=status.HTTP_200_OK)
+
+        # cart = self.get_queryset()
+        # if cart:
+        #     cart_serializer = srlz.ShoppingCartSerializer(cart)
+        #     return Response(cart_serializer.data)
 
     def destroy(self, request, *args, **kwargs):
         """
         Удаление всего блюда (cartdish) из корзины. Корзина пересохраняется.
         id - id cartdish (не id блюда, а именно связи корзина-блюдо(cartdish))
         """
-        if not request.user.is_authenticated:
-            return Response({}, status=status.HTTP_204_NO_CONTENT)
+        # if not request.user.is_authenticated:
+        #     return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-        super().destroy(request, *args, **kwargs)
+        # super().destroy(request, *args, **kwargs)
 
-        redirect_url = reverse('api:shopping_cart-list')
-        return Response({'detail': 'Блюдо успешно удалено.'},
-                        status=status.HTTP_200_OK,
-                        headers={'Location': redirect_url})
+        # redirect_url = reverse('api:shopping_cart-list')
+        # return Response({'detail': 'Блюдо успешно удалено.'},
+        #                 status=status.HTTP_200_OK,
+        #                 headers={'Location': redirect_url})
+        return Response({}, status=status.HTTP_200_OK)
 
     def update(self, request, *args, **kwargs):
         """
@@ -438,7 +451,8 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         """
         if request.method == "PUT":
             return self.http_method_not_allowed(request, *args, **kwargs)
-        return super().update(request, *args, **kwargs)
+        # return super().update(request, *args, **kwargs)
+        return Response({}, status=status.HTTP_200_OK)
 
     def partial_update(self, request, *args, **kwargs):
         """
@@ -447,15 +461,16 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         quantity >= 1.
         !!! dish в payload не нужен!!!
         """
-        if not request.user.is_authenticated:
-            return Response({}, status=status.HTTP_204_NO_CONTENT)
+        # if not request.user.is_authenticated:
+        #     return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-        super().update(request, *args, **kwargs)
+        # super().update(request, *args, **kwargs)
 
-        redirect_url = reverse('api:shopping_cart-list')
-        return Response({'detail': 'Колличество успешно изменено.'},
-                        status=status.HTTP_200_OK,
-                        headers={'Location': redirect_url})
+        # redirect_url = reverse('api:shopping_cart-list')
+        # return Response({'detail': 'Колличество успешно изменено.'},
+        #                 status=status.HTTP_200_OK,
+        #                 headers={'Location': redirect_url})
+        return Response({}, status=status.HTTP_200_OK)
 
     @action(detail=False,
             methods=['delete'])
@@ -464,16 +479,17 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Все товары(cartdishes) в корзине удаляются, сама корзина остается пустой
         и не удаляется.
         """
-        if not request.user.is_authenticated:
-            return Response({}, status=status.HTTP_204_NO_CONTENT)
+        # if not request.user.is_authenticated:
+        #     return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-        cart = self.get_queryset()
+        # cart = self.get_queryset()
 
-        cart.empty_cart()
-        redirect_url = reverse('api:shopping_cart-list')
-        return Response({'detail': 'Корзина успешно очищена.'},
-                        status=status.HTTP_204_NO_CONTENT,
-                        headers={'Location': redirect_url})
+        # cart.empty_cart()
+        # redirect_url = reverse('api:shopping_cart-list')
+        # return Response({'detail': 'Корзина успешно очищена.'},
+        #                 status=status.HTTP_204_NO_CONTENT,
+        #                 headers={'Location': redirect_url})
+        return Response({}, status=status.HTTP_200_OK)
 
     @action(detail=True,
             methods=['get'],
@@ -491,18 +507,19 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
-        if not request.user.is_authenticated:
-            return Response({}, status=status.HTTP_204_NO_CONTENT)
+        # if not request.user.is_authenticated:
+        #     return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-        cartdish = self.get_object()
+        # cartdish = self.get_object()
 
-        cartdish.quantity += 1
-        cartdish.save()
+        # cartdish.quantity += 1
+        # cartdish.save()
 
-        redirect_url = reverse('api:shopping_cart-list')
-        return Response({'detail': 'Блюдо успешно добавлено.'},
-                        status=status.HTTP_200_OK,
-                        headers={'Location': redirect_url})
+        # redirect_url = reverse('api:shopping_cart-list')
+        # return Response({'detail': 'Блюдо успешно добавлено.'},
+        #                 status=status.HTTP_200_OK,
+        #                 headers={'Location': redirect_url})
+        return Response({}, status=status.HTTP_200_OK)
 
     @action(detail=True,
             methods=['get'],
@@ -520,56 +537,22 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
         Returns:
             Responce: Статус подтверждающий/отклоняющий действие.
         """
-        if not request.user.is_authenticated:
-            return Response({}, status=status.HTTP_204_NO_CONTENT)
+        # if not request.user.is_authenticated:
+        #     return Response({}, status=status.HTTP_204_NO_CONTENT)
 
-        cartdish = self.get_object()
+        # cartdish = self.get_object()
 
-        if cartdish.quantity > 1:
-            cartdish.quantity -= 1
-            cartdish.save()
-        else:
-            cartdish.delete()
+        # if cartdish.quantity > 1:
+        #     cartdish.quantity -= 1
+        #     cartdish.save()
+        # else:
+        #     cartdish.delete()
 
-        redirect_url = reverse('api:shopping_cart-list')
-        return Response({'detail': 'Блюдо успешно убрано.'},
-                        status=status.HTTP_200_OK,
-                        headers={'Location': redirect_url})
-
-    @action(detail=False,
-            methods=['post'])
-    def promocode(self, request, *args, **kwargs):
-        """
-        Редактирование промокода (promocode) корзины.
-        Для удаления промокода передать { "promocode": null }.
-        """
-        current_user = request.user
-        if not current_user.is_authenticated:
-            data = request.data
-            serializer = self.get_serializer(data=data)
-            serializer.is_valid(raise_exception=True)
-
-            cart_responce_dict = get_cart_responce_dict(
-                                    serializer.validated_data, request)
-            return Response(cart_responce_dict,
-                            status=status.HTTP_200_OK)
-
-        cart = self.get_queryset()
-
-        if cart:
-            data = request.data
-            serializer = self.get_serializer(cart, data=data)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-        else:
-            return Response({}, status=status.HTTP_204_NO_CONTENT)
-
-        if cart.promocode:
-            return Response({'detail': 'Promocode is succesfylly added.'},
-                            status=status.HTTP_200_OK)
-        else:
-            return Response({'detail': 'Promocode успешно удален.'},
-                            status=status.HTTP_200_OK)
+        # redirect_url = reverse('api:shopping_cart-list')
+        # return Response({'detail': 'Блюдо успешно убрано.'},
+        #                 status=status.HTTP_200_OK,
+        #                 headers={'Location': redirect_url})
+        return Response({}, status=status.HTTP_200_OK)
 
 
 class ShopViewSet(viewsets.ReadOnlyModelViewSet):
@@ -578,7 +561,7 @@ class ShopViewSet(viewsets.ReadOnlyModelViewSet):
     Изменение, создание, удаление ресторанов разрешено только через админку.
     """
     queryset = Restaurant.objects.filter(is_active=True).all()
-    serializer_class = RestaurantSerializer
+    serializer_class = srlz.RestaurantSerializer
     pagination_class = None
 
 
@@ -588,7 +571,7 @@ class DeliveryViewSet(viewsets.ReadOnlyModelViewSet):
     Изменение, создание, удаление разрешено только через админку.
     """
     queryset = Delivery.objects.filter(is_active=True).all()
-    serializer_class = DeliverySerializer
+    serializer_class = srlz.DeliverySerializer
     pagination_class = None
 
 
@@ -618,11 +601,13 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return TakeawayConditionsSerializer
+            return srlz.TakeawayConditionsSerializer
         elif self.action == 'create':
-            return TakeawayOrderWriteSerializer
+            return srlz.TakeawayOrderWriteSerializer
         elif self.action == 'pre_checkout':
-            return TakeawayOrderSerializer
+            return srlz.TakeawayOrderSerializer
+        elif self.action == 'promocode':
+            return srlz.BaseOrderSerializer
 
     def create(self, request, *args, **kwargs):
         if not request.data:
@@ -645,11 +630,12 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
             methods=['post'])
     def pre_checkout(self, request, *args, **kwargs):
         """
-        !!!! Вьюсет для валидации данных и предварительного расчета заказа без его сохранения.
+        Предварительный расчет заказа САМОВЫВОЗ: валидация данных,
+        расчет без сохранения.
         Ответ либо ошибки валидации данных, либо расчет заказа:
         {
             "amount": 5500.0,
-            "promocode": "take10",
+            "promocode": "percnt10",
             "total_discount": 495.0,
             "total": {
                 "title": "order_final_amount_with_shipping",
@@ -668,23 +654,48 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
                                          context=context)
         serializer.is_valid(raise_exception=True)
 
-        current_user = self.request.user
+        # current_user = self.request.user
+        # if current_user.is_authenticated:
+        #     cart = get_cart(current_user)
 
-        if current_user.is_authenticated:
-            cart = get_cart(current_user)
+        #     reply_data = get_reply_data_takeaway(delivery,
+        #                                          cart=cart,
+        #                                          request=request)
 
-            reply_data = get_reply_data_takeaway(delivery,
-                                                 cart=cart)
+        # else:
+        orderdishes = serializer.validated_data.get('orderdishes')
+        promocode = serializer.validated_data.get('promocode')
 
-        else:
-            orderdishes = serializer.validated_data.get('orderdishes')
-            promocode = serializer.validated_data.get('promocode')
-
-            reply_data = get_reply_data_takeaway(delivery,
-                                                 orderdishes=orderdishes,
-                                                 promocode=promocode)
+        reply_data = get_reply_data_takeaway(delivery,
+                                             orderdishes=orderdishes,
+                                             promocode=promocode,
+                                             request=request)
 
         return Response(reply_data, status=status.HTTP_200_OK)
+
+    @action(detail=False,
+            methods=['post'])
+    def promocode(self, request, *args, **kwargs):
+        """
+        Редактирование промокода (promocode) корзины.
+        Для удаления промокода передать { "promocode": null }.
+        """
+        if not request.data:
+            return Response({'error': 'Request is missing'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        delivery = get_delivery(request, 'takeaway')
+        context = {'extra_kwargs': {'delivery': delivery},
+                   'request': request}
+
+        serializer = self.get_serializer(data=request.data,
+                                         context=context)
+        serializer.is_valid(raise_exception=True)
+
+        promoc_resp_dict = get_promoc_resp_dict(
+                            serializer.validated_data, request)
+        return Response(promoc_resp_dict,
+                        status=status.HTTP_200_OK)
 
 
 class DeliveryOrderViewSet(mixins.CreateModelMixin,
@@ -713,11 +724,13 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return DeliveryConditionsSerializer
+            return srlz.DeliveryConditionsSerializer
         elif self.action == 'create':
-            return DeliveryOrderWriteSerializer
+            return srlz.DeliveryOrderWriteSerializer
         elif self.action == 'pre_checkout':
-            return DeliveryOrderSerializer
+            return srlz.DeliveryOrderSerializer
+        elif self.action == 'promocode':
+            return srlz.BaseOrderSerializer
 
     def create(self, request, *args, **kwargs):
         if not request.data:
@@ -740,11 +753,12 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
             methods=['post'])
     def pre_checkout(self, request, *args, **kwargs):
         """
-        !!!! Вьюсет для валидации данных и предварительного расчета заказа без его сохранения.
+        Предварительный расчет заказа ДОСТАВКА: валидация данных,
+        расчет без сохранения.
         Ответ либо ошибки валидации данных, либо расчет заказа:
         {
             "amount": 5500.0,
-            "promocode": "take10",
+            "promocode": "percnt10",
             "total_discount": 1045.0,
             "delivery_cost": 500.0,
             "total": {
@@ -773,16 +787,41 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
             cart = serializer.validated_data.get('cart')
 
             reply_data = get_reply_data_delivery(delivery, city, lat, lon,
-                                                 cart=cart)
+                                                 cart=cart, request=request)
         else:
             orderdishes = serializer.validated_data.get('orderdishes')
             promocode = serializer.validated_data.get('promocode')
 
             reply_data = get_reply_data_delivery(delivery, city, lat, lon,
                                                  orderdishes=orderdishes,
-                                                 promocode=promocode)
+                                                 promocode=promocode,
+                                                 request=request)
 
         return Response(reply_data, status=status.HTTP_200_OK)
+
+    @action(detail=False,
+            methods=['post'])
+    def promocode(self, request, *args, **kwargs):
+        """
+        Редактирование промокода (promocode) корзины.
+        Для удаления промокода передать { "promocode": null }.
+        """
+        if not request.data:
+            return Response({'error': 'Request is missing'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        delivery = get_delivery(request, 'delivery')
+        context = {'extra_kwargs': {'delivery': delivery},
+                   'request': request}
+
+        serializer = self.get_serializer(data=request.data,
+                                         context=context)
+        serializer.is_valid(raise_exception=True)
+
+        promoc_resp_dict = get_promoc_resp_dict(
+                            serializer.validated_data, request)
+        return Response(promoc_resp_dict,
+                        status=status.HTTP_200_OK)
 
 
 def get_unit_price(request):
@@ -814,7 +853,6 @@ def get_unit_price(request):
 class MyUserViewSet(UserViewSet):
 
     def perform_update(self, serializer):
-        validated_data = serializer.validated_data
         serializer.save()
 
     def destroy(self, request, *args, **kwargs):
@@ -835,30 +873,11 @@ class MyUserViewSet(UserViewSet):
             active_tokens = OutstandingToken.objects.filter(user=instance)
             # Добавляем каждый активный токен в черный список
             for token in active_tokens:
-                BlacklistedToken.objects.create(token=token)
+                # BlacklistedToken.objects.create(token=token)
+                token_obj = RefreshToken(token.token)
+                token_obj.blacklist()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-
-
-
-
-# @login_required
-# def get_user_data(request):
-#     if request.method == 'GET':
-#         user_id = request.GET.get('user_id')
-#         try:
-#             user = BaseProfile.objects.get(id=user_id)
-#             user_data = {
-#                 'recipient_name': user.first_name,
-#                 'recipient_phone': str(user.phone)
-#             }
-#             return JsonResponse(user_data)
-#         except BaseProfile.DoesNotExist:
-#             return JsonResponse({'error': 'Пользователь не найден'}, status=404)
-#     else:
-#         return JsonResponse({'error': 'Метод не разрешен'}, status=405)
 
 
 class UserDataAPIView(APIView):
@@ -870,7 +889,7 @@ class UserDataAPIView(APIView):
         try:
             user = BaseProfile.objects.get(id=user_id)
             # Проверяем, является ли текущий пользователь владельцем
-            # запрашиваемого профиля
+            # запрашиваемого профиля или админом
             if user != request.user.base_profile and not request.user.is_admin:
                 return JsonResponse(
                     {'error':
@@ -895,13 +914,15 @@ class UserDataAPIView(APIView):
             return JsonResponse(user_data)
 
         except BaseProfile.DoesNotExist:
-            return JsonResponse({'error': 'Пользователь не найден'},
+            return JsonResponse({'error': _("User is not found.")},
                                 status=404)
 
 
+import json
+
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-import json
+
 
 @csrf_exempt
 @require_POST
@@ -943,7 +964,7 @@ def calculate_delivery(request):
 
     else:
         # Если запрос не является AJAX-запросом, возвращаем ошибку
-        return JsonResponse({'error': 'This endpoint only accepts AJAX requests'}, status=400)
+        return JsonResponse({'error': _('This endpoint only accepts AJAX requests.')}, status=400)
 
 
 class GetGoogleAPIKeyAPIView(APIView):
@@ -955,313 +976,3 @@ class GetGoogleAPIKeyAPIView(APIView):
         google_api_key = get_google_api_key()
 
         return JsonResponse({"GOOGLE_API_KEY": google_api_key})
-
-
-######-------------------------------------------------------------------------------------------------------#####
-
-# from django.contrib.auth import get_user_model
-# from django.db.models import Count, F, Sum
-# from django.http import HttpResponse
-# from django.shortcuts import get_object_or_404, redirect
-# from django.utils import timezone
-# from django_filters.rest_framework import DjangoFilterBackend
-# from rest_framework import mixins, status, viewsets
-# from rest_framework.decorators import action
-# from rest_framework.permissions import AllowAny, IsAuthenticated
-# from rest_framework.response import Response
-
-# from api.filters import IngredientFilter, RecipeFilter
-# from api.permissions import IsAuthorAdminOrReadOnly
-# from api.serializers import (IngredientSerializer, PasswordSerializer,
-#                              RecipeSerializer, RecipesShortSerializer,
-#                              SignUpSerializer, SubscriptionsSerializer,
-#                              TagSerializer, UserSerializer)
-# from api.utils import check_existance_create_delete
-# from recipe.models import Favorit, Ingredient, Recipe, ShoppingCartUser, Tag
-# from user.models import Subscription
-
-# User = get_user_model()
-
-
-# DATE_TIME_FORMAT = '%d/%m/%Y %H:%M'
-
-
-# class MyUserViewSet(mixins.CreateModelMixin,
-#                     mixins.RetrieveModelMixin,
-#                     mixins.ListModelMixin,
-#                     viewsets.GenericViewSet):
-#     """
-#     Вьюсет модели User для отображения списка пользователей, создания
-#     нового пользователя, изменения пароля, просмотра конкретного
-#     пользователя, актуального пользователя (/me),
-#     страницы подписок (/subscriptions).
-
-#     """
-#     queryset = User.objects.all()
-#     serializer_class = UserSerializer
-#     permission_classes = [AllowAny]
-
-#     def get_instance(self):
-#         return self.request.user
-
-#     def get_serializer_class(self):
-#         if self.action in ["create", "partial_update"]:
-#             return SignUpSerializer
-#         return self.serializer_class
-
-#     @action(
-#         detail=False,
-#         methods=['get'],
-#         serializer_class=UserSerializer,
-#         permission_classes=[IsAuthenticated],
-#         url_path='me'
-#     )
-#     def user_profile(self, request):
-#         """
-#         Экшен для обработки страницы актуального пользователя
-#         api/users/me. Только GET, PATCH запросы
-#         """
-#         self.get_object = self.get_instance
-#         if request.method == "GET":
-#             return self.retrieve(request)
-#         return self.partial_update(request)
-
-#     @action(detail=False,
-#             methods=['post'],
-#             permission_classes=[IsAuthenticated])
-#     def set_password(self, request):
-#         """
-#         Экшен для обработки страницы смены пароля
-#         api/users/set_password.
-#         Только POST запросы.
-#         """
-#         user = request.user
-#         request.data['user'] = user
-#         serializer = PasswordSerializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user.set_password(request.data['new_password'])
-#         user.save()
-#         return Response(status=status.HTTP_204_NO_CONTENT)
-
-#     @action(detail=False,
-#             methods=['get'],
-#             permission_classes=[IsAuthenticated]
-#             )
-#     def subscriptions(self, request):
-#         """
-#         Экшен для получения данных об авторах, находящихся в подписках у
-#         актуального пользователя, а так же их подписках.
-#         Только GET запросы.
-#         """
-#         queryset = User.objects.filter(
-#             following__user=self.request.user
-#         ).annotate(recipes_count=Count('recipes'))
-#         page = self.paginate_queryset(queryset)
-#         if page is not None:
-#             serializer = SubscriptionsSerializer(page, many=True)
-#             serializer.context['request'] = request
-#             serializer.context[
-#                 'recipes_limit'
-#             ] = request.query_params.get('recipes_limit')
-#             return self.get_paginated_response(serializer.data)
-
-#         serializer = SubscriptionsSerializer(queryset, many=True)
-#         serializer.context['request'] = request
-#         serializer.context[
-#             'recipes_limit'
-#         ] = request.query_params.get('recipes_limit')
-#         return Response(serializer.data)
-
-#     @action(detail=True,
-#             methods=['get', 'post', 'delete'],
-#             permission_classes=[IsAuthenticated]
-#             )
-#     def subscribe(self, request, pk=None):
-#         """
-#         Экшен для получения данных об авторах, находящихся в подписках у
-#         актуального пользователя, а так же их подписках.
-#         Только GET запросы.
-#         """
-#         current_user = request.user
-#         author = get_object_or_404(User, id=pk)
-#         if self.request.user == author:
-#             return Response(f'{"Проверьте выбранного автора. "}'
-#                             f'{"Подписка на свой аккаунт невозможна."}',
-#                             status=status.HTTP_400_BAD_REQUEST)
-
-#         method = request.method
-#         return_obj = 'redirect'
-#         return_v = check_existance_create_delete(Subscription, method,
-#                                                  return_obj,
-#                                                  SubscriptionsSerializer,
-#                                                  author,
-#                                                  user=current_user,
-#                                                  author=author)
-#         if return_v != 'redirect':
-#             return return_v
-#         return redirect(
-#             'api:user-detail',
-#             pk=author.id
-#         )
-
-
-# class RecipeViewSet(mixins.CreateModelMixin,
-#                     mixins.DestroyModelMixin,
-#                     mixins.RetrieveModelMixin,
-#                     mixins.ListModelMixin,
-#                     mixins.UpdateModelMixin,
-#                     viewsets.GenericViewSet):
-#     """
-#     Вьюсет для работы с моделью Recipe.
-#     Просмотр, создание, редактирование рецепта.
-#     Изменять рецепт может только автор или админы.
-
-#     Для авторизованных пользователей — возможность добавить/удалить
-#     рецепт в избранное и в список покупок
-#     + скачать список покупок текстовым файлом.
-
-#     Queryset фильтруется кастомным фильтром RecipeFilter по параметрам запроса
-#     и выдает список всех рецептов/избранных/нахоядщихся в корзине.
-#     """
-#     permission_classes = [IsAuthorAdminOrReadOnly]
-#     serializer_class = RecipeSerializer
-#     filter_backends = (DjangoFilterBackend,)
-#     filterset_class = RecipeFilter
-#     queryset = Recipe.objects.select_related(
-#         'author'
-#     ).all(
-#     ).prefetch_related(
-#         'tags', 'ingredients'
-#     )
-
-#     @action(detail=True,
-#             methods=['post', 'delete'])
-#     def favorite(self, request, pk=None):
-#         """Добавляет/удалет рецепт в `избранное`.
-
-#         Args:
-#             request (WSGIRequest): Объект запроса.
-#             pk (int):
-#                 id рецепта, который нужно добавить/удалить из `избранного`.
-
-#         Returns:
-#             Responce: Статус подтверждающий/отклоняющий действие.
-#         """
-#         current_user = request.user
-#         recipe = get_object_or_404(Recipe, id=pk)
-#         method = request.method
-#         return_obj = 'response'
-
-#         return check_existance_create_delete(Favorit, method, return_obj,
-#                                              RecipesShortSerializer, recipe,
-#                                              favoriter=current_user,
-#                                              recipe=recipe)
-
-#     @action(detail=True,
-#             methods=['post', 'delete'])
-#     def shopping_cart(self, request, pk=None):
-#         """
-#         Добавляет/удалет рецепт в `список покупок`.
-
-#         Args:
-#             request (WSGIRequest): Объект запроса.
-#             pk (int):
-#                 id рецепта, который нужно добавить/удалить в `корзину покупок`.
-
-#         Returns:
-#             Responce: Статус подтверждающий/отклоняющий действие.
-#         """
-#         current_user = request.user
-#         recipe = get_object_or_404(Recipe, id=pk)
-#         method = request.method
-#         return_obj = 'response'
-
-#         return check_existance_create_delete(ShoppingCartUser, method,
-#                                              return_obj,
-#                                              RecipesShortSerializer, recipe,
-#                                              owner=current_user,
-#                                              recipe=recipe)
-
-#     @action(detail=False,
-#             methods=['get'],
-#             permission_classes=[IsAuthenticated])
-#     def download_shopping_cart(self, request):
-#         """Скачивает файл *.txt со списком покупок.
-
-#         Возвращает текстовый файл со списком ингредиентов из рецептов,
-#         добавленных в корзину для покупки.
-#         Колличесвто повторяющихся ингридиентов суммированно.
-#         Вызов метода через url:  */recipes/download_shopping_cart/.
-
-#         Args:
-#             request (WSGIRequest): Объект запроса.
-
-#         Returns:
-#             Responce: Ответ с текстовым файлом.
-#         """
-#         user = self.request.user
-#         if not ShoppingCartUser.objects.filter(
-#                 owner=user
-#         ).exists():
-#             return Response(
-#                 'Корзина покупок пользователя пуста.',
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         filename = f'{user.username}_shopping_list.txt'
-#         shopping_list = [
-#             f'Список покупок для:\n\n{user.first_name}\n'
-#             f'Дата: {timezone.now().strftime(DATE_TIME_FORMAT)}\n'
-#         ]
-
-#         ingredients = Ingredient.objects.filter(
-#             recipe__recipe__in_shopping_cart__owner=user
-#         ).values(
-#             'name',
-#             measurement=F('measurement_unit')
-#         ).annotate(amount=Sum('recipe__amount'))
-
-#         for ing in ingredients:
-#             shopping_list.append(
-#                 f'{ing["name"]}: {ing["amount"]} {ing["measurement"]}'
-#             )
-
-#         shopping_list.append('\nХороших покупок! Твой Foodgram')
-#         shopping_list = '\n'.join(shopping_list)
-#         response = HttpResponse(
-#             shopping_list, content_type='text.txt; charset=utf-8'
-#         )
-#         response['Content-Disposition'] = f'attachment; filename={filename}'
-#         return response
-
-#     def update(self, request, *args, **kwargs):
-#         """
-#         Ограничение для метода PUT. Редакция существующих рецептов только
-#         через PATCH метод.
-#         """
-
-#         if request.method == "PUT":
-#             return self.http_method_not_allowed(request, *args, **kwargs)
-#         return super().update(request, *args, **kwargs)
-
-
-# class TagViewSet(viewsets.ReadOnlyModelViewSet):
-#     """
-#     Работает с тэгами.
-#     Изменение и создание тэгов разрешено только админам.
-#     """
-#     queryset = Tag.objects.all()
-#     serializer_class = TagSerializer
-#     pagination_class = None
-
-
-# class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
-#     """
-#     Работет с ингредиентами.
-#     Изменение и создание ингредиентов разрешено только админам.
-#     """
-#     queryset = Ingredient.objects.all()
-#     serializer_class = IngredientSerializer
-#     pagination_class = None
-#     filter_backends = [IngredientFilter]
-#     search_fields = ('^name',)

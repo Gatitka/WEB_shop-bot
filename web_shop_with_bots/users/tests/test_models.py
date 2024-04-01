@@ -1,11 +1,11 @@
 from datetime import datetime
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db.models.deletion import ProtectedError
 from django.db.utils import IntegrityError
 from django.shortcuts import get_object_or_404
 from django.test import TestCase
-from django.contrib.auth import get_user_model
 
 from users.models import BaseProfile
 

@@ -1,10 +1,10 @@
 from django.contrib import admin
 from django.contrib.gis.admin import OSMGeoAdmin
+from parler.admin import TranslatableAdmin
 
 from utils.utils import activ_actions
 
 from .models import Delivery, DeliveryZone, Restaurant
-from parler.admin import TranslatableAdmin
 
 
 @admin.register(Delivery)

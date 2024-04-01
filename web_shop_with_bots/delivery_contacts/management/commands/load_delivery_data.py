@@ -1,7 +1,8 @@
-from django.core.management import BaseCommand
-from django.core.management import call_command
-from delivery_contacts.models import Delivery, Restaurant
 import os
+
+from django.core.management import BaseCommand, call_command
+
+from delivery_contacts.models import Delivery, Restaurant
 
 
 class Command(BaseCommand):

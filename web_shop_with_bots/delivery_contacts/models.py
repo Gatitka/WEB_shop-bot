@@ -1,23 +1,21 @@
 from collections.abc import Iterable
+from datetime import time
 from decimal import Decimal
 
 import requests
+from django.conf import settings  # для импорта городов
+from django.contrib.gis.db.models import MultiPolygonField, PointField
+from django.contrib.gis.geos import Point
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
-from django.contrib.gis.db.models import PointField, MultiPolygonField
-
 from django.utils.safestring import mark_safe
+from parler.models import TranslatableModel, TranslatedFields
+from phonenumber_field.modelfields import PhoneNumberField
 
 from web_shop_with_bots.settings import GOOGLE_API_KEY
-from parler.models import TranslatableModel, TranslatedFields
 
-from django.conf import settings  # для импорта городов
-from phonenumber_field.modelfields import PhoneNumberField
-from django.core.validators import MinValueValidator
-from django.contrib.gis.geos import Point
-from datetime import time
-from .utils import (google_validate_address_and_get_coordinates)
-from django.core.exceptions import ValidationError
-
+from .utils import google_validate_address_and_get_coordinates
 
 DELIVERY_CHOICES = (
     ("delivery", "Доставка"),

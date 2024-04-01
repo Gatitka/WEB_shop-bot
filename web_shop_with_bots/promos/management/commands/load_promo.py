@@ -1,10 +1,11 @@
-from django.core.management import BaseCommand
-from django.core.management import call_command
-from promos.models import PromoNews, Promocode
 import os
 from csv import DictReader
 from datetime import datetime, timedelta
+
+from django.core.management import BaseCommand, call_command
 from django.utils import timezone
+
+from promos.models import Promocode, PromoNews
 
 
 class Command(BaseCommand):

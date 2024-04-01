@@ -1,0 +1,51 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-03-28 16:00+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+#: .\Lib\site-packages\django\core\validators.py:161
+msgid "Enter a valid email address."
+msgstr "Unesite validnu email adresu."
+
+#: .\Lib\site-packages\phonenumber_field\formfields.py:43
+#, python-brace-format
+msgid ""
+"Enter a valid phone number (e.g. {example_number}) or a number with an "
+"international call prefix."
+msgstr ""
+"Unesite validan broj telefona (npr. {example_number}) ili broj sa "
+"međunarodnim prefiksom za poziv."
+
+#. Translators: {example_number} is an international phone number.
+#: .\Lib\site-packages\phonenumber_field\formfields.py:49
+#, python-brace-format
+msgid "Enter a valid phone number (e.g. {example_number})."
+msgstr "Unesite validan broj telefona (npr. {example_number})."
+
+#: .\Lib\site-packages\phonenumber_field\modelfields.py:53
+msgid "Phone number"
+msgstr "Broj telefona"
+
+#: .\Lib\site-packages\phonenumber_field\serializerfields.py:10
+msgid "Enter a valid phone number."
+msgstr "Unesite validan broj telefona."
+
+#: .\Lib\site-packages\phonenumber_field\validators.py:11
+msgid "The phone number entered is not valid."
+msgstr "Uneti broj telefona nije validan."

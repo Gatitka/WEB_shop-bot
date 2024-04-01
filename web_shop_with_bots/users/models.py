@@ -1,20 +1,20 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.contrib.gis.db.models import PointField
+from django.contrib.gis.geos import Point
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, MinLengthValidator
 from django.db import models
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
-from phonenumber_field.modelfields import PhoneNumberField
-from .validators import (validate_first_and_last_name,
-                         validate_birthdate)
-from django.contrib.gis.db.models import PointField
-from django.contrib.gis.geos import Point
-from delivery_contacts.utils import (
-    google_validate_address_and_get_coordinates)
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
+from phonenumber_field.modelfields import PhoneNumberField
 
+from delivery_contacts.utils import google_validate_address_and_get_coordinates
 from tm_bot.models import MessengerAccount
+
+from .validators import validate_birthdate, validate_first_and_last_name
 
 
 class UserRoles(models.TextChoices):
@@ -157,6 +157,10 @@ class BaseProfile(models.Model):
         choices=settings.LANGUAGES,
         default="sr-latn"
     )
+    first_order = models.BooleanField(
+        'первый заказ',
+        default=False
+    )
 
     class Meta:
         # ordering = ['-id']
@@ -268,23 +272,23 @@ class WEBAccount(AbstractUser):
     '''
     username = None
     first_name = models.CharField(
-        'Имя',
+        _('name'),
         max_length=150,
         validators=[validate_first_and_last_name,],
     )
     last_name = models.CharField(
-        'Фамилия',
+        _('last_name'),
         max_length=150,
         validators=[validate_first_and_last_name,]
     )
     password = models.CharField(
-        'Пароль',
+        _('password'),
         max_length=100,
         validators=[MinLengthValidator(8)],
         null=True, blank=True
     )
     email = models.EmailField(
-        'Email',
+        'email',
         max_length=254,
         unique=True
     )
@@ -295,7 +299,7 @@ class WEBAccount(AbstractUser):
         default="sr-latn"
     )
     phone = PhoneNumberField(
-        verbose_name='Телефон',
+        _('phone'),
         unique=True,
     )
     notes = models.TextField(
@@ -336,8 +340,8 @@ class WEBAccount(AbstractUser):
 
     class Meta:
         # ordering = ['-date_joined']
-        verbose_name = 'Аккаунт сайта'
-        verbose_name_plural = 'Аккаунты сайта'
+        verbose_name = _('WEB account')
+        verbose_name_plural = _('WEB accounts')
 
     def is_admin(self):
         return self.role == UserRoles.ADMIN or self.is_superuser
@@ -348,13 +352,13 @@ class WEBAccount(AbstractUser):
     def clean(self):
         super().clean()
         if not self.first_name:
-            raise ValidationError({'first_name': 'Имя не может быть пустым'})
+            raise ValidationError({'first_name': _("First name can't be ampty.")})
         if not self.last_name:
-            raise ValidationError({'last_name': 'Фамилия не может быть пустой'})
+            raise ValidationError({'last_name': _("Last name can't be ampty.")})
         if not self.email:
-            raise ValidationError({'email': 'email не может быть пустым'})
+            raise ValidationError({'email': -("email can't be ampty.")})
         if not self.phone:
-            raise ValidationError({'phone': 'Телефон не может быть пустым'})
+            raise ValidationError({'phone': _("Phone can't be ampty.")})
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get('update_fields')

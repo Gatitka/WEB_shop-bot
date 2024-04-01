@@ -5,7 +5,7 @@ from parler.admin import (SortedRelatedFieldListFilter, TranslatableAdmin,
 
 from utils.utils import activ_actions
 
-from .models import Promocode, PromoNews, PrivatPromocode
+from .models import PrivatPromocode, Promocode, PromoNews
 
 
 # class SummerAdmin(SummernoteModelAdmin):

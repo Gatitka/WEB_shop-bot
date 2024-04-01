@@ -1,32 +1,26 @@
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from django.utils import timezone
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
+
 from django.core.validators import (MaxValueValidator, MinLengthValidator,
                                     MinValueValidator)
 from django.db import models
-
+from django.db.models import Max, Sum
+from django.utils import timezone
 from phonenumber_field.modelfields import PhoneNumberField
-
-
 from catalog.models import Dish
 from delivery_contacts.models import Delivery, DeliveryZone, Restaurant
-from promos.models import Promocode
-from users.models import BaseProfile
-from .validators import validate_delivery_time
-from exceptions import NoDeliveryDataException
-from django.core.exceptions import ValidationError
-from users.validators import validate_first_and_last_name
-from django.shortcuts import get_object_or_404
-from datetime import date, datetime, timedelta
-from django.db.models import Max, Sum
-from .utils import get_next_item_id_today
-from delivery_contacts.services import get_delivery_zone
 from delivery_contacts.utils import get_delivery_cost
-from shop.utils import get_first_item_true
+from promos.models import Promocode
 from promos.services import get_promocode_discount_amount
-
+from shop.utils import get_first_item_true, get_next_item_id_today
+from users.models import BaseProfile
+from users.validators import validate_first_and_last_name
+from django.utils.translation import gettext_lazy as _
+# from shop.services import (get_amount, get_promocode_results,
+#                            get_delivery_discount, check_total_discount,
+#                            get_auth_first_order_discount)
 
 User = get_user_model()
 
@@ -135,7 +129,7 @@ class ShoppingCart(models.Model):
         """
         if self.promocode:
             # Если есть промокод, применяем скидку
-            self.discount, message = get_promocode_discount_amount(
+            self.discount, message, free_delivery = get_promocode_discount_amount(
                                         self.promocode,
                                         amount=self.amount)
 
@@ -163,14 +157,13 @@ class ShoppingCart(models.Model):
             self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
         super().save(*args, **kwargs)
 
-    def empty_cart(self, clean_promocode=True):
+    def empty_cart(self):
         self.dishes.clear()  # Очищаем связанные товары
         self.amount = 0.00
         self.discount = 0.00
         self.discounted_amount = 0.00
         self.items_qty = 0
-        if clean_promocode:
-            self.promocode = None
+        self.promocode = None
         self.save()
 
 
@@ -476,32 +469,37 @@ class Order(models.Model):
         """
         if self.promocode:
             # Если есть промокод, применяем скидку
-            discount_amount = (
-                Decimal(self.amount) * Decimal(self.promocode.discount) / Decimal(100)
-            ).quantize(Decimal('0.01'))
-
-            self.discounted_amount = (
-                Decimal(self.amount) - discount_amount
-            ).quantize(Decimal('0.01'))
+            promocode_data, promocode_discount, free_delivery = (
+                get_promocode_results(self.amount, self.promocode,
+                                      self.request)
+            )
         else:
             # Если нет промокода, final_amount равен общей сумме
             self.discounted_amount = Decimal(self.amount)
-        if self.discount:
-            # Если есть вручную внесенная скидка, применяем её
-            self.discounted_amount = (
-                Decimal(self.discounted_amount) - Decimal(self.discount)
+
+        delivery_discount = get_delivery_discount(self.delivery,
+                                                  self.amount)
+
+        auth_fst_ord_disc, fo_status = (
+            get_auth_first_order_discount(self.request, self.amount))
+
+        self.custom_disc = self.discount if self.discount else Decimal(0)
+
+        total_discount_sum = Decimal(
+            promocode_discount + delivery_discount + auth_fst_ord_disc
             ).quantize(Decimal('0.01'))
+
+        total_discount, disc_lim_message = (
+            check_total_discount(self.amount, total_discount_sum))
+
+        self.discounted_amount = Decimal(
+            self.amount - self.total_discount).quantize(Decimal('0.01'))
 
     def calculate_final_amount_with_shipping(self):
         """
         Рассчитывает final_amount с учетом скидки от промокода.
         """
         if self.delivery.type == 'delivery':
-
-            # self.delivery_zone = get_delivery_zone(
-            #     self.city,
-            #     self.delivery_address_data['lat'],
-            #     self.delivery_address_data['lon'])
 
             self.delivery_cost = (
                 get_delivery_cost(
@@ -514,20 +512,6 @@ class Order(models.Model):
             if self.delivery_zone:
                 self.delivery_zone_db = self.delivery_zone.pk
 
-        elif self.delivery.type == 'takeaway':
-            if self.delivery.discount:
-                takeaway_discount = (
-                    Decimal(self.discounted_amount)
-                    * Decimal(self.delivery.discount) / Decimal(100)
-                ).quantize(Decimal('0.01'))
-
-                self.delivery_cost = (
-                    Decimal(0 - takeaway_discount)
-                ).quantize(Decimal('0.01'))
-
-            else:
-                self.delivery_cost = Decimal(0)
-
         self.final_amount_with_shipping = (
             Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
         ).quantize(Decimal('0.01'))
@@ -539,24 +523,28 @@ class Order(models.Model):
         Переопределяем метод save для автоматического рассчета final_amount перед сохранением.
         """
         self.full_clean()
-        if self.pk is None:  # Если объект новый
-
-            self.order_number = get_next_item_id_today(Order, 'order_number')
-
-            self.is_first_order = get_first_item_true(self)
 
         # Если объект уже существует, выполнить рассчеты и другие действия
         self.get_restaurant(self.restaurant,
                             self.delivery.type,
                             self.recipient_address)
 
+        if self.pk is None:  # Если объект новый
+
+            self.order_number = get_next_item_id_today(Order, 'order_number')
+
+            self.is_first_order = get_first_item_true(self)
+
+            self.items_qty = 0
+
+            super(Order, self).save(*args, **kwargs)
+
         self.calculate_discontinued_amount()
 
         self.calculate_final_amount_with_shipping()
 
-        if self.pk is not None:
-            itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
-            self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+        itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
+        self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
 
         super(Order, self).save(*args, **kwargs)
         # далее есть сигнал на сохранение актуальной корзины пользователя,
@@ -680,3 +668,74 @@ class OrderDish(models.Model):
                     dish=cartdish['dish'],
                     quantity=cartdish['quantity']
                 )
+
+
+class Discount(models.Model):
+    """ Модель для скидок."""
+    type = models.CharField(
+        max_length=20,
+        verbose_name="тип скидки",
+        unique=True
+    )
+    discount_perc = models.DecimalField(
+        verbose_name='Скидка в %',
+        help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
+        max_digits=7, decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    discount_am = models.DecimalField(
+        verbose_name='Скидка в RSD',
+        help_text="Внесите скидку, прим. '300,00'.",
+        max_digits=7, decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name='Активен'
+    )
+    created = models.DateField(
+        'Дата добавления', auto_now_add=True
+    )
+    valid_from = models.DateTimeField(
+        'Начало действия'
+    )
+    valid_to = models.DateTimeField(
+        'Окончание действия'
+    )
+
+    title_rus = models.CharField(
+        max_length=100,
+        verbose_name='описание'
+    )
+
+    class Meta:
+        ordering = ['id']
+        verbose_name = _("discount")
+        verbose_name_plural = _("discounts")
+        constraints = [
+            models.UniqueConstraint(
+                fields=['type', 'title_rus'],
+                name='unique_type_title_rus'
+            )
+        ]
+
+    def __str__(self):
+        return self.title_rus
+
+    def show_discount(self):
+        if self.discount_perc:
+            return f"{self.discount_perc} %"
+
+        if self.discount_am:
+            return f"{self.discount_am} %"
+
+    def calculate_discount(self, amount):
+        if self.discount_perc:
+            return (
+                Decimal(amount) * Decimal(self.discount_perc)
+                / Decimal(100)).quantize(Decimal('0.01'))
+
+        if self.discount_am:
+            return self.discount_am

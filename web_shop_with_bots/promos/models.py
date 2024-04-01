@@ -1,9 +1,15 @@
-from django.db import models
-from django.utils.safestring import mark_safe
-from parler.models import TranslatableModel, TranslatedFields
+import random
+import string
+
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
+from parler.models import TranslatableModel, TranslatedFields
+from django.core.validators import MinValueValidator
 from users.models import BaseProfile
+
 from .services import get_promocode_discount_amount
 
 
@@ -154,33 +160,50 @@ class Promocode(TranslatableModel):
         default=False,
         verbose_name='Первый заказ'
     )
+    min_order_amount = models.DecimalField(
+        verbose_name='MIN сумма заказа, RSD',
+        validators=[MinValueValidator(0.01)],
+        max_digits=7, decimal_places=2,
+        help_text='Внесите цену в RSD. Формат 00000.00',
+        null=True,
+        blank=True
+    )
 
     class Meta:
         ordering = ['-created']
-        verbose_name = 'промокод'
-        verbose_name_plural = 'промокоды'
+        verbose_name = _('promocode')
+        verbose_name_plural = _('promocodes')
 
     def __str__(self):
-        return f'{self.title_rus}'
+        return self.title_rus
 
-    @classmethod
-    def is_valid(cls, promocode):
+    def is_active_wthn_timespan(self):
         now = timezone.now()
-        try:
-            if (promocode.is_active
-                    and
-                    promocode.valid_from <= now
-                    <= promocode.valid_to):
-                return promocode
 
-        except Promocode.DoesNotExist:
-            pass
+        if (self.is_active
+                and self.valid_from <= now <= self.valid_to):
+
+            return self
 
         return False
 
     def get_promocode_disc(self, request=None, amount=None):
         return get_promocode_discount_amount(self, request=None, amount=None)
 
+    def save(self, *args, **kwargs):
+        if not self.code:  # Проверяем, был ли предоставлен код промокода
+            # Генерируем новый рандомный код промокода
+            self.code = self.generate_promocode()
+        super().save(*args, **kwargs)
+
+    def generate_promocode(self, length=8):
+        """Генерация рандомного кода промокода."""
+        chars = string.ascii_uppercase + string.digits
+        while True:
+            code = ''.join(random.choice(chars) for _ in range(length))
+            if not Promocode.objects.filter(code=code).exists():
+                # Проверяем, не существует ли уже такого кода
+                return code
 
 
 class PrivatPromocode(models.Model):

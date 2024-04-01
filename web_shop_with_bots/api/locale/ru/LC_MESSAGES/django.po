@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-02-27 01:37+0100\n"
+"POT-Creation-Date: 2024-03-29 14:58+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -20,6 +20,32 @@ msgstr ""
 "%10<=4 && (n%100<12 || n%100>14) ? 1 : n%10==0 || (n%10>=5 && n%10<=9) || (n"
 "%100>=11 && n%100<=14)? 2 : 3);\n"
 
-#: .\serializers.py:557
-msgid "Корзина пуста. Пожалуйста, добавьте блюда в корзину перед оформлением заказа."
-msgstr "Корзина пуста. Пожалуйста, добавьте блюда в корзину перед оформлением заказа."
+#: .\serializers.py:462
+msgid "Please check the promocode."
+msgstr "Пожалуйста, проверьте промокод."
+
+#: .\serializers.py:508 .\serializers.py:623 .\serializers.py:629
+#: .\serializers.py:678 .\serializers.py:684
+msgid "This promo code is applicable only for the first order."
+msgstr "Промокод применим только для первого заказа."
+
+#: .\serializers.py:545
+msgid "There's no such dish in our menu."
+msgstr "Такого блюда нет в нашем меню."
+
+#: .\serializers.py:549
+#| msgid "Unfortunately this dish is unavailable."
+msgid "We are sorry, but this dish is currently inavailable."
+msgstr "Сожалеем, выбранное блюдо не доступно."
+
+#: .\views.py:353
+msgid "Unfortunately this dish is unavailable."
+msgstr "Сожалеем, выбранное блюдо не доступно."
+
+#: .\views.py:955
+msgid "User is not found."
+msgstr "Пользователь не найден."
+
+#: .\views.py:1003
+msgid "This endpoint only accepts AJAX requests."
+msgstr "Этот запрос доступен только для админа."

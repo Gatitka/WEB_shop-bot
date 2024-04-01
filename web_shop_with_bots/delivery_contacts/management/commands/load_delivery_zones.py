@@ -1,7 +1,9 @@
-from django.contrib.gis.geos import MultiPolygon, GEOSGeometry
-from delivery_contacts.models import DeliveryZone
 from csv import DictReader
+
+from django.contrib.gis.geos import GEOSGeometry, MultiPolygon
 from django.core.management import BaseCommand
+
+from delivery_contacts.models import DeliveryZone
 
 
 class Command(BaseCommand):

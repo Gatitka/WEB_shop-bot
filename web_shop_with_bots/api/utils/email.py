@@ -1,18 +1,15 @@
-from django.contrib.auth.tokens import default_token_generator
+from email.mime.image import MIMEImage
+
 import requests
-
-from djoser import utils
-from djoser.conf import settings
 from django.conf import settings as settings_django
-
-
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.sites.shortcuts import get_current_site
 from django.core import mail
 from django.template.context import make_context
 from django.template.loader import get_template
 from django.views.generic.base import ContextMixin
-
-from email.mime.image import MIMEImage
+from djoser import utils
+from djoser.conf import settings
 
 
 class MyBaseEmailMessage(mail.EmailMultiAlternatives, ContextMixin):

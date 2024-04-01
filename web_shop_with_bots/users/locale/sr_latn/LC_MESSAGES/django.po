@@ -1,0 +1,81 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+# 
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-03-29 11:40+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+#: .\models.py:272
+msgid "name"
+msgstr "ime"
+
+#: .\models.py:277
+msgid "last_name"
+msgstr "prezime"
+
+#: .\models.py:282
+msgid "password"
+msgstr "šifra"
+
+#: .\models.py:299
+msgid "phone"
+msgstr "telefon"
+
+#: .\models.py:340
+msgid "WEB account"
+msgstr "WEB nalog"
+
+#: .\models.py:341
+msgid "WEB accounts"
+msgstr "WEB nalozi"
+
+#: .\models.py:352
+msgid "First name can't be ampty."
+msgstr ""
+
+#: .\models.py:354
+msgid "Last name can't be ampty."
+msgstr ""
+
+#: .\models.py:358
+msgid "Phone can't be ampty."
+msgstr ""
+
+#: .\validators.py:9
+msgid "Please, provide the last name."
+msgstr "Molimo vas, navedite prezime."
+
+#: .\validators.py:12
+msgid "Please check your name, note that only letters are allowed."
+msgstr ""
+"Molimo vas, proverite vaše ime, imajte na umu da su dozvoljena samo slova."
+
+#: .\validators.py:19
+msgid "Birthdate is more than 100 years ago."
+msgstr "Datum rođenja je više od 100 godina unazad."
+
+#: .\validators.py:24
+msgid "Birthdate is in future."
+msgstr "Datum rođenja je u budućnosti."
+
+#: .\validators.py:33
+msgid "Password must contain at least one letter and one digit."
+msgstr "Šifra mora da sadrži bar jedno slovo i jednu cifru."
+
+#: .\validators.py:39
+msgid "Your password must contain at least one letter and one digit."
+msgstr "Vaša šifra mora da sadrži bar jedno slovo i jednu cifru."

@@ -1,10 +1,12 @@
 import os
 import re
 from csv import DictReader
-from django.core.management import BaseCommand
-from catalog.models import Category, Dish, UOM
 
+from django.core.management import BaseCommand
+
+from catalog.models import UOM, Category, Dish
 from web_shop_with_bots.settings import BASE_DIR
+
 
 def find_image_by_article(article):
             # Укажите путь к директории с изображениями

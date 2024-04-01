@@ -1,10 +1,10 @@
 # from pathlib import Path
 import os
-
 from datetime import timedelta
 
 from django.utils.translation import gettext_lazy as _  # for translation
 from dotenv import load_dotenv
+
 from users.validators import AlphanumericPasswordValidator
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -206,13 +206,14 @@ REST_FRAMEWORK = {
     'DATETIME_INPUT_FORMATS': [
         '%d.%m.%Y %H:%M',
     ],
+    'EXCEPTION_HANDLER': 'api.utils.utils.custom_exception_handler'
 }
 
 
 SIMPLE_JWT = {
     # Устанавливаем срок жизни токена
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=90),
+    'ACCESS_TOKEN_LIFETIME': timedelta(seconds=int(os.getenv('ACCESS_TOKEN_LIFETIME'))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(seconds=int(os.getenv('REFRESH_TOKEN_LIFETIME'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
@@ -255,6 +256,7 @@ DJOSER = {
 
     'SERIALIZERS': {
         'current_user': 'api.serializers.MyUserSerializer',
+        # 'user_create': 'api.serializers.MyUserSerializer'
     },
     'EMAIL': {
         'activation': 'api.utils.email.MyActivationEmail',
@@ -271,7 +273,6 @@ DJOSER = {
         # т.к. кастомный метод удаления, делая юзера неактивным
     },
 }
-
 
 TIME_ZONE = 'Europe/Oslo'
 
@@ -311,8 +312,7 @@ USE_L10N = False
 USE_I18N = True
 
 # Выбор языка по умолчанию
-# LANGUAGE_CODE = 'en'
-LANGUAGE_CODE = 'ru'
+LANGUAGE_CODE = 'en'
 
 # Список поддерживаемых языков
 LANGUAGES = [
@@ -338,8 +338,15 @@ PARLER_LANGUAGES = {
 }
 
 LOCALE_PATHS = [
-    os.path.join(BASE_DIR, "backend_translations", "locale/"),
     os.path.join(BASE_DIR, "templates", "locale/"),
+    os.path.join(BASE_DIR, "api", "locale/"),
+    # os.path.join(BASE_DIR, "catalog", "locale/"),
+    # os.path.join(BASE_DIR, "delivery_contacts", "locale/"),
+    # os.path.join(BASE_DIR, "shop", "locale/"),
+    os.path.join(BASE_DIR, "tm_bot", "locale/"),
+    os.path.join(BASE_DIR, "users", "locale/"),
+    os.path.join(BASE_DIR, "venv_locale", "locale/"),
+    # os.path.join(BASE_DIR, "web_shop_with_bots", "locale/")
 ]
 
 # -------------------------------- CORS ------------------------------------------
@@ -468,6 +475,8 @@ CITY_CHOICES = [
 
 DEFAULT_CITY = 'Beograd'
 DEFAULT_RESTAURANT = 1
+MAX_DISC_AMOUNT = 25
+
 
 PAYMENT_METHODS = [
     ('cash', 'cash'),

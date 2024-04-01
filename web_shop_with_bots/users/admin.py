@@ -1,14 +1,15 @@
+from django import forms
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import UserChangeForm
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.db.models import Count
-from django import forms
+
 from shop.models import Order  # ShoppingCart
 
 from .models import BaseProfile, UserAddress, WEBAccount
-from django.contrib.auth.forms import UserChangeForm
-from django.contrib.auth.password_validation import validate_password
-from django.conf import settings
-from django.core.exceptions import ValidationError
 
 
 class UserAddressesAdminInline(admin.TabularInline):

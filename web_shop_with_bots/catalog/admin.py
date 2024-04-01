@@ -1,9 +1,8 @@
 from django.contrib import admin
-from parler.admin import (TranslatableAdmin,
-                          TranslatableTabularInline)
 from django.utils.html import format_html
+from parler.admin import TranslatableAdmin, TranslatableTabularInline
 
-from .models import Category, Dish, DishCategory, UOM
+from .models import UOM, Category, Dish, DishCategory
 
 
 def make_active(modeladmin, request, queryset):

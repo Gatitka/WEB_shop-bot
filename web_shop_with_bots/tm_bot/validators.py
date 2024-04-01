@@ -1,9 +1,8 @@
-from django.core.exceptions import ValidationError
-from django.utils.translation import gettext_lazy as _
 import re
 
 import phonenumbers
-
+from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
 
 # def validate_msngr_account_full(value):
 #     if value:

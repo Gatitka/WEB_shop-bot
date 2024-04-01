@@ -2,11 +2,11 @@ from decimal import Decimal
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Max
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from parler.models import TranslatableModel, TranslatedFields
 from pytils.translit import slugify
-from django.db.models import Max
 
 
 class Category(TranslatableModel):

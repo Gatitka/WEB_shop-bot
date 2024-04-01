@@ -1,7 +1,14 @@
-from shop.models import ShoppingCart, CartDish
-from .validators import cart_valiation
-from users.models import BaseProfile
 from django.db.models import Prefetch
+from decimal import Decimal
+from .models import CartDish, ShoppingCart, Discount
+from users.models import BaseProfile
+from .validators import cart_valiation
+from decimal import Decimal
+from django.db.models import Max
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+from promos.services import get_promocode_discount_amount
+from django.conf import settings
 
 
 def get_base_profile_w_cart(current_user):
@@ -108,3 +115,107 @@ def find_uncomplited_cart_to_complete(base_profile):
         if cart:
             cart.complited = True
             cart.save()
+
+
+def base_profile_first_order(current_user):
+    has_orders = BaseProfile.objects.filter(
+        web_account=current_user,
+        orders__isnull=False
+    ).exists()
+
+    return not has_orders
+
+
+def get_amount(cart=None, items=None):
+    if cart:
+        return cart.amount
+
+    if items:
+        amount = Decimal(0)
+        for item in items:
+            dish = item['dish']
+            amount += Decimal(dish.final_price * item['quantity'])
+        return amount
+
+
+def get_promocode_results(amount, cart=None, promocode=None,
+                                             request=None):
+    # if cart:
+    #     if cart.promocode is None:
+    #         promocode_code = None
+    #         promocode_discount = Decimal(0)
+    #         discounted_amount = amount
+    #         free_delivery = False
+
+    #     else:
+    #         promocode_code = cart.promocode.code
+    #         promocode_discount = cart.discount
+    #         discounted_amount = cart.discounted_amount
+    #         free_delivery = cart.promocode.free_delivery
+
+    #     message = ''
+    #     return (promocode_code, promocode_discount,
+    #             discounted_amount, message, free_delivery)
+
+    # else:
+    #  для незареганых пользователей
+    if promocode is None:
+        promocode_data = {
+            "promocode": None,
+            "valid": "invalid",
+            "detail": ""}
+        promocode_discount = Decimal(0)
+        free_delivery = False
+
+    else:
+        promocode_discount, message, free_delivery = (
+            get_promocode_discount_amount(
+                promocode, amount, request,
+            ))
+        promocode_data = {
+            "promocode": promocode.code,
+            "valid": "valid",
+            "detail": message}
+
+    return promocode_data, promocode_discount, free_delivery
+
+
+def get_auth_first_order_discount(request, amount):
+    if request.user.is_authenticated:
+        if not request.user.base_profile.first_order:
+            fo_discount, fo_status = auth_first_order_discount(amount)
+            return fo_discount, fo_status
+    return Decimal(0), False
+
+
+def auth_first_order_discount(amount):
+    fst_ord_disc = Discount.objects.filter(type='первый заказ').first()
+    if fst_ord_disc:
+        fo_dis_amount = fst_ord_disc.calculate_discount(amount)
+        return fo_dis_amount, True
+    return Decimal(0), False
+
+
+def get_delivery_discount(delivery, discounted_amount):
+    if delivery.discount:
+        delivery_discount = (
+            Decimal(discounted_amount)
+            * Decimal(delivery.discount) / Decimal(100)
+        ).quantize(Decimal('0.01'))
+    else:
+        delivery_discount = Decimal(0)
+    return delivery_discount
+
+
+def check_total_discount(amount, total_discount_sum):
+    max_disc_amount = (
+        amount * Decimal(settings.MAX_DISC_AMOUNT) / Decimal(100)
+        ).quantize(Decimal('0.01'))
+
+    if total_discount_sum <= max_disc_amount:
+        message = ""
+        return total_discount_sum, message
+
+
+    message = _("The total order discount cannot exceed 25%.")
+    return max_disc_amount, message

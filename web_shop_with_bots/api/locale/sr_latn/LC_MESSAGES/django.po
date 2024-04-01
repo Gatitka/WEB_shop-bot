@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-02-27 01:41+0100\n"
+"POT-Creation-Date: 2024-03-29 14:58+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -19,6 +19,31 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
 "%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
-#: .\serializers.py:557
-msgid "Корзина пуста. Пожалуйста, добавьте блюда в корзину перед оформлением заказа."
-msgstr "SRslfewpt8epšglđždv.dć."
+#: .\serializers.py:462
+msgid "Please check the promocode."
+msgstr "Molimo proverite promotivni kod."
+
+#: .\serializers.py:508 .\serializers.py:623 .\serializers.py:629
+#: .\serializers.py:678 .\serializers.py:684
+msgid "This promo code is applicable only for the first order."
+msgstr "Ovaj promotivni kod važi samo za prvu porudžbinu."
+
+#: .\serializers.py:545
+msgid "There's no such dish in our menu."
+msgstr "Nema takvog jela u našem meniju."
+
+#: .\serializers.py:549
+msgid "We are sorry, but this dish is currently inavailable."
+msgstr "Žao nam je, odabrano jelo nije dostupno."
+
+#: .\views.py:353
+msgid "Unfortunately this dish is unavailable."
+msgstr "Žao nam je, odabrano jelo nije dostupno."
+
+#: .\views.py:955
+msgid "User is not found."
+msgstr "Korisnik nije pronađen."
+
+#: .\views.py:1003
+msgid "This endpoint only accepts AJAX requests."
+msgstr "Ovaj krajnji tačka prihvata samo AJAX zahteve."

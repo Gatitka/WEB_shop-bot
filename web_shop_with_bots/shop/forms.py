@@ -1,20 +1,19 @@
-from shop.models import Order
-from delivery_contacts.utils import (
-    google_validate_address_and_get_coordinates)
+import json
+from urllib.parse import urlencode
+
 from django import forms
-from delivery_contacts.models import Delivery
-from delivery_contacts.services import get_delivery_zone
-from shop.validators import validate_delivery_time
-from users.models import UserAddress
-
-
+from django.contrib import admin
 from django.forms.widgets import TextInput
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-from urllib.parse import urlencode
-from django.contrib import admin
-import json
+
+from delivery_contacts.models import Delivery
+from delivery_contacts.services import get_delivery_zone
+from delivery_contacts.utils import google_validate_address_and_get_coordinates
+from shop.models import Order
+from shop.validators import validate_delivery_time
+from users.models import UserAddress
 
 
 def url_params_from_lookup_dict(lookups):

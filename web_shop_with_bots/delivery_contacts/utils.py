@@ -1,9 +1,11 @@
-from web_shop_with_bots.settings import GOOGLE_API_KEY
-import requests
-from django.core.exceptions import ValidationError
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
+
+import requests
 from django.conf import settings
+from django.core.exceptions import ValidationError
+
+from web_shop_with_bots.settings import GOOGLE_API_KEY
 
 
 def receive_responce_from_google(address):

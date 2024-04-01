@@ -1,12 +1,17 @@
+from decimal import Decimal
+
 from django.conf import settings
+
 from delivery_contacts.models import Delivery, DeliveryZone
-from .utils import (_get_delivery_zone,
-                    get_delivery_cost,
+
+from .utils import (_get_delivery_zone, get_delivery_cost,
                     google_validate_address_and_get_coordinates)
 
 
 def get_delivery(request, type):
     city = request.data.get('city', settings.DEFAULT_CITY)
+    if city is None:
+        city = settings.DEFAULT_CITY
 
     delivery = Delivery.objects.filter(
         city=city,
@@ -29,7 +34,7 @@ def get_delivery_zone(city, lat=None, lon=None):
 
 
 def get_delivery_cost_zone(city, discounted_amount, delivery,
-                           lat, lon):
+                           lat, lon, free_delivery=False):
     """
     Рассчитывает стоимость доставки и зону с учетом суммы заказа и адреса доставки.
     """
@@ -39,8 +44,11 @@ def get_delivery_cost_zone(city, discounted_amount, delivery,
     delivery_zone = get_delivery_zone(city,
                                       lat, lon)
 
-    delivery_cost = get_delivery_cost(discounted_amount, delivery,
-                                      delivery_zone)
+    if not free_delivery:
+        delivery_cost = get_delivery_cost(discounted_amount, delivery,
+                                          delivery_zone)
+    else:
+        delivery_cost = Decimal(0)
 
     return delivery_cost, delivery_zone
 

@@ -1,6 +1,8 @@
+from datetime import datetime, time, timezone
+
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
-from datetime import datetime, time, timezone
+
 from delivery_contacts.models import Restaurant
 
 
@@ -8,11 +10,12 @@ def validate_delivery_time(value, delivery, restaurant=None):
     if value is not None:
 
         if value <= datetime.now(value.tzinfo):
-            raise ValidationError("Delivery time can't be in the past.")
+            raise ValidationError(_("Delivery time can't be in the past."))
 
         if delivery is None:
             raise ValidationError(
-                    'Delivery method is required to validate the delivery time.'
+                    _("Delivery method is required for "
+                      "delivery time validation.")
                 )
         # Проверяем, что время находится в диапазоне
         # работы доставки в модели доставки
@@ -26,7 +29,7 @@ def validate_delivery_time(value, delivery, restaurant=None):
                 max_time_str = max_time.strftime('%H:%M')
 
                 raise ValidationError(
-                    (f"Choose time {min_time_str} - {max_time_str}"),
+                    (_(f"Choose time {min_time_str} - {max_time_str}")),
                     code='invalid_order_time'
                 )
 
@@ -62,41 +65,22 @@ def validate_delivery_data(delivery, restaurant, recipient_address):
 def validate_restaurant(restaurant):
     if restaurant is None:
         raise ValidationError(
-            {"restaurant": "Выберите ресторан."}
+            {"restaurant": _("Please, choose the restaurant.")}
         )
 
 
 def validate_address(recipient_address):
     if recipient_address is None:
         raise ValidationError(
-            {"restaurant": "Внесите адрес доставки."}
+            {"recipient_address": _("Please, enter the delivery address.")}
         )
 
 
 def validate_address_w_google(recipient_address):
     if recipient_address is None:
         raise ValidationError(
-            "Внесите адрес доставки."
+            _("Please, enter the delivery address.")
         )
-
-
-def validate_selected_month(value):
-    if value is not None:
-        try:
-            datetime_obj = datetime.strptime(value, '%d %b')
-        except ValueError:
-            raise ValidationError(
-                "Invalid date format. Date should be in the format 'dd MMM'.",
-                code='invalid_date_format'
-            )
-
-        now = timezone.now()
-        if datetime_obj <= now:
-            raise ValidationError(
-                "Delivery time cannot be in the past.",
-                code='delivery_time_in_past'
-            )
-    return value
 
 
 def cart_valiation(cart, half_validation=False):
@@ -108,12 +92,13 @@ def cart_valiation(cart, half_validation=False):
 def validate_cart_is_not_none(cart):
     if cart is None:
         raise ValidationError(
-            "Mistake while handling the cart. Try to pick the cart one more time."
+            _("Mistake while handling the cart. "
+              "Try to pick the cart one more time.")
         )
 
 
 def validate_cartdishes_exist(cart):
     if not cart.cartdishes.exists():
         raise ValidationError(
-            "Your cart is empty. Please add something into your cart."
+            _("Your cart is empty. Please add something into your cart.")
         )
