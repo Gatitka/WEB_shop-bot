@@ -1,0 +1,71 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-04-13 09:08+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<12 || n%100>14) ? 1 : n%10==0 || (n%10>=5 && n%10<=9) || (n"
+"%100>=11 && n%100<=14)? 2 : 3);\n"
+
+
+#: .\models.py:763
+msgid "discount"
+msgstr "скидка"
+
+#: .\models.py:764
+msgid "discounts"
+msgstr "скидки"
+
+#: .\models.py:890
+msgid "The total order discount cannot exceed 25%."
+msgstr "Суммарная скидка на заказ не может превышать 25%."
+
+#: .\validators.py:13
+msgid "Delivery time can't be in the past."
+msgstr "Время доставки не может быть в прошлом."
+
+#: .\validators.py:17
+msgid "Delivery method is required for delivery time validation."
+msgstr "Метод доставки требуется для проверки времени доставки."
+
+#: .\validators.py:32
+#, python-brace-format
+msgid "Choose time {min_time_str} - {max_time_str}"
+msgstr "Выберите время {min_time_str} - {max_time_str}"
+
+#: .\validators.py:68
+msgid "Please, choose the restaurant."
+msgstr "Пожалуйста, выберите ресторан."
+
+#: .\validators.py:75 .\validators.py:82
+msgid "Please, enter the delivery address."
+msgstr "Пожалуйста, введите адрес доставки."
+
+#: .\validators.py:95
+msgid "Mistake while handling the cart. Try to pick the cart one more time."
+msgstr "Ошибка при обработке корзины. Попробуйте выбрать корзину еще раз."
+
+#: .\validators.py:103
+msgid "Your cart is empty. Please add something into your cart."
+msgstr "Ваша корзина пуста. Пожалуйста, добавьте что-то в корзину."
+
+#: .\validators.py:110
+msgid "There's no such order ID in your orders history."
+msgstr "Такого идентификатора заказа нет в истории ваших заказов."
+
+#: .\validators.py:119
+msgid "Flat can't be empty."
+msgstr "Квартира не может быть пустой."

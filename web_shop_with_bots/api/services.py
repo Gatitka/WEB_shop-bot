@@ -1,12 +1,11 @@
 from delivery_contacts.services import get_delivery_cost_zone
 from decimal import Decimal
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from shop.services import (get_amount, get_promocode_results,
-                           get_delivery_discount, check_total_discount,
-                           get_auth_first_order_discount)
-
+from shop.models import (get_amount, get_promocode_results,
+                         get_delivery_discount, check_total_discount,
+                         get_auth_first_order_discount,
+                         cash_discount)
 
 def get_reply_data_takeaway(delivery,
                             cart=None,
@@ -16,14 +15,15 @@ def get_reply_data_takeaway(delivery,
     amount = get_amount(cart, orderdishes)
 
     promocode_data, promocode_discount, free_delivery = (
-        get_promocode_results(amount, cart, promocode, request)
+        get_promocode_results(amount, promocode, request, cart)
     )
 
     delivery_discount = get_delivery_discount(delivery,
                                               amount)
 
-    auth_fst_ord_disc, fo_status = get_auth_first_order_discount(request,
-                                                                 amount)
+    auth_fst_ord_disc, fo_status = get_auth_first_order_discount(
+                                        amount,
+                                        web_account=request.user)
 
     total_discount_sum = Decimal(
         promocode_discount + delivery_discount + auth_fst_ord_disc
@@ -60,36 +60,39 @@ def get_rep_dic_takeaway(amount, promocode_data,
 
 def get_reply_data_delivery(delivery, city, lat, lon,
                             cart=None,
-                            orderdishes=None, promocode=None,
-                            request=None):
+                            orderdishes=None, promocode=None, payment_type=None,
+                            language=None, request=None):
 
     amount = get_amount(cart, orderdishes)
 
     promocode_data, promocode_discount, free_delivery = (
-        get_promocode_results(amount, cart, promocode, request)
+        get_promocode_results(amount, promocode, request, cart)
     )
 
     delivery_discount = get_delivery_discount(delivery,
                                               amount)
 
-    auth_fst_ord_disc, fo_status = get_auth_first_order_discount(request,
-                                                                 amount)
+    auth_fst_ord_disc, fo_status = get_auth_first_order_discount(
+                                    amount,
+                                    web_account=request.user)
+
+    cash_disc = cash_discount(amount, payment_type, language)
 
     total_discount_sum = Decimal(
-        promocode_discount + delivery_discount + auth_fst_ord_disc
+        promocode_discount + delivery_discount + auth_fst_ord_disc + cash_disc
         ).quantize(Decimal('0.01'))
 
     total_discount, disc_lim_message = check_total_discount(amount,
                                                             total_discount_sum)
+    discounted_amount = Decimal(
+        amount - total_discount).quantize(Decimal('0.01'))
 
     delivery_cost, delivery_zone = get_delivery_cost_zone(
                 city, amount, delivery, lat, lon, free_delivery)
-
-    pre_total = Decimal(
-        amount - total_discount).quantize(Decimal('0.01'))
+    # в расчет берется сумма заказа ДО скидок
 
     reply_data = get_rep_dic_delivery(amount, promocode_data, total_discount,
-                                      pre_total, free_delivery,
+                                      discounted_amount, free_delivery,
                                       delivery, delivery_zone, delivery_cost,
                                       disc_lim_message, fo_status)
     # total посчитается и оформится внутри
@@ -132,7 +135,7 @@ def get_rep_dic(reply_data, free_delivery=False,
         if instance is None:
             total = pre_total
         else:
-            total = instance.amount
+            total = instance.discounted_amount
 
         reply_data['delivery_cost'] = "Requires clarification"
         reply_data['total'] = {
@@ -234,7 +237,6 @@ def get_promoc_resp_dict(data, request):
         promoc_resp_dict = {"promocode": None,
                             "detail": _("Promocode is deleted."),
                             "code": "invalid"}
-
 
     # amount = get_amount(items=data.get('cartdishes'))
 

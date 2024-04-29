@@ -21,8 +21,9 @@ class CategoryFilter(FilterSet):
                 текущего пользователя
     """
 
-    category = CharFilter(field_name='category__slug', lookup_expr='in')
+    category = CharFilter(field_name='dishcategory__category__slug',
+                          lookup_expr='in')
 
     class Meta:
         model = Dish
-        fields = ['category']
+        fields = ['dishcategory']

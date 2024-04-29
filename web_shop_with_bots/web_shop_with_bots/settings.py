@@ -1,11 +1,11 @@
 # from pathlib import Path
 import os
 from datetime import timedelta
-
 from django.utils.translation import gettext_lazy as _  # for translation
 from dotenv import load_dotenv
-
 from users.validators import AlphanumericPasswordValidator
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,25 +16,27 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))),
 ENVIRONMENT = os.getenv('ENVIRONMENT')
 DEVELOPER = os.getenv('DEVELOPER')
 
-if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
+if (ENVIRONMENT == 'development'
+    or ENVIRONMENT == 'test_server'):
 
     LOG_FILE_PATH = os.path.join(
-        BASE_DIR, '/tmp', 'yume.log'
-        ) if os.name != 'nt' else os.path.join(BASE_DIR, 'tmp', 'yume.log')
+        BASE_DIR, 'logging', 'yume.log'
+        ) if os.name != 'nt' else os.path.join(BASE_DIR, 'logging', 'yume.log')
 
     LOGGING = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
             "verbose": {
-                "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+                "format": "{levelname} {asctime} {pathname} {funcName} {process:d} {thread:d} {message}",
                 "style": "{",
             },
         },
         "handlers": {
             "console": {
-                "level": "WARNING",
+                "level": "DEBUG",
                 "class": "logging.StreamHandler",
+                "formatter": "verbose",
             },
             "file": {
                 'level': 'DEBUG',
@@ -42,10 +44,41 @@ if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
                 'filename': LOG_FILE_PATH,
                 'formatter': 'verbose',
                 'encoding': 'utf-8',
+                'mode': 'w+',  # Добавлен параметр для перезаписи файла при каждом запуске
             }
         },
         "loggers": {
-            "django": {
+            "api": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+            "catalog": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+            "delivery_contacts": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+            "promos": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+            "shop": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+            "tm_bot": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+            "users": {
                 "handlers": ["console", "file"],
                 "level": "DEBUG",
                 "propagate": True,
@@ -55,6 +88,7 @@ if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+CHAT_ID = os.getenv('CHAT_ID')
 
 DEBUG = os.getenv('DEBUG')
 TEST_SERVER = os.getenv('TEST_SERVER')
@@ -122,12 +156,17 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
+    'middlewares.AdminRULocaleMiddleware',
+    # мидлвэр для отображения админки только на русском языке
+    'middlewares.APIENLocaleMiddleware',
+    # мидлвэр для перевода всех запросов на en для единства ответов ошибок
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'debug_toolbar.middleware.DebugToolbarMiddleware',
+
 ]
 
 ROOT_URLCONF = 'web_shop_with_bots.urls'
@@ -209,11 +248,17 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'api.utils.utils.custom_exception_handler'
 }
 
+access_token_lifetime = os.getenv('ACCESS_TOKEN_LIFETIME')
+if access_token_lifetime is not None:
+    ACCESS_TOKEN_LIFETIME = timedelta(seconds=int(access_token_lifetime))
+else:
+    ACCESS_TOKEN_LIFETIME = timedelta(seconds=480)
 
 SIMPLE_JWT = {
     # Устанавливаем срок жизни токена
-    'ACCESS_TOKEN_LIFETIME': timedelta(seconds=int(os.getenv('ACCESS_TOKEN_LIFETIME'))),
-    'REFRESH_TOKEN_LIFETIME': timedelta(seconds=int(os.getenv('REFRESH_TOKEN_LIFETIME'))),
+    'ACCESS_TOKEN_LIFETIME': ACCESS_TOKEN_LIFETIME,
+    'REFRESH_TOKEN_LIFETIME': timedelta(seconds=int(os.getenv(
+        'REFRESH_TOKEN_LIFETIME'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
@@ -231,15 +276,14 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 EMAIL_PORT = os.getenv('EMAIL_PORT')
-SITE_NAME = os.getenv('SITE_NAME')
 
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 SERVER_EMAIL = EMAIL_HOST_USER
 EMAIL_ADMIN = EMAIL_HOST_USER
 
-
-PROTOCOL = os.getenv('PROTOCOL')
 DOMAIN = os.getenv('DOMAIN')
+PROTOCOL = os.getenv('PROTOCOL')
+SITE_NAME = os.getenv('SITE_NAME')
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
@@ -256,7 +300,7 @@ DJOSER = {
 
     'SERIALIZERS': {
         'current_user': 'api.serializers.MyUserSerializer',
-        # 'user_create': 'api.serializers.MyUserSerializer'
+        'user_create': 'api.serializers.MyUserCreateSerializer'
     },
     'EMAIL': {
         'activation': 'api.utils.email.MyActivationEmail',
@@ -273,6 +317,21 @@ DJOSER = {
         # т.к. кастомный метод удаления, делая юзера неактивным
     },
 }
+
+# -------------------------------- Redis ------------------------------------------
+
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django.core.cache.backends.redis.RedisCache",
+#         "LOCATION": "redis://127.0.0.1:6379",
+#         "OPTIONS": {
+#             "db": 1
+#         }
+#     }
+# }
+PARLER_ENABLE_CACHING = False
+
+# -------------------------------- DATETIME + OTHER ------------------------------------------
 
 TIME_ZONE = 'Europe/Oslo'
 
@@ -337,6 +396,8 @@ PARLER_LANGUAGES = {
     }
 }
 
+DEFAULT_CREATE_LANGUAGE = 'sr-latn'
+
 LOCALE_PATHS = [
     os.path.join(BASE_DIR, "templates", "locale/"),
     os.path.join(BASE_DIR, "api", "locale/"),
@@ -369,7 +430,6 @@ if TEST_SERVER or SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{TEST_SERVER}")
     if SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{SERVER}")
-print(f'cors_allowed_origins: {cors_allowed_origins}')
 CORS_ALLOWED_ORIGINS = cors_allowed_origins
 
 CORS_ALLOW_CREDENTIALS = True
@@ -402,7 +462,6 @@ if TEST_SERVER or SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{TEST_SERVER}"))
     if SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{SERVER}"))
-print(f'csrf_trusted_origins {csrf_trusted_origins}')
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
 
 REST_USE_JWT = True
@@ -458,15 +517,14 @@ if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
 
 # -------------------------------- SENTRY MISTAKES INFORMATION----------------------------
 
-# import sentry_sdk
-# from sentry_sdk.integrations.django import DjangoIntegration
-
-# sentry_sdk.init(
-#    dsn=os.getenv('SENTRY_DSN'),
-#    integrations=[DjangoIntegration()],
-#)
+if ENVIRONMENT == 'test_server':
+    sentry_sdk.init(
+        dsn=os.getenv('SENTRY_DSN'),
+        integrations=[DjangoIntegration()],
+    )
 
 
+# -------------------------------- BUSINESS LOGIC SETTINGS  ----------------------------
 
 CITY_CHOICES = [
     ('Beograd', 'Beograd'),
@@ -480,8 +538,62 @@ MAX_DISC_AMOUNT = 25
 
 PAYMENT_METHODS = [
     ('cash', 'cash'),
+    ('card_on_delivery', 'card_on_delivery'),
     ('card', 'card'),
 ]
+
+DISCOUNT_TYPES = [
+    ("1", _('first_order')),
+    ("2", _('cash_on_delivery')),
+]
+
+CREATED_BY = [
+    (1, 'user'),
+    (2, 'admin'),
+]
+
+# List of order statuses
+WAITING_CONFIRMATION = "WCO"
+CONFIRMED = "CFD"
+ON_DELIVERY = "OND"
+DELIVERED = "DLD"
+CANCELED = "CND"
+
+ORDER_STATUS_CHOICES = (
+    (WAITING_CONFIRMATION, "ожидает подтверждения"),
+    (CONFIRMED, "подтвержден"),
+    (ON_DELIVERY, "передан в доставку"),
+    (CANCELED, "отменен")
+)
+
+ORDER_STATUS_TRANSLATIONS = {
+    'WCO': {
+        'ru': 'ожидает подтверждения',
+        'en': 'waiting for confirmation',
+        'sr-latn': 'čeka potvrdu'  # Пример перевода на сербскую латиницу
+    },
+    'CFD': {
+        'ru': 'подтвержден',
+        'en': 'confirmed',
+        'sr-latn': 'potvrđen'
+    },
+    'OND': {
+        'ru': 'передан в доставку',
+        'en': 'on delivery',
+        'sr-latn': 'na isporuci'
+    },
+    'DLD': {
+        'ru': 'доставлен',
+        'en': 'delivered',
+        'sr-latn': 'isporučen'
+    },
+    'CND': {
+        'ru': 'отменен',
+        'en': 'canceled',
+        'sr-latn': 'otkazan'
+    }
+}
+
 
 PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT = '2'
 # из-за обращения к google api время обработки запроса дольше 1.48сек

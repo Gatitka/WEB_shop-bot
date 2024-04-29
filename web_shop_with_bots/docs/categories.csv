@@ -1,13 +1,14 @@
-﻿активно;пп кат;slug;категория_ru;категория_en;категория_sr_latn;мсджр_категории_ru;мсджр_категории_en;мсджр_категории_latn
-True;10;rolls;Роллы;Rolls;Rolnice;10. Роллы🥢;10. Rolls🥢;10. Rolnice🥢
-True;11;futomaki;Футомаки;Fulomaki;Futomaki;11. Футомаки;11. Fulomaki;11. Futomaki
-True;12;backed;Запеченные роллы;Baked rolls;Zapečene rolnice;12. Запеченые роллы🍘;12. Baked rolls🍘;12. Zapečene rolnice🍘
-True;13;tempura;Горячие роллы (темпура);Hot rolls (tempura);Hot rollovi (tempura);13. Горячие роллы (темпура)🔥;13. Горячие роллы (темпура)🔥;13. Hot rollovi (tempura)🔥
-True;14;sandochi;Сандочи;Sandoshi;Sandoči;14. Сандочи🍙;14. Сандочи🍙;14. Sandoči🍙
-True;15;handrolls;Хэнд роллы;Hand rolls;Hand rollovi;15. Хэнд роллы 🌯;15. Хэнд роллы 🌯;15. Hand rollovi 🌯
-True;16;maki;Маки;Maki;Maki;16. Маки 🐉🥒🦐🐟;16. Маки 🐉🥒🦐🐟;16. Maki 🐉🥒🦐🐟
-True;17;sushi;Суши и гунканы;Sushi & Gunkans;Suši i gunkani;17. Суши и гунканы🍣;17. Суши и гунканы🍣;17. Suši i gunkani🍣
-True;18;woks;Воки;Woks;Vokovi;18. Воки 🥡;18. Воки 🥡;18. Vokovi 🥡
-True;19;soups;Супы;Soups;Supe;19. Супы🍲;19. Супы🍲;19. Supe🍲
-True;20;vegan;Веган;Vegan;Vegan;20. Веган;20. Веган;20. Vegan
-True;21;extra;Доп;Extra;Dodaci;21. Доп;21. Доп;21. Dodaci
+﻿активно;пп кат;slug;категория_sr_latn;категория_ru;категория_en;мсджр_категории_latn;мсджр_категории_ru;мсджр_категории_en
+True;10;rolls;Rolnice;Роллы;Rolls;10. Rolnice🥢;10. Роллы🥢;10. Rolnice🥢
+True;11;backed;Zapečene rolnice;Запеченные роллы;Baked rolls;11. Zapečene rolnice🍘;11. Запеченые роллы🍘;11. Zapečene rolnice🍘
+True;12;tempura;Tempura;Темпура;Hot rolls (tempura);12. Tempura🔥;12. Темпура🔥;12. Tempura🔥
+True;13;sandochi;Sandoči;Сандочи;Sandochi;13. Sandoči🍙;13. Сандочи🍙;13. Sandoči🍙
+True;14;futomaki;Futomaki;Футомаки;Futomaki;14. Futomaki;14. Футомаки;14. Futomaki
+True;15;handrolls;Hand rolls;Хэнд роллы;Hand rolls;15. Hand rolls 🌯;15. Хэнд роллы 🌯;15. Hand rolls 🌯
+True;16;maki;Maki;Маки;Maki;16. Maki 🐉🥒🦐🐟;16. Маки 🐉🥒🦐🐟;16. Maki 🐉🥒🦐🐟
+True;17;sushi;Suši i gunkani;Суши и гунканы;Sushi & Gunkans;17. Suši i gunkani🍣;17. Суши и гунканы🍣;17. Suši i gunkani🍣
+True;18;woks;Vok;Воки;Woks;18. Vok 🥡;18. Воки 🥡;18. Vok 🥡
+True;19;soups;Supe;Супы;Soups;19. Supe🍲;19. Супы🍲;19. Supe🍲
+True;20;sets;Setovi;Сеты;Setovi;20. Setovi;20. Сеты;20. Setovi
+True;90;vegan;Vegan;Веган;Vegan;90. Vegan;90. Веган;90. Vegan
+True;95;extra;Dodaci;Доп;Extra;95. Dodaci;95. Доп;95. Dodaci

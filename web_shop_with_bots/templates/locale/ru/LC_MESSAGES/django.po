@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-03-29 11:02+0100\n"
+"POT-Creation-Date: 2024-04-29 11:04+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -20,13 +20,16 @@ msgstr ""
 "%10<=4 && (n%100<12 || n%100>14) ? 1 : n%10==0 || (n%10>=5 && n%10<=9) || (n"
 "%100>=11 && n%100<=14)? 2 : 3);\n"
 
-#: .\templates\email\my_activation.html:4
+#: .\email\my_activation.html:4 .\email\my_activation.html:118
+#: .\email\my_confirmation.html:114
+#: .\email\my_email_changed_confirmation.html:115
+#: .\email\my_password_changed_confirmation.html:114
+#: .\email\my_password_reset.html:117
 #, python-format
 msgid "Account activation on %(site_name)s"
-msgstr "Активация аккаунта на сайте %(site_name)s"
+msgstr "Активация на сайте %(site_name)s"
 
-#: .\templates\email\my_activation.html:8
-#: .\templates\email\my_activation.html:23
+#: .\email\my_activation.html:8 .\email\my_activation.html:128
 #, python-format
 msgid ""
 "You're receiving this email because you need to finish activation process on "
@@ -35,79 +38,75 @@ msgstr ""
 "Вы получили это письмо, потому что вам нужно завершить процесс активации на "
 "%(site_name)s."
 
-#: .\templates\email\my_activation.html:10
-#: .\templates\email\my_activation.html:25
+#: .\email\my_activation.html:10 .\email\my_activation.html:129
 msgid "Please go to the following page to activate account:"
-msgstr "Пожалуйста, перейдите по ссылке ниже для активации аккаунта."
+msgstr "Пожалуйста, перейдите по ссылке ниже для активации аккаунта:"
 
-#: .\templates\email\my_activation.html:13
-#: .\templates\email\my_activation.html:28
-#: .\templates\email\my_confirmation.html:10
-#: .\templates\email\my_confirmation.html:21
-#: .\templates\email\my_email_changed_confirmation.html:10
-#: .\templates\email\my_email_changed_confirmation.html:22
-#: .\templates\email\my_password_changed_confirmation.html:10
-#: .\templates\email\my_password_changed_confirmation.html:21
-#: .\templates\email\my_password_reset.html:14
-#: .\templates\email\my_password_reset.html:29
+#: .\email\my_activation.html:13 .\email\my_activation.html:147
+#: .\email\my_confirmation.html:10 .\email\my_confirmation.html:127
+#: .\email\my_email_changed_confirmation.html:10
+#: .\email\my_email_changed_confirmation.html:127
+#: .\email\my_password_changed_confirmation.html:10
+#: .\email\my_password_changed_confirmation.html:126
+#: .\email\my_password_reset.html:14 .\email\my_password_reset.html:150
 msgid "Thanks for using our site!"
 msgstr "Спасибо, что Вы с нами!"
 
-#: .\templates\email\my_activation.html:15
-#: .\templates\email\my_confirmation.html:12
-#: .\templates\email\my_email_changed_confirmation.html:12
-#: .\templates\email\my_password_changed_confirmation.html:12
-#: .\templates\email\my_password_reset.html:16
+#: .\email\my_activation.html:15 .\email\my_confirmation.html:12
+#: .\email\my_email_changed_confirmation.html:12
+#: .\email\my_password_changed_confirmation.html:12
+#: .\email\my_password_reset.html:16
 #, python-format
 msgid "The %(site_name)s team"
-msgstr ""
+msgstr "Команада %(site_name)s"
 
-#: .\templates\email\my_activation.html:30
-#: .\templates\email\my_confirmation.html:23
-#: .\templates\email\my_email_changed_confirmation.html:24
-#: .\templates\email\my_password_changed_confirmation.html:23
-#: .\templates\email\my_password_reset.html:31
+#: .\email\my_activation.html:139
+msgid "Activation"
+msgstr "Активация"
+
+#: .\email\my_activation.html:148 .\email\my_confirmation.html:128
+#: .\email\my_email_changed_confirmation.html:128
+#: .\email\my_password_changed_confirmation.html:127
+#: .\email\my_password_reset.html:151
 msgid "The YUME SUSHI team"
 msgstr "Команда YUME SUSHI"
 
-#: .\templates\email\my_confirmation.html:4
+#: .\email\my_confirmation.html:4
 #, python-format
 msgid ""
 "%(site_name)s - Your account has been successfully created and activated!"
 msgstr "%(site_name)s - Ваш аккаунт был успешно создан и активирован!"
 
-#: .\templates\email\my_confirmation.html:8
-#: .\templates\email\my_confirmation.html:19
+#: .\email\my_confirmation.html:8 .\email\my_confirmation.html:123
 msgid "Your account has been created and is ready to use!"
 msgstr "Ваш аккаунт создан и готов к использованию!"
 
-#: .\templates\email\my_email_changed_confirmation.html:4
+#: .\email\my_email_changed_confirmation.html:4
 #, python-format
 msgid "%(site_name)s - Your email has been successfully changed!"
 msgstr "%(site_name)s - Ваш email был успешно изменен!"
 
-#: .\templates\email\my_email_changed_confirmation.html:8
-#: .\templates\email\my_email_changed_confirmation.html:20
+#: .\email\my_email_changed_confirmation.html:8
+#: .\email\my_email_changed_confirmation.html:124
 msgid "Your email has been changed!"
 msgstr "Ваш email был изменен!"
 
-#: .\templates\email\my_password_changed_confirmation.html:4
+#: .\email\my_password_changed_confirmation.html:4
 #, python-format
 msgid "%(site_name)s - Your password has been successfully changed!"
 msgstr "%(site_name)s - Ваш пароль был успешно изменен!"
 
-#: .\templates\email\my_password_changed_confirmation.html:8
-#: .\templates\email\my_password_changed_confirmation.html:19
+#: .\email\my_password_changed_confirmation.html:8
+#: .\email\my_password_changed_confirmation.html:123
 msgid "Your password has been changed!"
 msgstr "Ваш пароль изменен!"
 
-#: .\templates\email\my_password_reset.html:4
+#: .\email\my_password_reset.html:4
 #, python-format
 msgid "Password reset on %(site_name)s"
 msgstr "Сброс пароля на сайте %(site_name)s"
 
-#: .\templates\email\my_password_reset.html:8
-#: .\templates\email\my_password_reset.html:23
+#: .\email\my_password_reset.html:8 .\email\my_password_reset.html:127
 #, python-format
 msgid ""
 "You're receiving this email because you requested a password reset for your "
@@ -116,17 +115,16 @@ msgstr ""
 "Вы получили это письмо, потому что получили запрос на сброс пароля для "
 "Вашего аккаунта на сайте %(site_name)s."
 
-#: .\templates\email\my_password_reset.html:10
-#: .\templates\email\my_password_reset.html:25
+#: .\email\my_password_reset.html:10 .\email\my_password_reset.html:129
 msgid "Please go to the following page and choose a new password:"
-msgstr "Пожалуйста, перейдите по ссылке ниже для ввода нового пароля."
+msgstr "Пожалуйста, перейдите по ссылке ниже для ввода нового пароля:"
 
-#: .\templates\email\my_password_reset.html:12
+#: .\email\my_password_reset.html:12
 #, fuzzy
 #| msgid "Your username(email), in case you've forgotten:"
 msgid "Your username, in case you've forgotten:"
 msgstr "Ваш username(email):"
 
-#: .\templates\email\my_password_reset.html:27
+#: .\email\my_password_reset.html:149
 msgid "Your username(email), in case you've forgotten:"
 msgstr "Ваш username(email):"

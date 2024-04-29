@@ -23,7 +23,7 @@ MESSENGERS = [
 class MessengerAccount(models.Model):
     # создать метод очистки сохраняемых данных
     msngr_type = models.CharField(
-        _('msngr type'),
+        _('msngr type  *'),
         max_length=3,  # Устанавливаем максимальную длину, соответствующую максимальной длине кодов мессенджеров
         choices=MESSENGERS,
     )
@@ -31,19 +31,25 @@ class MessengerAccount(models.Model):
         'ID',
         max_length=100,
         validators=[MinLengthValidator(4)],
-        blank=True, null=True
+        blank=True, null=True,
+        help_text="Только для Tm, внесется автоматически."
     )
     tm_chat_id = models.CharField(
         'Tm_chat_ID',
         max_length=100,
         validators=[MinLengthValidator(4)],
-        blank=True, null=True
+        blank=True, null=True,
+        help_text="Только для Tm, внесется автоматически."
     )
     msngr_username = models.CharField(
-        'Username',
+        'Username  *',
         max_length=100,
         validators=[validate_msngr_username,],
-        blank=True, null=True
+        blank=True, null=True,
+        help_text=(
+            "Для Tm username начинается с @. ( прим '@yume_sushi')<br>"
+            "Для Wts username = номер телефона. (прим '+38212345678')<br>"
+            "Для Vbr username = номер телефона. (прим '+38212345678')")
     )
     msngr_phone = PhoneNumberField(
         verbose_name='телефон',
@@ -52,14 +58,14 @@ class MessengerAccount(models.Model):
         help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
     )
     subscription = models.BooleanField(
-        'subsription',
+        'подписка на рассылки',
         default=True
     )
     language = models.CharField(
         'язык',
         max_length=10,
         choices=settings.LANGUAGES,
-        default="RUS"
+        default=settings.DEFAULT_CREATE_LANGUAGE
     )
     date_joined = models.DateTimeField(
         'Дата регистрации',
@@ -75,9 +81,11 @@ class MessengerAccount(models.Model):
     )
 
     msngr_link = models.URLField(
-        'Чат',
-        blank=True, null=True
+        'Текст ссылки в Чат',
+        blank=True, null=True,
+        help_text="Ссылка на чат, внесется автоматически."
     )
+    # в админке поле не используется, т.к. необходимо HTML форматирование
 
     class Meta:
         ordering = ['-date_joined']
@@ -85,7 +93,7 @@ class MessengerAccount(models.Model):
         verbose_name_plural = 'Соц сети аккаунты'
 
     def __str__(self):
-        return f'Tm id = {self.msngr_id}'
+        return f'Tm id = {self.msngr_username}'
 
     def save(self, *args, **kwargs):
         # Проверяем, создаем ли мы новый объект или обновляем существующий

@@ -22,7 +22,7 @@ msgstr ""
 
 #: .\Lib\site-packages\django\core\validators.py:161
 msgid "Enter a valid email address."
-msgstr "Введите коректный email."
+msgstr "Enter a valid email address."
 
 #: .\Lib\site-packages\phonenumber_field\formfields.py:43
 #, python-brace-format
@@ -30,23 +30,37 @@ msgid ""
 "Enter a valid phone number (e.g. {example_number}) or a number with an "
 "international call prefix."
 msgstr ""
-"Введите корректный номер телефона (например, {example_number}) или номер с "
-"префиксом международной связи."
+"Enter a valid phone number (e.g. {example_number}) or a number with an "
+"international call prefix."
 
 #. Translators: {example_number} is an international phone number.
 #: .\Lib\site-packages\phonenumber_field\formfields.py:49
 #, python-brace-format
 msgid "Enter a valid phone number (e.g. {example_number})."
-msgstr "Введите корректный номер телефона (например, {example_number})."
+msgstr "Enter a valid phone number (e.g. {example_number})."
 
 #: .\Lib\site-packages\phonenumber_field\modelfields.py:53
 msgid "Phone number"
-msgstr "Номер телефона"
+msgstr "Phone number"
 
 #: .\Lib\site-packages\phonenumber_field\serializerfields.py:10
 msgid "Enter a valid phone number."
-msgstr "Введите корректный номер телефона."
+msgstr "Enter a valid phone number."
 
 #: .\Lib\site-packages\phonenumber_field\validators.py:11
 msgid "The phone number entered is not valid."
-msgstr "Введен некорректный номер телефона."
+msgstr "The phone number entered is not valid."
+
+#, python-format
+msgid "%(model_name)s with this %(field_label)s already exists."
+msgstr "%(model_name)s with this %(field_label)s already exists."
+
+#, python-format
+msgid "%(model_name)s with this %(field_labels)s already exists."
+msgstr "%(model_name)s with this %(field_labels)s already exists."
+
+msgid "This password is too common."
+msgstr "This password is too common."
+
+msgid "Your password can’t be a commonly used password."
+msgstr "Your password can’t be a commonly used password."

@@ -90,16 +90,19 @@ def _get_delivery_zone(delivery_zones, lat=None, lon=None):
     return delivery_zone
 
 
-def get_delivery_cost(discounted_amount, delivery, delivery_zone, delivery_cost=None):
+def get_delivery_cost(amount, delivery, delivery_zone, delivery_cost=None, free_delivery=None):
     """
     Рассчитывает стоимость доставки с учетом суммы заказа и зоны доставки.
     """
     # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
     if delivery_zone.name not in ['уточнить', 'по запросу'] :
 
-        if delivery_zone.is_promo and discounted_amount >= delivery_zone.promo_min_order_amount:
-            # Если для района установлена промо-акция и сумма заказа больше или равна
-            # минимальной сумме для промо-акции, доставка бесплатная
+        if free_delivery is True:
+            return Decimal(0)
+
+        elif delivery_zone.is_promo and amount >= delivery_zone.promo_min_order_amount:
+            # Если для района установлена промо-акция и сумма заказа больше
+            # или равна минимальной сумме для промо-акции, доставка бесплатная
             return Decimal(0)
         else:
             # Если промо-акция не действует или сумма заказа меньше минимальной,
@@ -156,3 +159,26 @@ def combine_date_and_time(date_str, time_str):
 
 def get_google_api_key():
     return settings.GOOGLE_API_KEY
+
+
+def parce_coordinates(coordinates):
+    latitude, longitude = None, None
+    if coordinates:
+        parts = coordinates.split(', ')
+        latitude = parts[0]
+        longitude = parts[1]
+
+        if latitude != 'None' and longitude != 'None':
+            latitude, longitude = float(latitude), float(longitude)
+            return latitude, longitude
+
+        latitude, longitude = None, None
+
+    return latitude, longitude
+
+
+def get_address_comment(address):
+    flat = address.flat if address.flat is not None else ''
+    floor = address.floor if address.floor is not None else ''
+    interfon = address.interfon if address.interfon is not None else ''
+    return f"flat: {flat}, floor: {floor}, interfon: {interfon}"

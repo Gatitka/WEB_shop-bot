@@ -6,8 +6,9 @@ from .views import (ContactsDeliveryViewSet, DeliveryOrderViewSet,
                     GetGoogleAPIKeyAPIView, MenuViewSet, MyAddressViewSet,
                     MyOrdersViewSet, MyPromocodesViewSet, MyUserViewSet,
                     PromoNewsViewSet, ShoppingCartViewSet,
-                    TakeawayOrderViewSet, UserDataAPIView, calculate_delivery,
-                    get_unit_price)
+                    TakeawayOrderViewSet, UserDataAPIView, GetDiscountsAPIView,
+                    calculate_delivery,
+                    get_dish_price)
 
 app_name = 'api'
 
@@ -45,8 +46,9 @@ urlpatterns = [
     path('v1/', include(promos_router.urls)),
     path('v1/', include(order_router.urls)),
     path('v1/', include(users_router.urls)),
-    path('v1/get_unit_price/', get_unit_price, name='get_unit_price'),
+    path('v1/get_dish_price/', get_dish_price, name='get_unit_price'),
     path('v1/get_user_data/', UserDataAPIView.as_view(), name='get_user_data'),
+    path('v1/get_discounts/', GetDiscountsAPIView.as_view(), name='get_discounts'),
     path('v1/get_google_api_key/', GetGoogleAPIKeyAPIView.as_view(), name='get_google_api_key'),
     path('v1/calculate_delivery/', calculate_delivery, name='calculate_delivery'),
 

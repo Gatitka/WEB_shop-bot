@@ -1,0 +1,70 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-04-13 09:08+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+
+#: .\models.py:763
+msgid "discount"
+msgstr "popust"
+
+#: .\models.py:764
+msgid "discounts"
+msgstr "popusti"
+
+#: .\models.py:890
+msgid "The total order discount cannot exceed 25%."
+msgstr "Ukupni popust na porudžbinu ne može preći 25%."
+
+#: .\validators.py:13
+msgid "Delivery time can't be in the past."
+msgstr "Vreme isporuke ne može biti u prošlosti."
+
+#: .\validators.py:17
+msgid "Delivery method is required for delivery time validation."
+msgstr "Metod dostave je potreban za validaciju vremena isporuke."
+
+#: .\validators.py:32
+#, python-brace-format
+msgid "Choose time {min_time_str} - {max_time_str}"
+msgstr "Izaberite vreme {min_time_str} - {max_time_str}"
+
+#: .\validators.py:68
+msgid "Please, choose the restaurant."
+msgstr "Molimo, izaberite restoran."
+
+#: .\validators.py:75 .\validators.py:82
+msgid "Please, enter the delivery address."
+msgstr "Molimo, unesite adresu dostave."
+
+#: .\validators.py:95
+msgid "Mistake while handling the cart. Try to pick the cart one more time."
+msgstr "Greška prilikom rukovanja korpicom. Pokušajte još jednom izabrati korpicu."
+
+#: .\validators.py:103
+msgid "Your cart is empty. Please add something into your cart."
+msgstr "Vaša korpa je prazna. Molimo, dodajte nešto u korpu."
+
+#: .\validators.py:110
+msgid "There's no such order ID in your orders history."
+msgstr "Nema takvog ID-a porudžbine u istoriji vaših porudžbina."
+
+#: .\validators.py:119
+msgid "Flat can't be empty."
+msgstr "Stan ne može biti prazan."

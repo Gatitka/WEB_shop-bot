@@ -8,4 +8,5 @@ class Command(BaseCommand):
         call_command('load_menu')
         call_command('load_delivery_data')
         call_command('load_promo')
+        call_command('load_discounts')
         call_command('load_users')

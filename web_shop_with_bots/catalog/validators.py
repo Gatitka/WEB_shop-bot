@@ -8,16 +8,22 @@ from .models import Dish
 
 def validator_dish_exists_active(value):
     if value is not None:
+        if not value.isdigit():
+            raise ValidationError({
+                "detail":"PK must be a number.",
+                "code": "invalid",
+                "pk": value})
+
         dish = Dish.objects.filter(article=int(value)).first()
         if not dish:
             raise serializers.ValidationError({
-                "detail": _("There's no such dish in our menu."),
+                "detail": "There's no such dish in our menu.",
                 "code": "invalid",
                 "pk": value})
         if not dish.is_active:
             raise serializers.ValidationError({
-                "detail": _("We are sorry, but this dish is "
-                            "currently inavailable."),
+                "detail": "We are sorry, but this dish is "
+                            "currently inavailable.",
                 "code": "invalid",
                 "pk": value})
 
@@ -26,20 +32,20 @@ def get_dish_validate_exists_active(value):
     if value is not None:
         if not value.isdigit():
             raise ValidationError({
-                "detail": _("PK must be a number."),
+                "detail": "PK must be a number.",
                 "code": "invalid",
                 "pk": value})
 
-        dish = Dish.objects.filter(article=int(value)).first()
+        dish = Dish.objects.filter(article=value).first()
         if not dish:
             raise ValidationError({
-                "detail": _("There's no such dish in our menu."),
+                "detail": "There's no such dish in our menu.",
                 "code": "invalid",
                 "pk": value})
         if not dish.is_active:
             raise ValidationError({
-                "detail": _("We are sorry, but this dish is "
-                            "currently inavailable."),
+                "detail": "We are sorry, but this dish is "
+                            "currently inavailable.",
                 "code": "invalid",
                 "pk": value})
     return dish

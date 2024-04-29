@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-03-29 11:39+0100\n"
+"POT-Creation-Date: 2024-04-13 09:27+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -20,62 +20,104 @@ msgstr ""
 "%10<=4 && (n%100<12 || n%100>14) ? 1 : n%10==0 || (n%10>=5 && n%10<=9) || (n"
 "%100>=11 && n%100<=14)? 2 : 3);\n"
 
-#: .\models.py:272
+#: .\models.py:71
+msgid "My address"
+msgstr "My address"
+
+#: .\models.py:72
+msgid "My addresses"
+msgstr "My addresses"
+
+#: .\models.py:188
+msgid "Client"
+msgstr "Client"
+
+#: .\models.py:189
+msgid "Clients"
+msgstr "Clients"
+
+#: .\models.py:296
 msgid "name"
-msgstr "имя"
+msgstr "name"
 
-#: .\models.py:277
+#: .\models.py:301
 msgid "last_name"
-msgstr "фамилия"
+msgstr "last_name"
 
-#: .\models.py:282
+#: .\models.py:306
 msgid "password"
-msgstr "пароль"
+msgstr "password"
 
-#: .\models.py:299
+#: .\models.py:323
 msgid "phone"
-msgstr "телефон"
+msgstr "phone"
 
-#: .\models.py:340
+#: .\models.py:364
 msgid "WEB account"
-msgstr "WEB аккаунт"
+msgstr "WEB account"
 
-#: .\models.py:341
+#: .\models.py:365
 msgid "WEB accounts"
-msgstr "WEB аккаунты"
+msgstr "WEB accounts"
 
-#: .\models.py:352
+#: .\models.py:376
 msgid "First name can't be ampty."
-msgstr "Поле Имя не может быть пустым."
+msgstr "First name can't be ampty."
 
-#: .\models.py:354
+#: .\models.py:378
 msgid "Last name can't be ampty."
-msgstr "Поле Фамилия не может быть пустой."
+msgstr "Last name can't be ampty."
 
-#: .\models.py:358
+#: .\models.py:380
+#, fuzzy
+#| msgid "Phone can't be ampty."
+msgid "email can't be ampty."
+msgstr "email can't be ampty."
+
+#: .\models.py:382
 msgid "Phone can't be ampty."
-msgstr "Поле телефона не может быть пустым."
+msgstr "Phone can't be ampty."
 
 #: .\validators.py:9
 msgid "Please, provide the last name."
-msgstr "Пожалуйста, укажите фамилию."
+msgstr "Please, provide the last name."
 
-#: .\validators.py:12
+#: .\validators.py:14
 msgid "Please check your name, note that only letters are allowed."
-msgstr "Пожалуйста, проверьте ваше имя. Учтите, что разрешены только буквы."
+msgstr "Please check your name, note that only letters are allowed."
 
-#: .\validators.py:19
+#: .\validators.py:22
 msgid "Birthdate is more than 100 years ago."
-msgstr "Дата рождения более 100 лет назад."
+msgstr "Birthdate is more than 100 years ago."
 
-#: .\validators.py:24
+#: .\validators.py:27
 msgid "Birthdate is in future."
-msgstr "Дата рождения в будущем."
+msgstr "Birthdate is in future."
 
-#: .\validators.py:33
+#: .\validators.py:36
 msgid "Password must contain at least one letter and one digit."
-msgstr "Пароль должен содержать как минимум одну букву и одну цифру."
+msgstr "Password must contain at least one letter and one digit."
 
-#: .\validators.py:39
+#: .\validators.py:42
 msgid "Your password must contain at least one letter and one digit."
-msgstr "Ваш пароль должен содержать как минимум одну букву и одну цифру."
+msgstr "Your password must contain at least one letter and one digit."
+
+#: .\validators.py:49
+msgid "Input should be a string"
+msgstr "Input should be a string"
+
+#: .\validators.py:54
+msgid "Input string should contain two parts separated by ', '."
+msgstr "Input string should contain two parts separated by ', '."
+
+#: .\validators.py:60
+msgid "Both parts of the input string should be convertible to float."
+msgstr "Both parts of the input string should be convertible to float."
+
+#: .\validators.py:63
+msgid "Latitude should be between 44 and 46 degrees."
+msgstr "Latitude should be between 44 and 46 degrees."
+
+#: .\validators.py:66
+msgid "Longitude should be between 19 and 22 degrees."
+msgstr "Longitude should be between 19 and 22 degrees."

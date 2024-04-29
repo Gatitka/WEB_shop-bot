@@ -201,7 +201,8 @@ class Promocode(TranslatableModel):
         chars = string.ascii_uppercase + string.digits
         while True:
             code = ''.join(random.choice(chars) for _ in range(length))
-            if not Promocode.objects.filter(code=code).exists():
+            if not Promocode.objects.filter(
+                        code=code, is_active=True).exists():
                 # Проверяем, не существует ли уже такого кода
                 return code
 
@@ -235,3 +236,8 @@ class PrivatPromocode(models.Model):
         default=False,
         verbose_name='использован'
     )
+
+    class Meta:
+        ordering = ['-created']
+        verbose_name = _('privat_promocode')
+        verbose_name_plural = _('privat_promocodes')

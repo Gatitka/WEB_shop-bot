@@ -67,7 +67,7 @@ class Category(TranslatableModel):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.slug
+        return f'{self.slug}'
 
     class Meta:
         verbose_name = 'категория'
@@ -114,7 +114,7 @@ class Dish(TranslatableModel):
         max_length=6,
         verbose_name='артикул *',
         help_text=(
-            "Добавьте артикул, пример: '0101'.\n"
+            "Добавьте артикул, пример: '001'.\n"
             "Возможны как цифры, так и буквы."
         ),
         unique=True,
@@ -252,8 +252,6 @@ class Dish(TranslatableModel):
 
     def __str__(self):
         return self.short_name
-        # print(self.safe_translation_getter('short_name', language_code='ru', any_language=True) or str(self.pk))
-        # return self.safe_translation_getter('short_name', language_code='ru', any_language=True) or str(self.pk)
 
     class Meta:
         ordering = ['pk']

@@ -23,7 +23,7 @@ def get_promocode_validate_active_in_timespan(value):
 
     if not promocode:
         raise serializers.ValidationError({
-            "detail": _("Please check the promocode."),
+            "detail": "Please check the promocode.",
             "code": "invalid"
         })
 

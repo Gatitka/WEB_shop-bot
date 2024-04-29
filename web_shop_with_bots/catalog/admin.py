@@ -1,8 +1,9 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from parler.admin import TranslatableAdmin, TranslatableTabularInline
-
+# from django.core.cache import cache
 from .models import UOM, Category, Dish, DishCategory
+from django.contrib.admin.views.decorators import staff_member_required
 
 
 def make_active(modeladmin, request, queryset):
@@ -20,13 +21,13 @@ make_deactive.short_description = "Отметить позиции не акти
 
 # admin.site.register(DishCategory)
 
-class DishCategoryAdmin(admin.TabularInline):
+
+class DishCategoryInlineAdmin(admin.TabularInline):
     """Вложенная админка DishCategory для добавления категори блюда
     сразу в админке блюда (через объект Dish)."""
     model = DishCategory
     min_num = 0
     extra = 0
-
 
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related('dish__translations')
@@ -52,15 +53,16 @@ class DishAdmin(TranslatableAdmin):
     readonly_fields = ('id', 'final_price', 'admin_photo', 'created')
     list_display = ('id', 'article', 'is_active', 'priority', 'short_name',
                     'discount', 'final_price',
-                    'custom_spicy_icon', 'custom_vegan_icon', 'admin_photo')
+                    'custom_spicy_icon', 'custom_vegan_icon')   # 'admin_photo')
     list_filter = ('is_active', 'category__slug',)
     list_per_page = 10
 
     search_fields = ('translations__short_name__icontains',
                      'translations__text__icontains')
-    inlines = (DishCategoryAdmin,)
+    inlines = (DishCategoryInlineAdmin,)
     actions = [make_active, make_deactive]
     list_select_related = False
+    list_display_links = ('article',)
 
     fieldsets = (
         ('Основное', {
@@ -126,6 +128,16 @@ class DishAdmin(TranslatableAdmin):
         obj = queryset.get(article=object_id)
 
         return obj
+
+    # def get_search_results(self, request, queryset, search_term):
+    #     queryset, may_have_duplicates = super().get_search_results(
+    #         request,
+    #         queryset,
+    #         search_term,
+    #     )
+
+    #     queryset |= self.model.objects.filter(translations__short_name__icontains=search_term)
+    #     return queryset, may_have_duplicates
 
 
 @admin.register(Category)

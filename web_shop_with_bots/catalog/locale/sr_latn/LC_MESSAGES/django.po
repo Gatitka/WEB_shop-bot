@@ -1,0 +1,36 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-04-13 09:04+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+#: .\models.py:281
+msgid "link dish-category"
+msgstr "poveži jelo-kategoriju"
+
+#: .\validators.py:14 .\validators.py:36
+msgid "There's no such dish in our menu."
+msgstr "Nema takvog jela u našem meniju."
+
+#: .\validators.py:19 .\validators.py:41
+msgid "We are sorry, but this dish is currently inavailable."
+msgstr "Žao nam je, ali ovo jelo trenutno nije dostupno."
+
+#: .\validators.py:29
+msgid "PK must be a number."
+msgstr "PK mora biti broj."

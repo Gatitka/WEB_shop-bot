@@ -51,18 +51,29 @@ class Command(BaseCommand):
                 if not any(row.values()):
                     continue
 
-                uom, created = UOM.objects.get_or_create(
+                uom, uom_created = UOM.objects.get_or_create(
                     name=row['name']
                 )
-                uom.set_current_language('ru')
-                uom.text = row['ru']
-                uom.save()
-                uom.set_current_language('en')
-                uom.text = row['en']
-                uom.save()
-                uom.set_current_language('sr-latn')
-                uom.text = row['sr-latn']
-                uom.save()
+                # uom.set_current_language('ru')
+                # uom.text = row['ru']
+                # uom.save()
+                # uom.set_current_language('en')
+                # uom.text = row['en']
+                # uom.save()
+                # uom.set_current_language('sr-latn')
+                # uom.text = row['sr-latn']
+                # uom.save()
+                if uom_created:
+                    translations = {
+                        'ru': row['ru'],
+                        'en': row['en'],
+                        'sr-latn': row['sr-latn']
+                    }
+
+                    for language_code, translation in translations.items():
+                        uom.set_current_language(language_code)
+                        uom.text = translation
+                        uom.save()
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -75,20 +86,32 @@ class Command(BaseCommand):
                 if not any(row.values()):
                     continue
 
-                category, created = Category.objects.get_or_create(
+                category, category_created = Category.objects.get_or_create(
                         priority=row['пп кат'],
                         slug=row['slug'],
                         is_active=row['активно'],
                     )
-                category.set_current_language('ru')
-                category.name = row['категория_ru']
-                category.save()
-                category.set_current_language('en')
-                category.name = row['категория_en']
-                category.save()
-                category.set_current_language('sr-latn')
-                category.name = row['категория_sr_latn']
-                category.save()
+                if category_created:
+                    translations = {
+                        'ru': row['категория_ru'],
+                        'en': row['категория_en'],
+                        'sr-latn': row['категория_sr_latn']
+                    }
+
+                    for language_code, translation in translations.items():
+                        category.set_current_language(language_code)
+                        category.name = translation
+
+                    category.save()
+                # category.set_current_language('ru')
+                # category.name = row['категория_ru']
+                # category.save()
+                # category.set_current_language('en')
+                # category.name = row['категория_en']
+                # category.save()
+                # category.set_current_language('sr-latn')
+                # category.name = row['категория_sr_latn']
+                # category.save()
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -103,13 +126,13 @@ class Command(BaseCommand):
                 if not any(row.values()):
                     continue
 
-                article_number = row['Артикул']
+                article_number = str(row['Артикул'])
                 image_path = find_image_by_article(article_number)
                 vegan_icon = bool(row['vegan icon'])
 
                 spicy_icon = bool(row['hot icon'])
 
-                dish, created = Dish.objects.get_or_create(
+                dish, dish_created = Dish.objects.get_or_create(
                     article=row['Артикул'],
                     is_active=row['Активно'],
                     priority=row['пп блюд'],
@@ -128,26 +151,43 @@ class Command(BaseCommand):
                     image=image_path,
                 )
 
-                category = Category.objects.get(slug=row['cat_slug'])
-                if dish.vegan_icon and category.slug != 'extra':
-                    dish.category.set([category, vegan_cat])
-                else:
-                    dish.category.set([category])
+                if dish_created:
+                    category = Category.objects.get(slug=row['cat_slug'])
+                    if dish.vegan_icon and category.slug != 'extra':
+                        dish.category.set([category, vegan_cat])
+                    else:
+                        dish.category.set([category])
 
-                dish.set_current_language('ru')
-                dish.short_name = row['наименование_ru']
-                dish.text = row['описание_ru']
-                dish.save()
+                    translations = {
+                        'ru': {'short_name': row['наименование_ru'],
+                               'text': row['описание_ru']},
+                        'en': {'short_name': row['наименование_en'], 'text':
+                               row['описание_en']},
+                        'sr-latn': {'short_name': row['наименование_sr_latn'],
+                                    'text': row['описание_sr_latn']},
+                    }
 
-                dish.set_current_language('en')
-                dish.short_name = row['наименование_en']
-                dish.text = row['описание_en']
-                dish.save()
+                    for language_code, translation_data in translations.items():
+                        dish.set_current_language(language_code)
+                        dish.short_name = translation_data['short_name']
+                        dish.text = translation_data['text']
 
-                dish.set_current_language('sr-latn')       # Only switches
-                dish.short_name = row['наименование_sr_latn']
-                dish.text = row['описание_sr_latn']
-                dish.save()
+                        dish.save()
+
+                    # dish.set_current_language('ru')
+                    # dish.short_name = row['наименование_ru']
+                    # dish.text = row['описание_ru']
+                    # dish.save()
+
+                    # dish.set_current_language('en')
+                    # dish.short_name = row['наименование_en']
+                    # dish.text = row['описание_en']
+                    # dish.save()
+
+                    # dish.set_current_language('sr-latn')       # Only switches
+                    # dish.short_name = row['наименование_sr_latn']
+                    # dish.text = row['описание_sr_latn']
+                    # dish.save()
 
         self.stdout.write(
             self.style.SUCCESS(

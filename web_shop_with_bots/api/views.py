@@ -1,10 +1,7 @@
-import logging
 from decimal import Decimal
-
 from django.contrib.auth import get_user_model
 from django.db.models import Prefetch
 from django.http import JsonResponse
-from django.utils.translation import activate
 from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
 from djoser import utils
@@ -18,24 +15,35 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from catalog.validators import validator_dish_exists_active
 from api.exceptions import CustomHttp400
-from api.permissions import MyIsAdmin
 from catalog.models import Dish
 from catalog.validators import validator_dish_exists_active
 from delivery_contacts.models import Delivery, Restaurant
 from delivery_contacts.services import (get_delivery,
-                                        get_delivery_cost_zone_by_address)
-from delivery_contacts.utils import get_google_api_key
+                                        get_delivery_cost_zone_by_address,
+                                        get_delivery_cost_zone,
+                                        )
+from delivery_contacts.utils import (get_google_api_key,
+                                     parce_coordinates, get_address_comment)
 from promos.models import PrivatPromocode, PromoNews
-from shop.models import CartDish, Order, OrderDish, Discount
+from shop.models import Order, OrderDish, Discount
 from shop.services import (get_base_profile_and_shopping_cart, get_cart,
-                           base_profile_first_order)
+                           base_profile_first_order, get_cash_discount)
 from .services import (get_promoc_resp_dict, get_repeat_order_form_data,
                        get_reply_data_delivery, get_reply_data_takeaway)
+from shop.validators import validate_user_order_exists
 from users.models import BaseProfile, UserAddress
-
 from . import serializers as srlz
 from .filters import CategoryFilter
+import logging.config
+from django.utils.decorators import method_decorator
+from django.contrib.admin.views.decorators import staff_member_required
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+from django.utils.translation import get_language_from_request
+import json
 
+
+import logging
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
@@ -108,10 +116,14 @@ class MyAddressViewSet(mixins.ListModelMixin,
             raise CustomHttp400("Such address is unavailable.", code='invalid')
 
     def perform_create(self, serializer):
+        logger.info(f'me/my_addresses/ REQUEST: {self.request.data} '
+                    f'USER:{self.request.user}')
         serializer.save(base_profile=self.request.user.base_profile)
 
     def perform_update(self, serializer):
-        serializer.save(base_profile=self.request.user.base_profile)
+        logger.info(f'me/my_addresses/ REQUEST: {self.request.data} '
+                    f'USER:{self.request.user}')
+        serializer.save()
 
 
 class ClientAddressesViewSet(mixins.ListModelMixin,
@@ -148,8 +160,13 @@ class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Вьюсет модели Orders для просмотра истории заказов.
     """
-    serializer_class = srlz.UserOrdersSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'list' or self.action == 'retrieve':
+            return srlz.UserOrdersSerializer
+        elif self.action == 'repeat':
+            return srlz.RepeatOrderSerializer
 
     def get_queryset(self):
         my_orders = Order.objects.filter(
@@ -174,8 +191,8 @@ class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
     def repeat(self, request, pk=None):
         """
         Повторение заказа зарегистрированного пользователя.\n
-        Корзина очищается и наполняется позициями из выбранного заказа.
         Responce содержит информацию заказа для заполнения формы заказа.
+        В запросе необходимо передавать ID заказа.
         """
         current_user = request.user
 
@@ -183,36 +200,32 @@ class MyOrdersViewSet(viewsets.ReadOnlyModelViewSet):
             logger.warning("Reordering is invalid for not authenticated.")
             return Response({}, status=status.HTTP_401_UNAUTHORIZED)
 
+        logger.info(f'me/my_orders/{id}/repeat/ REQUEST: {self.request.data} '
+                    f'USER:{self.request.user}')
+
         order = Order.objects.filter(
             user=current_user.base_profile, id=pk).first()
-        if order is None:
-            logger.warning("No such order ID in user's history.")
-            return Response(_("There's no such order ID in you orders history."),
-                            status=status.HTTP_204_NO_CONTENT)
+        validate_user_order_exists(order)
 
-        base_profile, cart = get_base_profile_and_shopping_cart(
-            current_user, validation=True, half_validation=True)
+        # cart_dishes_to_create = [
+        #     CartDish(dish=cartdish.dish, quantity=cartdish.quantity, cart=cart)
+        #     for cartdish in order.orderdishes.all()
+        #     if cartdish.dish.is_active
+        # ]
+        # try:
+        #     created_cartdishes = CartDish.objects.bulk_create(
+        #         cart_dishes_to_create)
+        #     for cartdish in created_cartdishes:
+        #         cartdish.save()
+        # except Exception as e:
+        #     logger.error(f"Failed to repeat the order. Error {e}",
+        #                  exc_info=True)
+        #     return Response("Failed to repeat the order.",
+        #                     status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        serialized_data = self.get_serializer(order).data
+        logger.info(f'me/my_orders/{id}/repeat/ serialized_data: {serialized_data}')
 
-        cart.empty_cart()
-        cart_dishes_to_create = [
-            CartDish(dish=cartdish.dish, quantity=cartdish.quantity, cart=cart)
-            for cartdish in order.orderdishes.all()
-            if cartdish.dish.is_active
-        ]
-        try:
-            created_cartdishes = CartDish.objects.bulk_create(
-                cart_dishes_to_create)
-            for cartdish in created_cartdishes:
-                cartdish.save()
-        except Exception as e:
-            logger.error(f"Failed to repeat the order. Error {e}",
-                         exc_info=True)
-            return Response("Failed to repeat the order.",
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        repeat_order_form_data = get_repeat_order_form_data(order)
-        return Response(repeat_order_form_data,
-                        status=status.HTTP_200_OK)
+        return Response(serialized_data, status=status.HTTP_201_CREATED)
 
 
 class MyPromocodesViewSet(mixins.ListModelMixin,
@@ -258,36 +271,42 @@ class MenuViewSet(mixins.ListModelMixin,
         'category__translations',
         'units_in_set_uom__translations',
         'weight_volume_uom__translations',
-    ).distinct().order_by('category__priority', 'priority')
+    ).order_by('category__priority', 'priority')
 
     http_method_names = ['get', 'post']
 
     def list(self, request, *args, **kwargs):
-        current_user = request.user
 
         response_data = {
                 'dishes': None,
                 'cart': None,
             }
         context = {'request': request}
+        # current_user = request.user
+        # if current_user.is_authenticated:
+        #     shopping_cart = get_cart(current_user, validation=False)
 
-        if current_user.is_authenticated:
-            shopping_cart = get_cart(current_user, validation=False)
+        #     context['extra_kwargs'] = {'cart_items':
+        #                                shopping_cart.dishes.all()}
 
-            context['extra_kwargs'] = {'cart_items':
-                                       shopping_cart.dishes.all()}
+        #     dish_serializer = self.get_serializer(self.get_queryset(),
+        #                                           many=True,
+        #                                           context=context,
+        #                                           )
 
-            dish_serializer = self.get_serializer(self.get_queryset(),
-                                                  many=True,
-                                                  context=context,
-                                                  )
+        #     items_qty = shopping_cart.items_qty
+        #     response_data['cart'] = {'items_qty': items_qty}
+        # else:
 
-            items_qty = shopping_cart.items_qty
-            response_data['cart'] = {'items_qty': items_qty}
-        else:
-            dish_serializer = self.get_serializer(self.get_queryset(),
-                                                  many=True,
-                                                  context=context)
+        qs = self.get_queryset()
+        unique_qs = []
+        for dish in qs:
+            if dish not in unique_qs:
+                unique_qs.append(dish)
+
+        dish_serializer = self.get_serializer(unique_qs,
+                                              many=True,
+                                              context=context)
 
         response_data['dishes'] = dish_serializer.data
 
@@ -400,14 +419,15 @@ class ShoppingCartViewSet(mixins.UpdateModelMixin,
 
         current_user = self.request.user
         if current_user.is_authenticated:
-            if base_profile_first_order(current_user):
-                discount = Discount.orders.get(type='первый заказ')
-                reply = {"first_order": True,
-                         "discount": discount.show_discount()}
+            reply = {"first_order": False,
+                     "discount": None}
 
-            else:
-                reply = {"first_order": False,
-                         "discount": None}
+            if base_profile_first_order(current_user):
+                discount = Discount.objects.filter(
+                    type='1', is_active=True).first()
+                if discount:
+                    reply = {"first_order": True,
+                             "discount": discount.show_discount()}
 
             return Response(reply,
                             status=status.HTTP_200_OK)
@@ -613,7 +633,8 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         if not request.data:
             return Response({'error': 'Request data is missing'},
                             status=status.HTTP_400_BAD_REQUEST)
-
+        logger.info(f'/create_order_takeaway/ REQUEST: {request.data} '
+                    f'USER:{request.user}')
         delivery = get_delivery(request, 'takeaway')
 
         context = {'extra_kwargs': {'delivery': delivery},
@@ -621,10 +642,15 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
 
         serializer = self.get_serializer(data=request.data,
                                          context=context)
-        if serializer.is_valid(raise_exception=True):
-            serializer.save(delivery=delivery)
+        serializer.is_valid(raise_exception=True)
+        logger.info(f'/create_order_takeaway/ '
+                    f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
+        instance = serializer.save(delivery=delivery)
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Преобразуем сохраненный объект в словарь
+        serialized_data = self.get_serializer(instance).data
+        logger.info(f'/create_order_takeaway/ REPLY_DATA: {serialized_data}')
+        return Response(serialized_data, status=status.HTTP_201_CREATED)
 
     @action(detail=False,
             methods=['post'])
@@ -642,6 +668,9 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
                 "total_amount": 4455.0
         }
         """
+        logger.info(f'/create_order_takeaway/pre_checkout/'
+                    f'REQUEST: {request.data} '
+                    f'USER:{request.user}')
         if not request.data:
             return Response({'error': 'Request is missing'},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -653,7 +682,8 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         serializer = self.get_serializer(data=request.data,
                                          context=context)
         serializer.is_valid(raise_exception=True)
-
+        logger.info(f'/create_order_takeaway/pre_checkout/ '
+                    f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
         # current_user = self.request.user
         # if current_user.is_authenticated:
         #     cart = get_cart(current_user)
@@ -670,7 +700,8 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
                                              orderdishes=orderdishes,
                                              promocode=promocode,
                                              request=request)
-
+        logger.info(f'/create_order_takeaway/pre_checkout/'
+                    f' REPLY_DATA: {reply_data}')
         return Response(reply_data, status=status.HTTP_200_OK)
 
     @action(detail=False,
@@ -683,7 +714,9 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         if not request.data:
             return Response({'error': 'Request is missing'},
                             status=status.HTTP_400_BAD_REQUEST)
-
+        logger.info(f'/create_order_takeaway/promocode/ '
+                    f'REQUEST: {request.data} '
+                    f'USER:{request.user}')
         delivery = get_delivery(request, 'takeaway')
         context = {'extra_kwargs': {'delivery': delivery},
                    'request': request}
@@ -691,9 +724,14 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         serializer = self.get_serializer(data=request.data,
                                          context=context)
         serializer.is_valid(raise_exception=True)
-
+        logger.info(f'/create_order_takeaway/promocode/ '
+                    f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data} '
+                    f'USER:{request.user}')
         promoc_resp_dict = get_promoc_resp_dict(
                             serializer.validated_data, request)
+        logger.info(f'/create_order_takeaway/promocode/ '
+                    f'REPLY_DATA: {promoc_resp_dict} '
+                    f'USER:{request.user}')
         return Response(promoc_resp_dict,
                         status=status.HTTP_200_OK)
 
@@ -736,7 +774,8 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         if not request.data:
             return Response({'error': 'Request data is missing'},
                             status=status.HTTP_400_BAD_REQUEST)
-
+        logger.info(f'/create_order_delivery/ REQUEST: {request.data} '
+                    f'USER:{request.user}')
         delivery = get_delivery(request, 'delivery')
 
         context = {'extra_kwargs': {'delivery': delivery},
@@ -744,10 +783,15 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
 
         serializer = self.get_serializer(data=request.data,
                                          context=context)
-        if serializer.is_valid(raise_exception=True):
-            serializer.save(delivery=delivery)
+        serializer.is_valid(raise_exception=True)
+        logger.info(f'/create_order_delivery/ '
+                    f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
+        instance = serializer.save(delivery=delivery)
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Преобразуем сохраненный объект в словарь
+        serialized_data = self.get_serializer(instance).data
+        logger.info(f'/create_order_delivery/ REPLY_DATA: {serialized_data}')
+        return Response(serialized_data, status=status.HTTP_201_CREATED)
 
     @action(detail=False,
             methods=['post'])
@@ -770,6 +814,9 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
             return Response({'error': 'Request is missing'},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        logger.info(f'/create_order_delivery/pre_checkout/ '
+                    f'REQUEST: {request.data} USER:{request.user}')
+
         delivery = get_delivery(request, 'delivery')
         context = {'extra_kwargs': {'delivery': delivery},
                    'request': request}
@@ -778,24 +825,26 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
                                          context=context)
         serializer.is_valid(raise_exception=True)
 
+        logger.info(f'/create_order_delivery/pre_checkout/ '
+                    f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
+
         city = serializer.validated_data.get('city')
-        lat = serializer.initial_data.get('lat')
-        lon = serializer.initial_data.get('lon')
+        lat, lon = parce_coordinates(
+            serializer.initial_data.get('coordinates'))
+        orderdishes = serializer.validated_data.get('orderdishes')
+        promocode = serializer.validated_data.get('promocode')
+        payment_type = serializer.validated_data.get('payment_type')
+        language = serializer.validated_data.get('language')
 
-        current_user = self.request.user
-        if current_user.is_authenticated:
-            cart = serializer.validated_data.get('cart')
+        reply_data = get_reply_data_delivery(delivery, city, lat, lon,
+                                             orderdishes=orderdishes,
+                                             promocode=promocode,
+                                             payment_type=payment_type,
+                                             language=language,
+                                             request=request)
 
-            reply_data = get_reply_data_delivery(delivery, city, lat, lon,
-                                                 cart=cart, request=request)
-        else:
-            orderdishes = serializer.validated_data.get('orderdishes')
-            promocode = serializer.validated_data.get('promocode')
-
-            reply_data = get_reply_data_delivery(delivery, city, lat, lon,
-                                                 orderdishes=orderdishes,
-                                                 promocode=promocode,
-                                                 request=request)
+        logger.info(f'/create_order_delivery/pre_checkout/ '
+                    f'REPLY_DATA: {reply_data}')
 
         return Response(reply_data, status=status.HTTP_200_OK)
 
@@ -813,41 +862,19 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         delivery = get_delivery(request, 'delivery')
         context = {'extra_kwargs': {'delivery': delivery},
                    'request': request}
-
+        logger.info(f'/create_order_delivery/promocode/ '
+                    f'REQUEST: {request.data} USER:{request.user}')
         serializer = self.get_serializer(data=request.data,
                                          context=context)
         serializer.is_valid(raise_exception=True)
-
+        logger.info(f'/create_order_delivery/promocode/ '
+                    f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
         promoc_resp_dict = get_promoc_resp_dict(
                             serializer.validated_data, request)
+        logger.info(f'/create_order_delivery/promocode/ '
+                    f'REPLY_DATA: {promoc_resp_dict}')
         return Response(promoc_resp_dict,
                         status=status.HTTP_200_OK)
-
-
-def get_unit_price(request):
-    if request.method == 'GET':
-        dish_name = request.GET.get('dish_name')
-        # Получаем ID блюда из GET-параметров
-
-        activate('ru')
-        try:
-            # Ищем блюдо по его названию
-            from parler.utils import get_active_language_choices
-
-            dish = Dish.objects.filter(
-                translations__language_code__in=get_active_language_choices(),
-                translations__short_name=dish_name
-            )[0]
-            # dish = Dish.objects.filter('translations__short_name'==dish_name)[0]
-            # dish = Dish.objects.language().get(short_name=dish_name)
-            unit_price = dish.final_price  # Получаем актуальную цену блюда
-            return JsonResponse({'unit_price': unit_price})
-        except Dish.DoesNotExist:
-            return JsonResponse({'error': 'Dish not found'}, status=404)
-        # Возвращаем ошибку, если блюдо не найдено
-
-    return JsonResponse({'error': 'Invalid request method'}, status=400)
-# Возвращаем ошибку, если метод запроса не GET
 
 
 class MyUserViewSet(UserViewSet):
@@ -865,10 +892,12 @@ class MyUserViewSet(UserViewSet):
             instance.is_deleted = True
             instance.is_active = False
             instance.base_profile.is_active = False
-            logger.debug('web_account проставлена отметка is_deleted = True')
+            logger.info(
+                f'web_account {instance} '
+                f'проставлена отметка is_deleted = True')
             instance.save()
             instance.base_profile.save(update_fields=['is_active'])
-            logger.debug('web_account сохранен')
+            logger.info(f'web_account {instance} сохранен')
 
             active_tokens = OutstandingToken.objects.filter(user=instance)
             # Добавляем каждый активный токен в черный список
@@ -884,70 +913,108 @@ class UserDataAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-
+        logger.info(f'/get_user_data/ '
+                    f'REQUEST: {request} USER:{request.user}')
         user_id = request.GET.get('user_id')
         try:
-            user = BaseProfile.objects.get(id=user_id)
+            user = BaseProfile.objects.select_related(
+                'messenger_account'
+            ).prefetch_related(
+                'addresses'
+            ).get(id=int(user_id))
             # Проверяем, является ли текущий пользователь владельцем
             # запрашиваемого профиля или админом
             if user != request.user.base_profile and not request.user.is_admin:
+                logger.info(f'У вас нет прав на доступ к этому профилю')
                 return JsonResponse(
                     {'error':
                      'У вас нет прав на доступ к этому профилю'},
                     status=403)
 
-            # Получаем данные пользователя
-            my_addresses = UserAddress.objects.filter(base_profile=user)
-            address_data = []
-            for address in my_addresses:
-                address_data.append({
-                    'address': str(address),
-                    'lat': address.lat,
-                    'lon': address.lon
-                })
+            my_addresses = user.addresses.all()
+            my_addresses_data = []
+            if my_addresses:
+                for address in my_addresses:
+                    address_comment = get_address_comment(address)
+                    my_addresses_data.append(
+                        {
+                            'id': address.id,
+                            'address': address.address,
+                            'coordinates': address.coordinates,
+                            'address_comment': address_comment,
+                        }
+                    )
+
+            if user.messenger_account:
+                msgr_link = user.messenger_account.msngr_link
+            else:
+                msgr_link = None
 
             user_data = {
                 'recipient_name': user.first_name,
                 'recipient_phone': str(user.phone),
-                'my_addresses': address_data
+                'language': user.base_language,
+                'msgr_link': msgr_link,
+                'my_addresses': my_addresses_data
             }
+            logger.info(f'/get_user_data/ '
+                        f'user_data: {user_data}')
             return JsonResponse(user_data)
 
         except BaseProfile.DoesNotExist:
+            logger.info(f'/get_user_data/ '
+                        f'User is not found.')
             return JsonResponse({'error': _("User is not found.")},
                                 status=404)
 
 
-import json
-
+from django.middleware.csrf import get_token
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-
 
 @csrf_exempt
 @require_POST
 def calculate_delivery(request):
-    # Проверяем, что запрос является AJAX-запросом
-    print(request.headers)  # Добавляем отладочное сообщение
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        # Получаем данные из POST запроса
-        data = json.loads(request.body.decode('utf-8'))
-        recipient_address = data.get('recipient_address', '')
-        discounted_amount = data.get('discounted_amount', '')
-        city = data.get('city', '')
-        delivery = data.get('delivery', '')
+    request_body = request.body
+    decoded_string = request_body.decode('utf-8')
+    logger.info(f'/calculate_delivery/ '
+                f'REQUEST: {decoded_string} USER:{request.user}')
+    if request.method == 'POST':
 
-        if recipient_address and discounted_amount and city and delivery:
-            discounted_amount = Decimal(discounted_amount)
-            delivery = Delivery.objects.get(id=int(delivery))
+        # Проверяем, что запрос является AJAX-запросом
+        if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            # Если запрос не является AJAX-запросом, возвращаем ошибку
+            return JsonResponse({'error':
+                                _('This endpoint only accepts AJAX requests.')},
+                                status=400)
+
+    # Получаем данные из POST запроса
+    data = json.loads(request.body.decode('utf-8'))
+    recipient_address = data.get('recipient_address', '')
+    amount = data.get('amount', '')
+    city = data.get('city', '')
+    delivery = data.get('delivery', '')
+    coordinates = data.get('coordinates', '')
+
+    if (recipient_address and amount and city and delivery
+        and (coordinates not in ['undefined'])):
+        amount = Decimal(amount)
+        delivery = Delivery.objects.get(id=int(delivery))
+        lat, lon = parce_coordinates(coordinates)
 
         # Выполняем расчет доставки (ваша логика расчета)
         try:
             delivery_cost, delivery_zone = (
-                get_delivery_cost_zone_by_address(
-                    city, discounted_amount, delivery, recipient_address
-                )
+                get_delivery_cost_zone(
+                    city, amount, delivery,
+                    lat, lon)   # free_delivery):
             )
+
+            # вариант без координат
+            # delivery_cost, delivery_zone = (
+            #     get_delivery_cost_zone_by_address(
+            #         city, discounted_amount, delivery, recipient_address
+            #     )
+            # )
 
             # Возвращаем результат в формате JSON
             return JsonResponse({
@@ -963,16 +1030,66 @@ def calculate_delivery(request):
             })
 
     else:
-        # Если запрос не является AJAX-запросом, возвращаем ошибку
-        return JsonResponse({'error': _('This endpoint only accepts AJAX requests.')}, status=400)
+        return JsonResponse({
+                'auto_delivery_zone': 'уточнить',
+                'auto_delivery_cost': '-',
+            })
 
 
+@method_decorator(staff_member_required, name='dispatch')
 class GetGoogleAPIKeyAPIView(APIView):
-    permission_classes = [MyIsAdmin]
-
+    permission_classes = [AllowAny]
 
     def get(self, request):
-
+        logger.info(f'/get_google_api_key/ '
+                    f'REQUEST: {request} USER:{request.user}')
         google_api_key = get_google_api_key()
+        return Response({"GOOGLE_API_KEY": google_api_key})
 
-        return JsonResponse({"GOOGLE_API_KEY": google_api_key})
+
+@method_decorator(staff_member_required, name='dispatch')
+class GetDiscountsAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        logger.info(f'/get_discounts/ '
+                    f'REQUEST: {request} USER:{request.user}')
+        discounts = {}
+        cash_discount = get_cash_discount()
+
+        if cash_discount:
+            discounts.update({'cash_discount': {
+                                'discount_am': cash_discount.discount_am,
+                                'discount_perc': cash_discount.discount_perc
+                                }
+                              }
+                             )
+        else:
+            discounts.update({'cash_discount': None})
+        return Response(discounts)
+
+
+def get_dish_price(request):
+    logger.info(f'/get_dish_price/ '
+                f'REQUEST: {request} USER:{request.user}')
+    if request.method == 'GET':
+        # Проверяем, что запрос является AJAX-запросом
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            # Получаем данные из GET запроса
+            dish_id = request.GET.get('dish_id', None)
+
+            if dish_id is not None:
+                try:
+                    dish = Dish.objects.get(article=dish_id,
+                                            is_active=True)
+                    unit_price = dish.final_price
+                    # Получаем актуальную цену блюда
+                    return JsonResponse({'price': unit_price})
+                except Dish.DoesNotExist:
+                    return JsonResponse({'error': 'Dish not found'},
+                                        status=404)
+            else:
+                return JsonResponse({'error': 'Dish ID is not provided'},
+                                    status=400)
+
+    return JsonResponse({'error': 'Invalid request method'}, status=400)

@@ -10,10 +10,14 @@ from django.utils.translation import gettext_lazy as _
 
 from delivery_contacts.models import Delivery
 from delivery_contacts.services import get_delivery_zone
-from delivery_contacts.utils import google_validate_address_and_get_coordinates
+from delivery_contacts.utils import (google_validate_address_and_get_coordinates, parce_coordinates)
 from shop.models import Order
-from shop.validators import validate_delivery_time
+from shop.validators import (validate_delivery_time,
+                             validate_flat)
 from users.models import UserAddress
+from tm_bot.services import send_message_new_order
+import re
+import json
 
 
 def url_params_from_lookup_dict(lookups):
@@ -36,92 +40,31 @@ def url_params_from_lookup_dict(lookups):
     return params
 
 
-# class ForeignKeyRawIdWidget(TextInput):
-#     """
-#     A Widget for displaying ForeignKeys in the "raw_id" interface rather than
-#     in a <select> box.
-#     """
-#     template_name = 'admin/widgets/foreign_key_raw_id.html'
-
-#     def __init__(self, rel, admin_site, attrs=None, using=None):
-#         self.rel = rel
-#         self.admin_site = admin_site
-#         self.db = using
-#         super().__init__(attrs)
-
-#     def get_context(self, name, value, attrs):
-#         context = super().get_context(name, value, attrs)
-#         rel_to = self.rel.model
-#         if rel_to in self.admin_site._registry:
-#             # The related object is registered with the same AdminSite
-#             related_url = reverse(
-#                 'admin:%s_%s_changelist' % (
-#                     rel_to._meta.app_label,
-#                     rel_to._meta.model_name,
-#                 ),
-#                 current_app=self.admin_site.name,
-#             )
-
-#             params = self.url_parameters()
-#             if params:
-#                 related_url += '?' + urlencode(params)
-#             context['related_url'] = related_url
-#             context['link_title'] = _('Lookup')
-#             # The JavaScript code looks for this class.
-#             context['widget']['attrs'].setdefault('class',
-#                                                   'vForeignKeyRawIdAdminField')
-#         else:
-#             context['related_url'] = None
-#         if context['widget']['value']:
-#             context['link_label'], context['link_url'] = (
-#                 self.label_and_url_for_value(value))
-#         else:
-#             context['link_label'] = None
-
-#         # Добавляем атрибут для отслеживания изменений в поле ввода
-#         context['widget']['attrs']['onchange'] = 'updateUserFields()'
-
-#         return context
-
-#     def label_and_url_for_value(self, value):
-#         # формирование кликабельной ссылки с именем после добавления юзера
-#         try:
-#             obj = self.rel.model._default_manager.using(self.db).get(pk=value)
-#             return obj, f'<a href="{obj.get_absolute_url()}">{obj}</a>'
-#         except self.rel.model.DoesNotExist:
-#             return '', ''
-
-#     def base_url_parameters(self):
-#         limit_choices_to = self.rel.limit_choices_to
-#         if callable(limit_choices_to):
-#             limit_choices_to = limit_choices_to()
-#         return url_params_from_lookup_dict(limit_choices_to)
-
-#     def url_parameters(self):
-#         from django.contrib.admin.views.main import TO_FIELD_VAR
-#         params = self.base_url_parameters()
-#         params.update({TO_FIELD_VAR: self.rel.get_related_field().name})
-#         return params
-
-
 class OrderAdminForm(forms.ModelForm):
     recipient_address = forms.CharField(
+               label='Адрес доставки',
                required=False,
                widget=forms.TextInput(attrs={'size': '40',
                                              'autocomplete': 'on',
                                              'class': 'basicAutoComplete',
                                              'style': 'width: 50%;'}))
 
-    my_recipient_address = forms.ChoiceField(
+    my_delivery_address = forms.ChoiceField(
+        label='Мои адреса',
         required=False,
-        choices=[],
-        # Пустой список, так как варианты будут добавляться динамически из JS
-        widget=forms.Select(attrs={'class': 'basicAutoComplete',
-                                   'style': 'width: 50%;'}),
-        # Вы можете изменить виджет по своему усмотрению
+        choices=[]
+        # label='Мои адреса',
+        # required=False,
+        # choices=[],
+        # # Пустой список, так как варианты будут добавляться динамически из JS
+        # widget=forms.Select(attrs={'class': 'basicAutoComplete',
+        #                            'style': 'width: 50%;'}),
+        # # Вы можете изменить виджет по своему усмотрению
     )
 
-    address_coordinates = forms.CharField(widget=forms.HiddenInput(),
+    # address_comment = forms.CharField(widget=forms.HiddenInput(),
+    #                                       required=False)
+    my_address_coordinates = forms.CharField(widget=forms.HiddenInput(),
                                           required=False)
     auto_delivery_zone = forms.CharField(label='Зона доставки (автом)',
                                          required=False)
@@ -129,11 +72,52 @@ class OrderAdminForm(forms.ModelForm):
                                             required=False,
                                             decimal_places=2)
     calculate_delivery_button = forms.CharField(
-        label='Рассчитать стоимость доставки',
-        widget=forms.TextInput(attrs={'type': 'button', 'value': 'Рассчитать'}),
+        label='Рассчитать стоимость доставки.',
+        widget=forms.TextInput(attrs={'type': 'button',
+                                      'value': 'Рассчитать',
+                                      'data-error': 'calculate-delivery-error'}),
+        required=False,
+        help_text=(
+            "Если результат = 'zone1/zone2/zone3', то поля   "
+            "'ЗОНА ДОСТАВКИ, СТОИМОСТЬ ДОСТАВКИ'   можно не заполнять.<br>"
+            "Если результат рассчета 'УТОЧНИТЬ', то нужно:<br>"
+            " - уточнить адрес;<br>"
+            " - выбрать вручную одну из 'zone1/zone2/zone3';<br>"
+            " - выбрать зону 'по запросу' и вручную внести стоимость доставки."
+            )
+    )
+    error_message = forms.CharField(
+        label='ошибка',
+        widget=forms.TextInput(attrs={'style': 'font-size: small; color: red; display: none; width: 900px;'}),
+        required=False
+    )
+    calc_message = forms.CharField(
+        label='комм.',
+        widget=forms.TextInput(attrs={'style': 'font-size: small; color: red; display: none; width: 900px;'}),
         required=False
     )
 
+
+    # flat = forms.CharField(
+    #            label='Квартира',
+    #            max_length=20,
+    #            required=False,
+    #            widget=forms.TextInput(attrs={'size': '2',
+    #                                          'autocomplete': 'on'}))
+
+    # floor = forms.CharField(
+    #            label='Этаж',
+    #            max_length=20,
+    #            required=False,
+    #            widget=forms.TextInput(attrs={'size': '2',
+    #                                          'autocomplete': 'on'}))
+
+    # interfon = forms.CharField(
+    #            label='Домофон',
+    #            max_length=20,
+    #            required=False,
+    #            widget=forms.TextInput(attrs={'size': '5',
+    #                                          'autocomplete': 'on'}))
     # user = forms.CharField(
     #     required=False,
     #     widget=ForeignKeyRawIdWidget(
@@ -141,26 +125,57 @@ class OrderAdminForm(forms.ModelForm):
     #         admin.site)
     # )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        user = self.instance.user if self.instance.pk else None
+        if 'user' in self.initial:
+            user = self.initial['user']
+        # при создании нового заказа и ошибке это пусто
+        if user:
+            user_addresses = UserAddress.objects.filter(base_profile=user)
+            choices = [(address.id, f"{address.address}, кв. {address.flat}, этаж {address.floor}, домофон {address.interfon}") for address in user_addresses]
+            choices.insert(0, ('', '------------'))
+            self.fields['my_delivery_address'].choices = choices
+
+            # Получение координат и передача их в форму
+            my_coordinates = {str(address.id): address.coordinates for address in user_addresses}
+            coordinates_json = json.dumps(my_coordinates)
+            self.fields['my_address_coordinates'].initial = coordinates_json
+
     class Meta:
         model = Order
         fields = '__all__'
 
     def clean_recipient_address(self):
-        delivery = self.cleaned_data.get('delivery')
         recipient_address = self.cleaned_data.get('recipient_address')
-        my_recipient_address = self.data.get('my_recipient_address')
-        address_coordinates = self.data.get('address_coordinates')
+        if recipient_address:
+            # Проверяем, содержит ли адрес только буквы, цифры и пробелы
+            if not re.search(r'\d+', recipient_address):
+                raise forms.ValidationError("Укажите номер дома.")
+
+        delivery = self.cleaned_data.get('delivery')
+
+        my_delivery_address = self.data.get('my_delivery_address')
+        coordinates = self.data.get('coordinates')
 
         if delivery is not None and delivery.type == 'delivery':
 
-            if my_recipient_address not in [None, '']:
-                recipient_address = my_recipient_address
+            if my_delivery_address not in [None, '']:
 
-                coordinates_dict = json.loads(address_coordinates)
-                lat = coordinates_dict.get('lat')
-                lon = coordinates_dict.get('lon')
-                if lat and lon:
-                    self.lat, self.lon = float(lat), float(lon)
+                addres_obj = UserAddress.objects.filter(
+                    base_profile=self.cleaned_data['user'],
+                    id=int(my_delivery_address)
+                ).first()
+
+                recipient_address = addres_obj.address
+                self.my_delivery_address = addres_obj
+                self.coordinates = addres_obj.coordinates
+                self.lat, self.lon = parce_coordinates(addres_obj.coordinates)
+                self.address_comment = (
+                    f"flat: {addres_obj.flat}, "
+                    f"floor: {addres_obj.floor}, "
+                    f"interfon: {addres_obj.interfon}"
+                )
 
                 return recipient_address
 
@@ -171,18 +186,19 @@ class OrderAdminForm(forms.ModelForm):
             if recipient_address != self.instance.recipient_address:
 
                 try:
-                    lat, lon, status = (
-                        google_validate_address_and_get_coordinates(
-                            recipient_address
-                        )
-                    )
-                    self.lat = lat
-                    self.lon = lon
+                    self.lat, self.lon = parce_coordinates(coordinates)
 
                 except Exception as e:
                     pass
 
         return recipient_address
+
+    def clean_my_delivery_address(self):
+        my_delivery_address = self.cleaned_data['my_delivery_address']
+        if my_delivery_address == '':
+            return None
+        else:
+            return self.my_delivery_address
 
     def clean_delivery_zone(self):
         delivery = self.cleaned_data.get('delivery')
@@ -200,7 +216,7 @@ class OrderAdminForm(forms.ModelForm):
                         if new_delivery_zone.name == 'уточнить':
                             raise forms.ValidationError(
                                 ("Введенный адрес находится вне зоны обслуживания."
-                                "Проверьте адрес или внесите вручную зону и цену доставки.")
+                                 "Проверьте адрес или внесите вручную зону и цену доставки.")
                             )
                         return new_delivery_zone
 
@@ -273,17 +289,22 @@ class OrderAdminForm(forms.ModelForm):
         # Удаляем ошибки валидации для поля my_recipient_address
         if 'my_recipient_address' in self._errors:
             del self._errors['my_recipient_address']
+
+        # if cleaned_data['recipient_address'] != self.instance.recipient_address:
+
+            # delivery = cleaned_data.get('delivery')
+            # if delivery is not None and delivery.type == 'delivery':
+            #     flat = cleaned_data.get('flat')
+            #     floor = cleaned_data.get('floor')
+            #     interfon = cleaned_data.get('interfon')
+            #     cleaned_data['address_comment'] = f"flat: {flat}, floor: {floor}, interfon: {interfon}"
+
         return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        # Используем сохраненные значения lat и lon из атрибутов формы
-        recipient_address = self.cleaned_data.get('recipient_address')
-        if recipient_address != self.instance.recipient_address:
-            instance.delivery_address_data = {
-                "lat": self.lat,
-                "lon": self.lon
-            }
+        if self.cleaned_data.get('created_by') is None:
+            instance.created_by = 2
 
         if commit:
             instance.save()

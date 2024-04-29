@@ -2,7 +2,7 @@ from datetime import datetime, time, timezone
 
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
-
+from django.conf import settings
 from delivery_contacts.models import Restaurant
 
 
@@ -102,3 +102,33 @@ def validate_cartdishes_exist(cart):
         raise ValidationError(
             _("Your cart is empty. Please add something into your cart.")
         )
+
+
+def validate_user_order_exists(order):
+    if order is None:
+        # logger.warning("No such order ID in user's history.")
+        return ValidationError(_("There's no such order ID in "
+                                 "your orders history."))
+
+
+def validate_flat(form):
+    delivery = form.cleaned_data.get('delivery')
+    if delivery is not None and delivery.type == 'delivery':
+        flat = form.cleaned_data.get('flat')
+        if flat in [None, '']:
+            return ValidationError(_("Flat can't be empty."))
+
+
+def validate_payment_type(data):
+    if data is None:
+        raise ValidationError("Payment type can't be empty.")
+
+    if data not in [method[0] for method in settings.PAYMENT_METHODS]:
+        raise ValidationError("Invalid payment type.")
+
+
+def validate_city(value):
+    valid_cities = [city[0] for city in settings.CITY_CHOICES]
+    if value not in valid_cities:
+        raise ValidationError(
+            _("City is incorect."))

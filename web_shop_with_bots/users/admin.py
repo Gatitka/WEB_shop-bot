@@ -1,11 +1,7 @@
-from django import forms
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from django.contrib.auth.forms import UserChangeForm
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
-from django.db.models import Count
 
 from shop.models import Order  # ShoppingCart
 
@@ -16,45 +12,43 @@ class UserAddressesAdminInline(admin.TabularInline):
     model = UserAddress
     min_num = 0
     extra = 0   # чтобы не добавлялись путые поля
-    fields = ('address', 'lat', 'lon')
+    fieldsets = (
+        ('Адрес', {
+            'fields': (
+                ('address', 'coordinates',),
+                ('flat', 'floor', 'interfon')
+            )
+        }),
+    )
+
 
 
 @admin.register(BaseProfile)
 class BaseProfileAdmin(admin.ModelAdmin):
     """Настройки отображения данных таблицы User."""
-    list_display = ('id', 'is_active', 'first_name', 'last_name', 'phone', 'email', 'orders')
+    list_display = ('id', 'is_active', 'first_name', 'last_name',
+                    'phone', 'email', 'orders_qty')
     search_fields = ('first_name', 'last_name', 'phone', 'email')
     list_filter = ('is_active',)
-    list_select_related = ['web_account', 'my_addresses']
+    # list_select_related = ['web_account', 'my_addresses']
     ordering = ('id',)
-    readonly_fields = ('date_joined', 'orders',
+    readonly_fields = ('date_joined', 'orders_qty',
                        'first_name', 'last_name', 'phone', 'email')
     inlines = (UserAddressesAdminInline,)
+    raw_id_fields = ['web_account', 'messenger_account']
     fieldsets = (
         ('Основное', {
             'fields': (
-                ('first_name', 'last_name'),
-                ('date_of_birth', 'is_active'),
-                ('date_joined'),
+                ('first_name', 'last_name', 'phone'),
+                ('email', 'web_account', 'messenger_account'),
+                ('orders_qty'),
             )
         }),
-        ('Контакты', {
+        ('Дополнительно', {
             'fields': (
-                ('phone'),
-                ('email'),
-                ('city'),
-                ('base_language'),
-            )
-        }),
-        ('Пользователь сайта, мессенджера', {
-            'fields': (
-                ('web_account',),
-                ('messenger_account'),
-            )
-        }),
-        ('Комментарии', {
-            'fields': (
-                ('notes', 'orders')
+                ('is_active', 'date_joined'),
+                ('date_of_birth', 'city', 'base_language'),
+                ('notes')
             )
         }),
     )
@@ -64,16 +58,11 @@ class BaseProfileAdmin(admin.ModelAdmin):
             'web_account'
             ).prefetch_related(
                 'my_addresses'
-                ).annotate(orders_qty=Count('orders')).all()
+                ).all()
         return qs
 
-    def orders(self, obj):
-        ord_num = Order.objects.filter(user=obj.pk).count()
-        return ord_num
-    orders.short_description = 'заказы'
 
-    # разработать переход из общего раздела клиент в webaccount, tmaccount
-
+# разработать переход из общего раздела клиент в webaccount, tmaccount
 
 @admin.register(WEBAccount)
 class WEBAccountAdmin(UserAdmin):
@@ -90,7 +79,8 @@ class WEBAccountAdmin(UserAdmin):
                 ('email', 'phone'),
                 ('date_joined', 'last_login'),
                 ('is_superuser', 'is_staff'),
-                ('web_language', 'is_subscribed')
+                ('is_subscribed'),
+                ('web_language')
             )
         }),
         ('Пароль', {
@@ -110,7 +100,7 @@ class WEBAccountAdmin(UserAdmin):
         (None, {
             'classes': ('wide',),
             'fields': ('first_name', 'last_name',
-                       'email', 'phone',
-                       'password1', 'password2'),
+                    'email', 'phone',
+                    'password1', 'password2'),
         }),
     )

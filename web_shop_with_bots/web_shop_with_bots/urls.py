@@ -9,8 +9,6 @@ from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
 
-from shop.admin import shop_site
-
 schema_view = get_schema_view(
     openapi.Info(
         title="YumeSushi API",
@@ -25,8 +23,8 @@ schema_view = get_schema_view(
 
 
 urlpatterns = [
+
     path('admin/', admin.site.urls),
-    path('shopadmin/', shop_site.urls),
     path('api/', include('api.urls')),
 
     # needed for text HTML editing in browser

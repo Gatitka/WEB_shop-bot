@@ -1,20 +1,22 @@
-from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.contrib.gis.db.models import PointField
 from django.contrib.gis.geos import Point
 from django.core.exceptions import ValidationError
-from django.core.validators import EmailValidator, MinLengthValidator
+from django.core.validators import MinLengthValidator
 from django.db import models
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
-
-from delivery_contacts.utils import google_validate_address_and_get_coordinates
+from django.conf import settings
+from delivery_contacts.utils import (
+    google_validate_address_and_get_coordinates,
+    parce_coordinates)
 from tm_bot.models import MessengerAccount
 
-from .validators import validate_birthdate, validate_first_and_last_name
+from .validators import (validate_birthdate, validate_first_and_last_name,
+                         coordinates_validator)
 
 
 class UserRoles(models.TextChoices):
@@ -31,47 +33,66 @@ class UserAddress(models.Model):
         'BaseProfile',
         on_delete=models.CASCADE,
         verbose_name='базовый профиль',
+        related_name='addresses'
     )   # НЕ УДАЛЯТЬ! нужен для правильного отображения админки
-    lat = models.CharField(
-        max_length=60,
+    point = PointField(
         blank=True,
         null=True,
-        verbose_name='координаты ШИР (lat)',
-        help_text=(
-            'прим. "44.809000122132566".'
-        ),
+        verbose_name='координаты'
     )
-    lon = models.CharField(
+    coordinates = models.CharField(
         max_length=60,
         blank=True,
         null=True,
-        verbose_name='координаты ДОЛ (lon)',
+        verbose_name='координаты ШИР (lat), ДОЛ (lon)',
         help_text=(
-            'прим. "20.458040962192968".'
+            'прим. "44.809000122132566, 20.458040962192968".'
         ),
+        validators=[coordinates_validator,]
+    )
+    floor = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        verbose_name='этаж',
+    )
+    flat = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        verbose_name='квартира',
+    )
+    interfon = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        verbose_name='домофон'
     )
 
     class Meta:
-        verbose_name = 'Мой адрес'
-        verbose_name_plural = 'Мои адреса'
+        verbose_name = (_('My address'))
+        verbose_name_plural = (_('My addresses'))
 
     def __str__(self):
         return f'Адрес {self.address}'
 
     def save(self, *args, **kwargs):
-        if self.address and (not self.lat or not self.lon):
+        if self.address and (not self.coordinates):
             # Если есть адрес, но нет координат, извлекаем координаты из адреса
             try:
                 lat, lon, status = google_validate_address_and_get_coordinates(self.address)
-                self.lat = lat
-                self.lon = lon
+                self.coordinates = f'{lat}, {lon}'
+                self.point = Point(float(lon), float(lat))
+
             except ValidationError as e:
                 # Если произошла ошибка при получении координат, логируем ее
                 # logging.error(f'Ошибка при получении координат для адреса {self.address}: {e}')
                 pass
-        elif self.lat and self.lon:
-            # Если переданы координаты, сохраняем их без изменения адреса
-            pass
+
+        elif self.coordinates:
+            lat, lon = parce_coordinates(self.coordinates)
+            self.coordinates = f'{lat}, {lon}'
+            self.point = Point(float(lon), float(lat))
         else:
             # В противном случае, вызываем исключение или выполняем другую логику по вашему усмотрению
             pass
@@ -89,7 +110,8 @@ class BaseProfile(models.Model):
         on_delete=models.PROTECT,
         related_name='base_profile',
         verbose_name='Аккаунт на сайте (web_account)',
-        blank=True, null=True
+        blank=True, null=True,
+        help_text="Для изменения личных данных кликните на email."
         )
     messenger_account = models.OneToOneField(
         MessengerAccount,
@@ -111,8 +133,7 @@ class BaseProfile(models.Model):
     phone = PhoneNumberField(
         verbose_name='телефон',
         unique=True,
-        blank=True, null=True,
-        help_text="Внесите телефон, прим. '+38212345678'. Для пустого значения, внесите 'None'.",
+        blank=True, null=True
         )
     email = models.EmailField(
         'email',
@@ -126,10 +147,11 @@ class BaseProfile(models.Model):
         blank=True, null=True
     )
     city = models.CharField(
-        'Город',
         max_length=20,
+        verbose_name="город *",
+        choices=settings.CITY_CHOICES,
+        default=settings.DEFAULT_CITY,
         blank=True, null=True,
-        # выпадающий список
     )
     date_joined = models.DateTimeField(
         'Дата регистрации',
@@ -155,17 +177,19 @@ class BaseProfile(models.Model):
         'Язык',
         max_length=10,
         choices=settings.LANGUAGES,
-        default="sr-latn"
+        default=settings.DEFAULT_CREATE_LANGUAGE
     )
-    first_order = models.BooleanField(
-        'первый заказ',
-        default=False
+    orders_qty = models.PositiveSmallIntegerField(
+        verbose_name='Кол-во заказов',
+        help_text="Считается автоматически.",
+        default=0,
+        blank=True,
     )
 
     class Meta:
         # ordering = ['-id']
-        verbose_name = 'клиент'
-        verbose_name_plural = 'клиенты'
+        verbose_name = _('Client')
+        verbose_name_plural = _('Clients')
 
     def __str__(self):
         return (
@@ -296,7 +320,7 @@ class WEBAccount(AbstractUser):
         'Язык сайта',
         max_length=10,
         choices=settings.LANGUAGES,
-        default="sr-latn"
+        default=settings.DEFAULT_CREATE_LANGUAGE
     )
     phone = PhoneNumberField(
         _('phone'),
@@ -356,7 +380,7 @@ class WEBAccount(AbstractUser):
         if not self.last_name:
             raise ValidationError({'last_name': _("Last name can't be ampty.")})
         if not self.email:
-            raise ValidationError({'email': -("email can't be ampty.")})
+            raise ValidationError({'email': _("email can't be ampty.")})
         if not self.phone:
             raise ValidationError({'phone': _("Phone can't be ampty.")})
 
@@ -387,7 +411,8 @@ def create_base_profile(sender, instance, created, **kwargs):
                 first_name=instance.first_name,
                 last_name=instance.last_name,
                 phone=instance.phone,
-                email=instance.email
+                email=instance.email,
+                base_language=instance.web_language
             )
         else:
             base_profile = BaseProfile.objects.filter(
@@ -401,3 +426,13 @@ def create_base_profile(sender, instance, created, **kwargs):
     else:
         # если изменется существующий web_account
         BaseProfile.base_profile_update(instance)
+
+
+def validate_phone_unique(value, user):
+    if not value:
+        raise ValidationError({"phone": "Please, provide the phone."},
+                              code='invalid')
+    if user.phone != value:
+        if WEBAccount.objects.filter(phone=value).exists():
+            raise ValidationError({"phone": "WEB account with such phone already exists."},
+                                  code='invalid')
