@@ -4,7 +4,13 @@ from parler.admin import TranslatableAdmin
 
 from utils.utils import activ_actions
 
-from .models import Delivery, DeliveryZone, Restaurant
+from .models import Delivery, DeliveryZone, Restaurant, Courier
+
+
+@admin.register(Courier)
+class CourierAdmin(admin.ModelAdmin):
+    list_display = ('id', 'is_active', 'city', 'name')
+    actions = [*activ_actions]
 
 
 @admin.register(Delivery)

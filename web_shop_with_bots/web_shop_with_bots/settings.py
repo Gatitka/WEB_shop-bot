@@ -3,92 +3,128 @@ import os
 from datetime import timedelta
 from django.utils.translation import gettext_lazy as _  # for translation
 from dotenv import load_dotenv
-from users.validators import AlphanumericPasswordValidator
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
+from django.utils import timezone
+from logging.handlers import TimedRotatingFileHandler
+
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname((BASE_DIR))),
+PROGECT_DIR = os.path.dirname(os.path.dirname((BASE_DIR)))
+load_dotenv(os.path.join(PROGECT_DIR,
                          'infra',
                          '.env'), verbose=True)
 
 ENVIRONMENT = os.getenv('ENVIRONMENT')
 DEVELOPER = os.getenv('DEVELOPER')
 
-if (ENVIRONMENT == 'development'
-    or ENVIRONMENT == 'test_server'):
+LOG_DIRECTORY = os.path.join(BASE_DIR, 'logging')
+if not os.path.exists(LOG_DIRECTORY):
+    os.makedirs(LOG_DIRECTORY)
 
-    LOG_FILE_PATH = os.path.join(
-        BASE_DIR, 'logging', 'yume.log'
-        ) if os.name != 'nt' else os.path.join(BASE_DIR, 'logging', 'yume.log')
+# Не нужно создавать файл вручную, TimedRotatingFileHandler сделает это сам
+# LOG_FILE_NAME = f'yume_{timezone.now().strftime("%Y-%m-%d")}.log'
+# LOG_FILE_PATH = os.path.join(
+#     LOG_DIRECTORY, LOG_FILE_NAME
+# )
 
-    LOGGING = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "verbose": {
-                "format": "{levelname} {asctime} {pathname} {funcName} {process:d} {thread:d} {message}",
-                "style": "{",
-            },
+# # Проверяем, существует ли файл, и создаем его, если он отсутствует
+# if not os.path.exists(LOG_FILE_PATH):
+#     with open(LOG_FILE_PATH, 'w'):
+#         pass
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {pathname} {funcName} {process:d} {thread:d} {message}",
+            "style": "{",
         },
-        "handlers": {
-            "console": {
-                "level": "DEBUG",
-                "class": "logging.StreamHandler",
-                "formatter": "verbose",
-            },
-            "file": {
-                'level': 'DEBUG',
-                'class': 'logging.FileHandler',
-                'filename': LOG_FILE_PATH,
-                'formatter': 'verbose',
-                'encoding': 'utf-8',
-                'mode': 'w+',  # Добавлен параметр для перезаписи файла при каждом запуске
-            }
+    },
+    "handlers": {
+        "console": {
+            "level": os.getenv('CONSOLE_LOG_LEVEL'),
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
         },
-        "loggers": {
-            "api": {
-                "handlers": ["console", "file"],
-                "level": "DEBUG",
-                "propagate": True,
-            },
-            "catalog": {
-                "handlers": ["console", "file"],
-                "level": "DEBUG",
-                "propagate": True,
-            },
-            "delivery_contacts": {
-                "handlers": ["console", "file"],
-                "level": "DEBUG",
-                "propagate": True,
-            },
-            "promos": {
-                "handlers": ["console", "file"],
-                "level": "DEBUG",
-                "propagate": True,
-            },
-            "shop": {
-                "handlers": ["console", "file"],
-                "level": "DEBUG",
-                "propagate": True,
-            },
-            "tm_bot": {
-                "handlers": ["console", "file"],
-                "level": "DEBUG",
-                "propagate": True,
-            },
-            "users": {
-                "handlers": ["console", "file"],
-                "level": "DEBUG",
-                "propagate": True,
-            },
+        "file": {
+            'level': os.getenv('FILE_LOG_LEVEL'),
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            # 'filename': LOG_FILE_PATH,
+            'filename': os.path.join(LOG_DIRECTORY, 'yume.log'),
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+            # 'mode': 'a',
+            'when': 'midnight',
+            # 'interval': 1,
+            'backupCount': 10
         },
-    }
+        "mail": {
+            'level': 'ERROR',
+            'class': 'logging.handlers.SMTPHandler',
+            'mailhost': (os.getenv('EMAIL_HOST'), os.getenv('EMAIL_PORT')),
+            'fromaddr': os.getenv('EMAIL_HOST_USER'),
+            'toaddrs': ['gatitka@yandex.ru'],
+            'subject': 'Django Error Log',
+            'credentials': (os.getenv('EMAIL_HOST_USER'),
+                            os.getenv('EMAIL_HOST_PASSWORD')),
+            'secure': (),
+        },
+    },
+    "loggers": {
+        "api": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('API_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "catalog": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('CATALOG_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "delivery_contacts": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('DELIVERY_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "promos": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('PROMOS_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "shop": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('SHOP_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "tm_bot": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('TM_BOT_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "users": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('USERS_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "cron": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('CRON_LOG_LEVEL'),
+            "propagate": True,
+        },
+        "web_shop_with_bots": {
+            "handlers": ["console", "file", "mail"],
+            "level": os.getenv('WSWB_LOG_LEVEL'),
+            "propagate": True,
+        },
+    },
+}
 
 SECRET_KEY = os.getenv('SECRET_KEY')
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHAT_ID = os.getenv('CHAT_ID')
+
+
+DOCKER_COMPOSE_NAME = os.getenv('DOCKER_COMPOSE_NAME')
 
 DEBUG = os.getenv('DEBUG')
 TEST_SERVER = os.getenv('TEST_SERVER')
@@ -117,11 +153,14 @@ ALLOWED_HOSTS = allowed_hosts
 
 
 default_installed_apps = [
+    'django_crontab',
     'catalog.apps.CatalogConfig',
     'shop.apps.ShopConfig',
     'users.apps.UsersConfig',
     'tm_bot.apps.TmBotConfig',
     'promos.apps.PromosConfig',
+    'delivery_contacts.apps.DeliveryContactsConfig',
+    'settings.apps.SettingsConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -137,11 +176,11 @@ default_installed_apps = [
     'drf_yasg',
     'rest_framework.authtoken',
     'debug_toolbar',
-    'django_summernote',   # HTML editable text in Admin section for promo
-    'delivery_contacts.apps.DeliveryContactsConfig',
     'django_filters',
     'parler',   # language
-    'django.contrib.gis'
+    'django.contrib.gis',
+    'django_celery_beat',
+    'rangefilter'
 ]
 installed_apps = default_installed_apps.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
@@ -189,13 +228,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'web_shop_with_bots.wsgi.application'
 
+POSTGRES_DB = os.environ.get('POSTGRES_DB')
+POSTGRES_USER = os.environ.get('POSTGRES_USER')
+POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD')
 
 DATABASES = {
     'default': {
-        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.sqlite3'),
-        'NAME': os.environ.get('POSTGRES_DB', os.path.join(BASE_DIR, 'db.sqlite3')),
-        'USER': os.environ.get('POSTGRES_USER'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
+        'ENGINE': os.environ.get('DB_ENGINE'),
+        'NAME': POSTGRES_DB,
+        'USER': POSTGRES_USER,
+        'PASSWORD': POSTGRES_PASSWORD,
         'HOST': os.environ.get('DB_HOST'),
         'PORT': os.environ.get('DB_PORT'),
     }
@@ -245,26 +287,42 @@ REST_FRAMEWORK = {
     'DATETIME_INPUT_FORMATS': [
         '%d.%m.%Y %H:%M',
     ],
-    'EXCEPTION_HANDLER': 'api.utils.utils.custom_exception_handler'
+    'EXCEPTION_HANDLER': 'api.utils.utils.custom_exception_handler',
+
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '10000/day', #  Лимит для UserRateThrottle
+        'anon': '1000/day',  #  Лимит для AnonRateThrottle
+    }
+
+
 }
 
 access_token_lifetime = os.getenv('ACCESS_TOKEN_LIFETIME')
+refresh_token_lifetime = os.getenv('REFRESH_TOKEN_LIFETIME')
+
 if access_token_lifetime is not None:
     ACCESS_TOKEN_LIFETIME = timedelta(seconds=int(access_token_lifetime))
 else:
     ACCESS_TOKEN_LIFETIME = timedelta(seconds=480)
 
+if refresh_token_lifetime is not None:
+    REFRESH_TOKEN_LIFETIME = timedelta(seconds=int(refresh_token_lifetime))
+else:
+    REFRESH_TOKEN_LIFETIME = timedelta(seconds=7776000)
+
 SIMPLE_JWT = {
     # Устанавливаем срок жизни токена
     'ACCESS_TOKEN_LIFETIME': ACCESS_TOKEN_LIFETIME,
-    'REFRESH_TOKEN_LIFETIME': timedelta(seconds=int(os.getenv(
-        'REFRESH_TOKEN_LIFETIME'))),
+    'REFRESH_TOKEN_LIFETIME': REFRESH_TOKEN_LIFETIME,
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 
     'BLACKLIST_AFTER_ROTATION': True,
-
 }
 
 TOKEN_MODEL = None
@@ -318,22 +376,37 @@ DJOSER = {
     },
 }
 
-# -------------------------------- Redis ------------------------------------------
+# -------------------------------- Redis ----------------------------------
 
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-#         "LOCATION": "redis://127.0.0.1:6379",
-#         "OPTIONS": {
-#             "db": 1
-#         }
-#     }
-# }
+
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://:redisadmin0@127.0.0.1:6379/1"  #local
+        # "LOCATION": "redis://:redisadmin0@redis:6379/1"    #server
+    }
+}
+
+CELERY_BROKER_URL = 'redis://:redisadmin0@redis:6379/0'
+
 PARLER_ENABLE_CACHING = False
+
+CRONJOBS = [
+    ('*/5 * * * *', 'web_shop_with_bots.cron.backup_database',
+     {"PGPASSWORD": POSTGRES_PASSWORD}),
+    ('30 14 27 * *', 'web_shop_with_bots.cron.backup_database',
+     {"PGPASSWORD": POSTGRES_PASSWORD}),
+    ('0 2 * * *', 'web_shop_with_bots.cron.delete_expired_tokens')
+]
+
+BACKUP_DIRECTORY = os.path.join(PROGECT_DIR, 'backups')
+if not os.path.exists(BACKUP_DIRECTORY):
+    os.makedirs(BACKUP_DIRECTORY)
 
 # -------------------------------- DATETIME + OTHER ------------------------------------------
 
-TIME_ZONE = 'Europe/Oslo'
+TIME_ZONE = 'Europe/Belgrade'
 
 USE_TZ = True
 
@@ -348,12 +421,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.WEBAccount'
 
-SESSION_COOKIE_AGE = 60*60*24    # срок годности кук для админа, чтобы не перелогиниваться в админке
-
-
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))),
-                         'sushi-frontend-rs',
-                         '.env'), verbose=True)
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'my_static/'),]
@@ -381,17 +448,17 @@ LANGUAGES = [
     # Добавьте другие языки, если необходимо
 ]
 
-PARLER_DEFAULT_LANGUAGE_CODE = 'ru'  # By default, the fallback languages are the same as: [LANGUAGE_CODE]
-# PARLER_DEFAULT_LANGUAGE_CODE = 'en'
+PARLER_DEFAULT_LANGUAGE_CODE = 'sr-latn'
+# By default, the fallback languages are the same as: [LANGUAGE_CODE]
 
 PARLER_LANGUAGES = {
     None: (
-        {'code': 'en',},
-        {'code': 'ru',},
-        {'code': 'sr-latn',},
+        {'code': 'en', },
+        {'code': 'ru', },
+        {'code': 'sr-latn', },
     ),
     'default': {
-        'fallbacks': ['en'],          # defaults to PARLER_DEFAULT_LANGUAGE_CODE
+        'fallbacks': ['sr-latn'],          # defaults to PARLER_DEFAULT_LANGUAGE_CODE
         'hide_untranslated': False,   # the default; let .active_translations() return fallbacks too.
     }
 }
@@ -401,25 +468,22 @@ DEFAULT_CREATE_LANGUAGE = 'sr-latn'
 LOCALE_PATHS = [
     os.path.join(BASE_DIR, "templates", "locale/"),
     os.path.join(BASE_DIR, "api", "locale/"),
-    # os.path.join(BASE_DIR, "catalog", "locale/"),
-    # os.path.join(BASE_DIR, "delivery_contacts", "locale/"),
-    # os.path.join(BASE_DIR, "shop", "locale/"),
     os.path.join(BASE_DIR, "tm_bot", "locale/"),
     os.path.join(BASE_DIR, "users", "locale/"),
     os.path.join(BASE_DIR, "venv_locale", "locale/"),
-    # os.path.join(BASE_DIR, "web_shop_with_bots", "locale/")
 ]
 
 # -------------------------------- CORS ------------------------------------------
 
-CORS_ORIGIN_ALLOW_ALL = True  # True Разрешает обрабатывать запросы с любого хоста, если False/удалить, то разрешены запросы только с этого хоста
+CORS_ORIGIN_ALLOW_ALL = True
+# True Разрешает обрабатывать запросы с любого хоста, если False/удалить, то разрешены запросы только с этого хоста
 
 # A list of origins that are authorized to make cross-site HTTP requests.
 # The origins in this setting will be allowed, and the requesting origin
 # will be echoed back to the client in the access-control-allow-origin header.
 
 default_cors_allowed_origins = [
-    f"{PROTOCOL}://localhost",
+    f"{PROTOCOL}://localhost:3000",
     f"{PROTOCOL}://127.0.0.1",
 ]
 
@@ -438,10 +502,11 @@ CORS_ALLOW_CREDENTIALS = True
 # normal responses. Defaults to False.
 
 
-# CORS_URLS_REGEX = r'^/api/.*$' # шаблон адресов, к которым можно обращаться с других доменов
-
-
 # -------------------------------- CSRF --------------------------------------------
+
+SESSION_COOKIE_AGE = int(os.getenv('SESSION_COOKIE_AGE'))
+# срок годности кук для админа, чтобы не перелогиниваться в админке
+# а так же срок CSRF-токена
 
 if ENVIRONMENT != 'development':
     CSRF_COOKIE_SECURE = True  # Должно быть True, если используется HTTPS
@@ -450,7 +515,7 @@ CSRF_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
 
 default_csrf_trusted_origins = [
-    f"{PROTOCOL}://localhost",
+    f"{PROTOCOL}://localhost:3000",
     f"{PROTOCOL}://127.0.0.1",
 ]
 
@@ -481,36 +546,9 @@ if TEST_SERVER:
 INTERNAL_IPS = internal_ips_origins
 
 
-# -------------------------------- SUMMERNOTE --------------------------------------------
-# settings for HTML text editing in admin
-X_FRAME_OPTIONS = 'SAMEORIGIN'
-SUMMERNOTE_CONFIG = {
-    'iframe' : True,
-    'summernote' : {
-        'airMode': False,
-        'width' : '100%',
-        'lang' : 'ru-RU'
-    },
-    'disable_attachment': True,
-    'toolbar': [
-            ['style', ['style']],
-            ['font', ['bold', 'underline', 'clear']],
-            ['fontname', ['fontname']],
-            ['color', ['color']],
-            ['para', ['ul', 'ol', 'paragraph']],
-            ['table', ['table']],
-            ['insert', ['link']],
-            ['view', ['fullscreen', 'codeview', 'help']],
-        ],
-    'width': '80%',
-    'height': '200',
-}
-
 # -------------------------------- GEOCODING --------------------------------------------
 
 if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
-
-    # GDAL_LIBRARY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), 'Program Files', 'GDAL', 'gdal.dll')
 
     GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal308.dll'
     GEOS_LIBRARY_PATH = r'C:\OSGeo4W\bin\geos_c.dll'
@@ -523,33 +561,47 @@ if ENVIRONMENT == 'test_server':
         integrations=[DjangoIntegration()],
     )
 
+# -------------------------------- TELEGRAM BOT  ----------------------------
+
+
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+CHAT_ID = os.getenv('CHAT_ID')
+BOTOBOT_API_KEY = os.getenv('BOTOBOT_API_KEY')
+SEND_BOTOBOT_UPDATES = os.getenv('SEND_BOTOBOT_UPDATES')
 
 # -------------------------------- BUSINESS LOGIC SETTINGS  ----------------------------
 
 CITY_CHOICES = [
     ('Beograd', 'Beograd'),
-    ('Novi_sad', 'Novi Sad'),
+    # ('Novi_sad', 'Novi Sad'),
 ]
-
 DEFAULT_CITY = 'Beograd'
 DEFAULT_RESTAURANT = 1
-MAX_DISC_AMOUNT = 25
-
-
-PAYMENT_METHODS = [
-    ('cash', 'cash'),
-    ('card_on_delivery', 'card_on_delivery'),
-    ('card', 'card'),
-]
-
-DISCOUNT_TYPES = [
-    ("1", _('first_order')),
-    ("2", _('cash_on_delivery')),
-]
 
 CREATED_BY = [
     (1, 'user'),
     (2, 'admin'),
+]
+
+DISCOUNT_TYPES = [
+    (1, _('first_order')),
+    (2, _('takeaway')),
+    (3, _('cash_on_delivery')),
+    (4, _('instagram_story')),
+    (5, _('birthday')),
+]
+
+DELIVERY_CHOICES = (
+    ("delivery", "Доставка"),
+    ("takeaway", "Самовывоз")
+)
+
+MAX_DISC_AMOUNT = 25
+
+MESSENGERS = [
+    ('tm', 'Telegram'),
+    ('wts', 'WhatsApp'),
+    ('vb', 'Viber'),
 ]
 
 # List of order statuses
@@ -593,6 +645,22 @@ ORDER_STATUS_TRANSLATIONS = {
         'sr-latn': 'otkazan'
     }
 }
+
+PAYMENT_METHODS = [
+    ('cash', 'cash'),
+    ('card_on_delivery', 'card_on_delivery'),
+    ('card', 'card'),
+    ('partner', 'partner')
+]
+
+SOURCE_TYPES = [
+    ('P1-1', 'Glovo'),
+    ('P1-2', 'Wolt'),
+    ('1', 'телефон'),
+    ('2', 'ресторан'),
+    ('3', 'TM_Bot'),
+    ('4', 'сайт'),
+]
 
 
 PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT = '2'

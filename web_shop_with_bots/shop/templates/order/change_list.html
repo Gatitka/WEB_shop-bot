@@ -1,0 +1,37 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block content %}
+    <div class="changelist-form-container">
+        <h2>{% trans "Сегодня ИТОГО" %}</h2>
+        <table id="today_results" class="model-table">
+            <thead>
+                <tr>
+                    <th scope="col" style="width: 150px; text-align: center;">{% trans "Заказы" %}</th>
+                    <th scope="col" style="width: 50px; text-align: center;">{% trans "Чеки" %}</th>
+                    {% for courier_name, courier_value in couriers.items %}
+                        <th scope="col text-align: center; vertical-align: middle;">{{ courier_name|capfirst }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="height: 50px; text-align: center; vertical-align: middle;">{{ total_amount }}</td>
+                    <td style="text-align: center; vertical-align: middle;">{{ total_receipts }}</td>
+                    {% for courier_name, courier_value in couriers.items %}
+                        {% if courier_value.1 %}
+                            <td style="text-align: center; vertical-align: middle;">{{ courier_value.0 }}<br>+ уточнить</td>
+                        {% elif not courier_value.1 %}
+                            <td style="text-align: center; vertical-align: middle;">{{ courier_value.0 }}</td>
+                        {% endif %}
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {{ block.super }}
+{% endblock %}
+{% block extrahead %}
+    {{ block.super }}
+{% endblock %}

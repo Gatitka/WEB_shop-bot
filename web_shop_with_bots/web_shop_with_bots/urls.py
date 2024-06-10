@@ -2,12 +2,10 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
-from django_summernote.utils import get_config
-from django_summernote.views import (SummernoteEditor,
-                                     SummernoteUploadAttachment)
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
+
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -26,13 +24,6 @@ urlpatterns = [
 
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
-
-    # needed for text HTML editing in browser
-    path('summernote/', include('django_summernote.urls')), # needed for text HTML editing in browser
-    path('editor/<id>/', SummernoteEditor.as_view(),
-         name='django_summernote-editor'),
-    path('upload_attachment/', SummernoteUploadAttachment.as_view(),
-             name='django_summernote-upload_attachment'),
 
     # redoc
     re_path(r'^redoc/$',

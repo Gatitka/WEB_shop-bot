@@ -88,6 +88,7 @@ class Dish(TranslatableModel):
         text=models.CharField(
             'полное описание *',
             max_length=200,
+            db_index=True,
             help_text='Добавьте описание блюда. max 200 зн.',
             null=True, blank=True,
         ),
@@ -101,6 +102,7 @@ class Dish(TranslatableModel):
         msngr_text=models.CharField(
             'полное описание',
             max_length=200,
+            db_index=True,
             help_text='Добавьте описание блюда. max 200 зн.',
             null=True, blank=True,
         )
@@ -166,7 +168,21 @@ class Dish(TranslatableModel):
         verbose_name='итог цена, DIN',
         validators=[MinValueValidator(0.01)],
         help_text='Цена после скидок в DIN. Проставится после сохранения.',
-        max_digits=7, decimal_places=2,
+        max_digits=8, decimal_places=2,
+        default=Decimal('0'),
+    )
+    final_price_p1 = models.DecimalField(
+        verbose_name='цена P1, DIN *',
+        validators=[MinValueValidator(0.01)],
+        help_text='Партнер P1 (GLovo/Wolt). Внесите цену в DIN. Формат 00000.00',
+        max_digits=8, decimal_places=2,
+        default=Decimal('0'),
+    )
+    final_price_p2 = models.DecimalField(
+        verbose_name='цена P2, DIN *',
+        validators=[MinValueValidator(0.01)],
+        help_text='Партнер P2. Внесите цену в DIN. Формат 00000.00',
+        max_digits=8, decimal_places=2,
         default=Decimal('0'),
     )
     weight_volume = models.CharField(
@@ -210,6 +226,11 @@ class Dish(TranslatableModel):
         default=False,
         null=True, blank=True,
     )
+    utensils = models.PositiveSmallIntegerField(
+        verbose_name='приборы',
+        help_text="Кол-во приборов в порции.",
+        null=True, blank=True
+    )
 
     # def clean(self) -> None:
     #     self.short_name = self.short_name.strip().lower()
@@ -233,6 +254,7 @@ class Dish(TranslatableModel):
             self.final_price = Decimal(
                 self.price * Decimal(1 - self.discount/100)
             )
+            self._price = self.price
         else:
             self.final_price = self.price
         super().save(*args, **kwargs)

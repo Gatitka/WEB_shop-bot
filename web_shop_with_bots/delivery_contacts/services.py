@@ -13,6 +13,7 @@ import logging
 # Создаем логгер
 logger = logging.getLogger(__name__)
 
+
 def get_delivery(request, type):
     city = request.data.get('city', settings.DEFAULT_CITY)
     if city is None:
@@ -31,21 +32,23 @@ def get_delivery_zone(city, lat=None, lon=None):
     """
     Функция возвращает зону доставки по адресу или координатам.
     """
-    delivery_zones = DeliveryZone.objects.filter(city=city)
+    all_delivery_zones = DeliveryZone.objects.filter(city=city)
+    delivery_zones = all_delivery_zones.exclude(
+                                        name__in=['уточнить', 'по запросу'])
     delivery_zone = _get_delivery_zone(delivery_zones, lat, lon)
     if delivery_zone is None:
-        return DeliveryZone.objects.get(name="уточнить", city=city)
+        return all_delivery_zones.filter(name='уточнить').first()
     return delivery_zone
 
 
 def get_delivery_cost_zone(city, amount, delivery,
                            lat, lon, free_delivery=False):
     """
-    Рассчитывает стоимость доставки и зону с учетом суммы заказа и адреса доставки.
+    Рассчитывает стоимость доставки и зону с учетом суммы заказа
+    и адреса доставки.
     """
-    # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
-    # if lat is None and lon is None:
-    #     lat, lon, status = google_validate_address_and_get_coordinates(address)
+    # Перебираем все районы доставки и проверяем, входит ли адрес
+    # в каждый из них
     delivery_zone = get_delivery_zone(city,
                                       lat, lon)
 

@@ -1,5 +1,4 @@
-from datetime import datetime, time, timezone
-
+from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
@@ -8,48 +7,51 @@ from delivery_contacts.models import Restaurant
 
 def validate_delivery_time(value, delivery, restaurant=None):
     if value is not None:
-
-        if value <= datetime.now(value.tzinfo):
+        if value <= timezone.localtime():
             raise ValidationError(_("Delivery time can't be in the past."))
+        delivery_time = value.time()
 
-        if delivery is None:
+    else:
+        current_time = timezone.localtime()
+        delivery_time = current_time.time()
+
+    if delivery is None:
+        raise ValidationError(
+                _("Delivery method is required for "
+                    "delivery time validation.")
+            )
+
+    # Проверяем, что время находится в диапазоне
+    # работы доставки в модели доставки
+    if delivery.type == 'delivery':
+        min_time = delivery.min_time
+        max_time = delivery.max_time
+
+        if not min_time < delivery_time < max_time:
+            min_time_str = min_time.strftime('%H:%M')
+            max_time_str = max_time.strftime('%H:%M')
+
             raise ValidationError(
-                    _("Delivery method is required for "
-                      "delivery time validation.")
-                )
-        # Проверяем, что время находится в диапазоне
-        # работы доставки в модели доставки
-        if delivery.type == 'delivery':
-            delivery_time = value.time()
-            min_time = delivery.min_time
-            max_time = delivery.max_time
+                (_(f"Choose time {min_time_str} - {max_time_str}")),
+                code='invalid_order_time'
+            )
 
-            if not min_time <= delivery_time <= max_time:
-                min_time_str = min_time.strftime('%H:%M')
-                max_time_str = max_time.strftime('%H:%M')
+    elif delivery.type == 'takeaway':
+        if restaurant is not None:
+            restaurant = Restaurant.objects.filter(id=restaurant).first()
+            if restaurant:
+                min_time = restaurant.open_time
+                max_time = restaurant.close_time
 
-                raise ValidationError(
-                    (_(f"Choose time {min_time_str} - {max_time_str}")),
-                    code='invalid_order_time'
-                )
+                if not min_time <= delivery_time <= max_time:
+                    min_time_str = min_time.strftime('%H:%M')
+                    max_time_str = max_time.strftime('%H:%M')
+                    raise ValidationError(
+                        (f'Choose time '
+                            f'{min_time_str} - {max_time_str}'),
 
-        elif delivery.type == 'takeaway':
-            delivery_time = value.time()
-            if restaurant is not None:
-                restaurant = Restaurant.objects.filter(id=restaurant).first()
-                if restaurant:
-                    min_time = restaurant.open_time
-                    max_time = restaurant.close_time
-
-                    if not min_time <= delivery_time <= max_time:
-                        min_time_str = min_time.strftime('%H:%M')
-                        max_time_str = max_time.strftime('%H:%M')
-                        raise ValidationError(
-                            (f'Choose time '
-                             f'{min_time_str} - {max_time_str}'),
-
-                            code='invalid_delivery_time'
-                        )
+                        code='invalid_delivery_time'
+                    )
 
     else:
         return value

@@ -1,23 +1,17 @@
 import json
-from urllib.parse import urlencode
-
+from django.conf import settings
 from django import forms
-from django.contrib import admin
-from django.forms.widgets import TextInput
-from django.urls import reverse
-from django.utils.html import format_html
-from django.utils.translation import gettext_lazy as _
 
 from delivery_contacts.models import Delivery
 from delivery_contacts.services import get_delivery_zone
-from delivery_contacts.utils import (google_validate_address_and_get_coordinates, parce_coordinates)
-from shop.models import Order
-from shop.validators import (validate_delivery_time,
-                             validate_flat)
+from delivery_contacts.utils import parce_coordinates
+from shop.models import (Order, OrderGlovoProxy, OrderWoltProxy)
+from shop.validators import (validate_delivery_time)
+from phonenumber_field.validators import validate_international_phonenumber
 from users.models import UserAddress
+from users.validators import validate_first_and_last_name
 from tm_bot.services import send_message_new_order
 import re
-import json
 
 
 def url_params_from_lookup_dict(lookups):
@@ -41,31 +35,33 @@ def url_params_from_lookup_dict(lookups):
 
 
 class OrderAdminForm(forms.ModelForm):
+    process_comment = forms.CharField(
+               label='Ошибки при сохранении',
+               required=False,
+               widget=forms.Textarea(attrs={
+                                            'autocomplete': 'on',
+                                            'class': 'vLargeTextField',
+                                            'maxlength': 500,
+                                        }))
+
     recipient_address = forms.CharField(
                label='Адрес доставки',
                required=False,
                widget=forms.TextInput(attrs={'size': '40',
                                              'autocomplete': 'on',
                                              'class': 'basicAutoComplete',
-                                             'style': 'width: 50%;'}))
+                                             'style': 'width: 900px;'}))
 
     my_delivery_address = forms.ChoiceField(
         label='Мои адреса',
         required=False,
         choices=[]
-        # label='Мои адреса',
-        # required=False,
-        # choices=[],
-        # # Пустой список, так как варианты будут добавляться динамически из JS
-        # widget=forms.Select(attrs={'class': 'basicAutoComplete',
-        #                            'style': 'width: 50%;'}),
-        # # Вы можете изменить виджет по своему усмотрению
     )
 
-    # address_comment = forms.CharField(widget=forms.HiddenInput(),
-    #                                       required=False)
-    my_address_coordinates = forms.CharField(widget=forms.HiddenInput(),
+    my_address_comments = forms.CharField(widget=forms.HiddenInput(),
                                           required=False)
+    my_address_coordinates = forms.CharField(widget=forms.HiddenInput(),
+                                             required=False)
     auto_delivery_zone = forms.CharField(label='Зона доставки (автом)',
                                          required=False)
     auto_delivery_cost = forms.DecimalField(label='Стоимость доставки (автом)',
@@ -73,30 +69,36 @@ class OrderAdminForm(forms.ModelForm):
                                             decimal_places=2)
     calculate_delivery_button = forms.CharField(
         label='Рассчитать стоимость доставки.',
-        widget=forms.TextInput(attrs={'type': 'button',
-                                      'value': 'Рассчитать',
-                                      'data-error': 'calculate-delivery-error'}),
+        widget=forms.TextInput(
+                        attrs={'type': 'button',
+                               'value': 'Рассчитать',
+                               'data-error': 'calculate-delivery-error'}),
         required=False,
         help_text=(
-            "Если результат = 'zone1/zone2/zone3', то поля   "
+            "Если zone определяется (прим. zone3), то поля   "
             "'ЗОНА ДОСТАВКИ, СТОИМОСТЬ ДОСТАВКИ'   можно не заполнять.<br>"
             "Если результат рассчета 'УТОЧНИТЬ', то нужно:<br>"
             " - уточнить адрес;<br>"
-            " - выбрать вручную одну из 'zone1/zone2/zone3';<br>"
+            " - выбрать вручную одну из zone;<br>"
             " - выбрать зону 'по запросу' и вручную внести стоимость доставки."
             )
     )
     error_message = forms.CharField(
         label='ошибка',
-        widget=forms.TextInput(attrs={'style': 'font-size: small; color: red; display: none; width: 900px;'}),
+        widget=forms.TextInput(
+            attrs={
+                'style':
+                'font-size: small; color: red; display: none; width: 900px;'}),
         required=False
     )
     calc_message = forms.CharField(
         label='комм.',
-        widget=forms.TextInput(attrs={'style': 'font-size: small; color: red; display: none; width: 900px;'}),
+        widget=forms.TextInput(
+            attrs={
+                'style':
+                'font-size: small; color: red; display: none; width: 900px;'}),
         required=False
     )
-
 
     # flat = forms.CharField(
     #            label='Квартира',
@@ -124,27 +126,59 @@ class OrderAdminForm(forms.ModelForm):
     #         Order._meta.get_field('user').remote_field,
     #         admin.site)
     # )
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        user = self.instance.user if self.instance.pk else None
+        if self.instance is None or self.instance.process_comment is None:
+            self.fields['process_comment'].widget = forms.HiddenInput()
+
+        user = self.instance.user
         if 'user' in self.initial:
             user = self.initial['user']
         # при создании нового заказа и ошибке это пусто
         if user:
             user_addresses = UserAddress.objects.filter(base_profile=user)
-            choices = [(address.id, f"{address.address}, кв. {address.flat}, этаж {address.floor}, домофон {address.interfon}") for address in user_addresses]
+            choices = [(address.id,
+                        (f"{address.address}, кв. {address.flat}, "
+                         f"этаж {address.floor}, домофон {address.interfon}")
+                        ) for address in user_addresses]
             choices.insert(0, ('', '------------'))
             self.fields['my_delivery_address'].choices = choices
 
             # Получение координат и передача их в форму
-            my_coordinates = {str(address.id): address.coordinates for address in user_addresses}
+            my_coordinates = {
+                str(address.id):
+                address.coordinates for address in user_addresses}
+
             coordinates_json = json.dumps(my_coordinates)
             self.fields['my_address_coordinates'].initial = coordinates_json
+
+            # Получение координат и передача их в форму
+            my_address_comments = {
+                str(address.id): (
+                    f"flat:{address.flat}, "
+                    f"floor:{address.floor}, "
+                    f"interfon:{address.interfon}"
+                ) for address in user_addresses}
+            my_address_comments_json = json.dumps(my_address_comments)
+            self.fields[
+                'my_address_comments'].initial = my_address_comments_json
 
     class Meta:
         model = Order
         fields = '__all__'
+
+    def clean_recipient_name(self):
+        source = self.data.get('source')
+        recipient_name = self.data.get('recipient_name')
+        if source in ['1', '4']:
+            # если телефон, сайт. В остальных источн поле может быть пустым
+            if recipient_name is None or recipient_name == '':
+                raise forms.ValidationError(
+                    "Укажите имя.")
+
+            validate_first_and_last_name(recipient_name)
+
+        return recipient_name
 
     def clean_recipient_address(self):
         recipient_address = self.cleaned_data.get('recipient_address')
@@ -154,11 +188,12 @@ class OrderAdminForm(forms.ModelForm):
                 raise forms.ValidationError("Укажите номер дома.")
 
         delivery = self.cleaned_data.get('delivery')
-
+        source = self.data.get('source')
         my_delivery_address = self.data.get('my_delivery_address')
         coordinates = self.data.get('coordinates')
 
-        if delivery is not None and delivery.type == 'delivery':
+        if (delivery is not None and delivery.type == 'delivery'
+                and source in ['1', '4']):
 
             if my_delivery_address not in [None, '']:
 
@@ -215,20 +250,21 @@ class OrderAdminForm(forms.ModelForm):
                             self.lat, self.lon)
                         if new_delivery_zone.name == 'уточнить':
                             raise forms.ValidationError(
-                                ("Введенный адрес находится вне зоны обслуживания."
-                                 "Проверьте адрес или внесите вручную зону и цену доставки.")
+                                ("Введенный адрес находится вне зоны "
+                                 "обслуживания. Проверьте адрес или внесите "
+                                 "вручную зону и цену доставки.")
                             )
                         return new_delivery_zone
 
                     except AttributeError:
                         raise forms.ValidationError(
-                                ("Для введенного адреса невозможно получить координаты "
-                                 "и расчитать зону доставки. Проверьте адрес или внесите "
+                                ("Для введенного адреса невозможно получить "
+                                 "координаты и расчитать зону доставки. "
+                                 "Проверьте адрес или внесите "
                                  "вручную зону и цену доставки.")
                             )
 
-                elif delivery_zone.name in ['zone1', 'zone2', 'zone3',
-                                            'по запросу', 'уточнить']:
+                else:
 
                     if delivery_zone.name == 'по запросу':
                         return delivery_zone
@@ -239,13 +275,15 @@ class OrderAdminForm(forms.ModelForm):
                             self.lat, self.lon)
                         if new_delivery_zone.name == 'уточнить':
                             raise forms.ValidationError(
-                                ("Введенный адрес находится вне зоны обслуживания."
-                                 "Проверьте адрес или внесите вручную зону и цену доставки.")
+                                ("Введенный адрес находится вне зоны "
+                                 "обслуживания. Проверьте адрес или внесите "
+                                 "вручную зону и цену доставки.")
                             )
                     except AttributeError:
                         raise forms.ValidationError(
-                                ("Для введенного адреса невозможно получить координаты "
-                                 "и расчитать зону доставки. Проверьте адрес или внесите "
+                                ("Для введенного адреса невозможно получить "
+                                 "координаты и расчитать зону доставки. "
+                                 "Проверьте адрес или внесите "
                                  "вручную зону и цену доставки.")
                             )
 
@@ -284,20 +322,32 @@ class OrderAdminForm(forms.ModelForm):
 
         return delivery_time
 
+    def clean_recipient_phone(self):
+        source = self.data.get('source')
+        recipient_phone = self.data.get('recipient_phone')
+        if source in ['1', '4']:
+            # если телефон/сайт. В остальных источн поле может быть пустым
+            if recipient_phone is None or recipient_phone == '':
+                raise forms.ValidationError(
+                    "Укажите телефон.")
+
+            validate_international_phonenumber(recipient_phone)
+
+        return recipient_phone
+
+    def clean_payment_type(self):
+        payment_type = self.cleaned_data['payment_type']
+        if payment_type is None:
+            raise forms.ValidationError(
+                "Укажите способ оплаты.")
+        return payment_type
+
     def clean(self):
         cleaned_data = super().clean()
         # Удаляем ошибки валидации для поля my_recipient_address
-        if 'my_recipient_address' in self._errors:
-            del self._errors['my_recipient_address']
-
-        # if cleaned_data['recipient_address'] != self.instance.recipient_address:
-
-            # delivery = cleaned_data.get('delivery')
-            # if delivery is not None and delivery.type == 'delivery':
-            #     flat = cleaned_data.get('flat')
-            #     floor = cleaned_data.get('floor')
-            #     interfon = cleaned_data.get('interfon')
-            #     cleaned_data['address_comment'] = f"flat: {flat}, floor: {floor}, interfon: {interfon}"
+        if 'my_delivery_address' in self._errors:
+            del self._errors['my_delivery_address']
+            cleaned_data['my_delivery_address'] = self.my_delivery_address
 
         return cleaned_data
 
@@ -310,3 +360,45 @@ class OrderAdminForm(forms.ModelForm):
             instance.save()
 
         return instance
+
+
+class OrderGlovoAdminForm(forms.ModelForm):
+    class Meta:
+        model = OrderGlovoProxy
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cleaned_data['source'] = 'P1-1'
+        cleaned_data['delivery'] = None
+        cleaned_data['payment_type'] = 'partner'
+        cleaned_data['created_by'] = 2
+        self.instance.source = 'P1-1'
+        self.instance.delivery = Delivery.objects.get(
+                                            city=settings.DEFAULT_CITY,
+                                            type='takeaway')
+        self.instance.payment_type = 'partner'
+        self.instance.created_by = 2
+
+        return cleaned_data
+
+
+class OrderWoltAdminForm(forms.ModelForm):
+    class Meta:
+        model = OrderWoltProxy
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cleaned_data['source'] = 'P1-2'
+        cleaned_data['delivery'] = None
+        cleaned_data['payment_type'] = 'partner'
+        cleaned_data['created_by'] = 2
+        self.instance.source = 'P1-2'
+        self.instance.delivery = Delivery.objects.get(
+                                            city=settings.DEFAULT_CITY,
+                                            type='takeaway')
+        self.instance.payment_type = 'partner'
+        self.instance.created_by = 2
+
+        return cleaned_data

@@ -54,20 +54,12 @@ class Command(BaseCommand):
                 uom, uom_created = UOM.objects.get_or_create(
                     name=row['name']
                 )
-                # uom.set_current_language('ru')
-                # uom.text = row['ru']
-                # uom.save()
-                # uom.set_current_language('en')
-                # uom.text = row['en']
-                # uom.save()
-                # uom.set_current_language('sr-latn')
-                # uom.text = row['sr-latn']
-                # uom.save()
+
                 if uom_created:
                     translations = {
                         'ru': row['ru'],
                         'en': row['en'],
-                        'sr-latn': row['sr-latn']
+                        'sr_latn': row['sr-latn']
                     }
 
                     for language_code, translation in translations.items():
@@ -103,15 +95,6 @@ class Command(BaseCommand):
                         category.name = translation
 
                     category.save()
-                # category.set_current_language('ru')
-                # category.name = row['категория_ru']
-                # category.save()
-                # category.set_current_language('en')
-                # category.name = row['категория_en']
-                # category.save()
-                # category.set_current_language('sr-latn')
-                # category.name = row['категория_sr_latn']
-                # category.save()
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -122,21 +105,23 @@ class Command(BaseCommand):
         with open('docs/menu.csv', encoding='utf-8-sig') as f:
             vegan_cat = Category.objects.get(slug='vegan')
 
-            for row in DictReader(f, delimiter=';'):
+            for row in DictReader(f, delimiter=','):
                 if not any(row.values()):
                     continue
 
-                article_number = str(row['Артикул'])
+                article_number = row['Артикул']
                 image_path = find_image_by_article(article_number)
                 vegan_icon = bool(row['vegan icon'])
 
                 spicy_icon = bool(row['hot icon'])
 
                 dish, dish_created = Dish.objects.get_or_create(
-                    article=row['Артикул'],
+                    article=str(row['Артикул']),
                     is_active=row['Активно'],
                     priority=row['пп блюд'],
                     price=row['Цена'],
+                    final_price_p1=row['Цена P1'],
+                    final_price_p2=row['Цена P2'],
                     weight_volume=row['вес/объем'],
                     weight_volume_uom=UOM.objects.get(
                         name=row['ед-цы веса/объема']
@@ -149,6 +134,7 @@ class Command(BaseCommand):
                     vegan_icon=vegan_icon,
                     spicy_icon=spicy_icon,
                     image=image_path,
+                    utensils=row['Приборы']
                 )
 
                 if dish_created:
@@ -160,11 +146,19 @@ class Command(BaseCommand):
 
                     translations = {
                         'ru': {'short_name': row['наименование_ru'],
-                               'text': row['описание_ru']},
-                        'en': {'short_name': row['наименование_en'], 'text':
-                               row['описание_en']},
-                        'sr-latn': {'short_name': row['наименование_sr_latn'],
-                                    'text': row['описание_sr_latn']},
+                               'text': row['описание_ru'],
+                               'msngr_short_name': row['мсджр_наименование_ru'],
+                               'msngr_text': row['мсджр_описание_ru']},
+                        'en': {'short_name': row['наименование_en'],
+                               'text': row['описание_en'],
+                               'msngr_short_name': row['мсджр_наименование_en'],
+                               'msngr_text': row['мсджр_описание_en']},
+                        'sr-latn': {
+                            'short_name': row['наименование_sr_latn'],
+                            'text': row['описание_sr_latn'],
+                            'msngr_short_name':
+                                row['мсджр_наименование_sr_latn'],
+                            'msngr_text': row['мсджр_описание_sr_latn']},
                     }
 
                     for language_code, translation_data in translations.items():
@@ -173,21 +167,6 @@ class Command(BaseCommand):
                         dish.text = translation_data['text']
 
                         dish.save()
-
-                    # dish.set_current_language('ru')
-                    # dish.short_name = row['наименование_ru']
-                    # dish.text = row['описание_ru']
-                    # dish.save()
-
-                    # dish.set_current_language('en')
-                    # dish.short_name = row['наименование_en']
-                    # dish.text = row['описание_en']
-                    # dish.save()
-
-                    # dish.set_current_language('sr-latn')       # Only switches
-                    # dish.short_name = row['наименование_sr_latn']
-                    # dish.text = row['описание_sr_latn']
-                    # dish.save()
 
         self.stdout.write(
             self.style.SUCCESS(

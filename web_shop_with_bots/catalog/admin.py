@@ -89,12 +89,15 @@ class DishAdmin(TranslatableAdmin):
             'fields': (
                 ('price', 'discount'),
                 ('final_price'),
+                ('final_price_p1'),
+                ('final_price_p2'),
             )
         }),
         ('Характеристики', {
             'fields': (
                 ('weight_volume', 'weight_volume_uom',),
                 ('units_in_set', 'units_in_set_uom'),
+                ('utensils')
             )
         }),
         ('Изображение', {
@@ -114,20 +117,20 @@ class DishAdmin(TranslatableAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related('translations')
 
-    def get_object(self, request, object_id, from_field=None):
-        """
-        Customized get_object method to retrieve the object with select_related and prefetch_related.
-        """
-        # Customize the queryset with select_related and prefetch_related
-        queryset = self.get_queryset(request)
-        queryset = queryset.select_related('weight_volume_uom', 'units_in_set_uom')
-        queryset = queryset.prefetch_related('weight_volume_uom__translations',
-                                             'units_in_set_uom__translations')
+    # def get_object(self, request, object_id, from_field=None):
+    #     """
+    #     Customized get_object method to retrieve the object with select_related and prefetch_related.
+    #     """
+    #     # Customize the queryset with select_related and prefetch_related
+    #     queryset = self.get_queryset(request)
+    #     queryset = queryset.select_related('weight_volume_uom', 'units_in_set_uom')
+    #     queryset = queryset.prefetch_related('weight_volume_uom__translations',
+    #                                          'units_in_set_uom__translations')
 
-        # Retrieve the object based on the object_id
-        obj = queryset.get(article=object_id)
+    #     # Retrieve the object based on the object_id
+    #     obj = queryset.get(article=object_id)
 
-        return obj
+    #     return obj
 
     # def get_search_results(self, request, queryset, search_term):
     #     queryset, may_have_duplicates = super().get_search_results(

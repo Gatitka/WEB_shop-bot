@@ -2,6 +2,11 @@ from django.conf import settings
 import requests
 from parler.utils.context import switch_language
 from django.utils import timezone
+from exceptions import BotMessageSendError
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def send_message_new_order(instance):
@@ -9,16 +14,7 @@ def send_message_new_order(instance):
         о новом заказе на сайте."""
 
     message = get_message(instance)
-
-    # Отправляем сообщение пользователю
-    url = f'https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage'
-    payload = {
-        'chat_id': settings.CHAT_ID,
-        'text': message,
-        'parse_mode': 'Markdown'
-    }
-    response = requests.post(url, data=payload)
-    return response.json()
+    return send_message_telegram(settings.CHAT_ID, message)
 
 
 def get_message(instance):
@@ -114,12 +110,12 @@ def get_delivery_data(instance):
         # Проверяем, является ли delivery_time сегодняшним днем
         if instance.delivery_time.date() == current_time.date():
             # Если delivery_time сегодня, возвращаем только время
-            delivery_time = (f"Время: К "
+            delivery_time = (f"Время: сегодня к "
                              f"{instance.delivery_time.strftime('%H:%M')}\n")
         else:
             # Если delivery_time в будущем, возвращаем дату и время
             delivery_time = (f"Время: "
-                             f"{instance.delivery_time.strftime('%Y-%m-%d %H:%M')}\n")
+                             f"{instance.delivery_time.strftime('%d-%m-%Y- %H:%M')}\n")
     else:
         delivery_time = "Время: как можно скорее\n"
 
@@ -178,3 +174,76 @@ def get_total_data(instance):
         f"Итого: {total}")
 
     return total_data
+
+
+def send_error_message_order_unsaved(order_id, e):
+    """ Отправка сообщения телеграм-ботом в админский чат
+        о том, что заказ из бота не сохранился."""
+
+    message = f'Заказ TM BOT #{order_id} не сохранился в базе данных.'
+    send_message_telegram(settings.CHAT_ID, message)
+
+
+def send_error_message_order_saved(order_id):
+    """ Отправка сообщения телеграм-ботом в админский чат
+        о том, что заказ из бота сохранился но с ошибками."""
+
+    message = f'! Заказ TM BOT #{order_id} сохранился с ошибками.'
+    send_message_telegram(settings.CHAT_ID, message)
+
+
+def send_message_telegram(chat_id, message):
+    # Отправляем сообщение
+    url = f'https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage'
+    payload = {
+        'chat_id': chat_id,
+        'text': message,
+        'parse_mode': 'Markdown'
+    }
+    response = requests.post(url, data=payload)
+    response = response.json()
+    if response['ok'] is False:
+        raise BotMessageSendError(
+            f"Failed to send telegram message {message}: "
+            f"{response}")
+
+
+def send_request_order_status_update(new_status, order_id):
+    token = settings.BOTOBOT_API_KEY
+    #token = settings.BOT_TOKEN
+    url = f"https://www.botobot.ru/api/v1/updateOrderStatus/{token}"
+
+    if new_status == 'WCO':
+        status = 10
+    elif new_status == "CFD":
+        status = 20
+    elif new_status == "OND":
+        status = 70
+    elif new_status == "DLD":
+        status = 90
+    elif new_status == "CND":
+        status = 30
+
+    payload = {'id': order_id,
+               'status': status}
+    try:
+        # Отправка POST-запроса
+        response = requests.post(url, data=payload)
+        response_data = response.json()
+        reply_status = response_data.get('status')
+        # Обработка ответа
+        if response.status_code == 200 and reply_status == 'success':
+            logger.info(f"TM order {order_id} "
+                        f"status updated to {new_status} "
+                        f"(status: {reply_status}).")
+        else:
+            error_message = response_data.get('message',
+                                              'No error message provided')
+            logger.error(f"Failed to update TM order {order_id} status to "
+                         f"{new_status} "
+                         f"(status: {reply_status}): {error_message}")
+
+    except requests.RequestException as e:
+        # Логирование ошибки запроса
+        logger.error(f"Sending request failed for order {order_id} "
+                     f"with status {new_status} (status: {str(e)}")

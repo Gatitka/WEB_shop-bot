@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-
+from .admin_utils import export_tm_accounts_to_excel
 from .models import Message, MessengerAccount
 
 
@@ -19,6 +19,7 @@ class MessagerAccountAdmin(admin.ModelAdmin):
     readonly_fields = ('get_msngr_link', 'date_joined')
     list_filter = ('msngr_type', 'subscription')
     search_fields = ('msngr_id', 'msngr_username')
+    actions = (export_tm_accounts_to_excel,)
     fieldsets = (
         ('Основное', {
             'fields': (

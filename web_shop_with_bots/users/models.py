@@ -14,9 +14,12 @@ from delivery_contacts.utils import (
     google_validate_address_and_get_coordinates,
     parce_coordinates)
 from tm_bot.models import MessengerAccount
-
+import logging
 from .validators import (validate_birthdate, validate_first_and_last_name,
                          coordinates_validator)
+
+
+logger = logging.getLogger(__name__)
 
 
 class UserRoles(models.TextChoices):
@@ -80,30 +83,32 @@ class UserAddress(models.Model):
         if self.address and (not self.coordinates):
             # Если есть адрес, но нет координат, извлекаем координаты из адреса
             try:
-                lat, lon, status = google_validate_address_and_get_coordinates(self.address)
+                lat, lon, status = (
+                    google_validate_address_and_get_coordinates(self.address))
                 self.coordinates = f'{lat}, {lon}'
                 self.point = Point(float(lon), float(lat))
 
             except ValidationError as e:
-                # Если произошла ошибка при получении координат, логируем ее
-                # logging.error(f'Ошибка при получении координат для адреса {self.address}: {e}')
-                pass
+                logging.error((
+                    'Ошибка при получении координат для адреса '
+                    f'{self.address}: {e}'))
 
         elif self.coordinates:
             lat, lon = parce_coordinates(self.coordinates)
             self.coordinates = f'{lat}, {lon}'
             self.point = Point(float(lon), float(lat))
         else:
-            # В противном случае, вызываем исключение или выполняем другую логику по вашему усмотрению
+            # В противном случае, вызываем исключение или
+            # выполняем другую логику по вашему усмотрению
             pass
 
         super().save(*args, **kwargs)
 
 
 class BaseProfile(models.Model):
-    ''' Базовая модель клиента, созданная для сведения клиентов сайта и ботов из соц сетей
-    в одну сущность, которая будет хранить данные о клиенте: имя, фамилия, телефон, адрес и пр
-    + корзину, заказы.'''
+    ''' Базовая модель клиента, созданная для сведения клиентов сайта и ботов
+    из соц сетей в одну сущность, которая будет хранить данные о клиенте:
+    имя, фамилия, телефон, адрес, корзина, заказы и пр.'''
 
     web_account = models.OneToOneField(
         'WEBAccount',
@@ -185,6 +190,12 @@ class BaseProfile(models.Model):
         default=0,
         blank=True,
     )
+    orders_amount = models.PositiveSmallIntegerField(
+        verbose_name='Сумма заказов',
+        help_text="Считается автоматически.",
+        default=0,
+        blank=True,
+    )
 
     class Meta:
         # ordering = ['-id']
@@ -197,7 +208,11 @@ class BaseProfile(models.Model):
             else f'Клиент id = {self.id}')
 
     def get_absolute_url(self):
-        return reverse('admin:%s_%s_change' % (self._meta.app_label, self._meta.model_name), args=[self.pk])
+        url = reverse(
+            'admin:%s_%s_change' % (self._meta.app_label,
+                                    self._meta.model_name),
+            args=[self.pk])
+        return url
 
     @staticmethod
     def base_profile_update(instance):
@@ -236,14 +251,14 @@ class BaseProfile(models.Model):
 
         else:
             if messenger:
-                messenger_account, created = MessengerAccount.objects.get_or_create(
-                    msngr_type = messenger.get('msngr_type'),
-                    msngr_username = messenger.get('msngr_username'),
+                language = instance.web_language
+                messenger_account, _ = MessengerAccount.objects.get_or_create(
+                    msngr_type=messenger.get('msngr_type'),
+                    msngr_username=messenger.get('msngr_username'),
                 )
-                if created:
-                    messenger_account.language = instance.web_language
-                    messenger_account.save()
-
+                messenger_account.registered = True
+                messenger_account.language = language
+                messenger_account.save('registered', 'language')
                 instance.base_profile.messenger_account = messenger_account
                 instance.base_profile.save(
                     update_fields=['messenger_account']
@@ -291,8 +306,8 @@ class WEBAccount(AbstractUser):
     Имеет привязку к базовому профилю,
     через который осуществляется пополнение корзины и сооздание заказов.
 
-    При тестировании через shell не работали методы clean, а так же create_user.
-    Для валидации созданы сигналы перед сохранением.
+    При тестировании через shell не работали методы clean,
+    а так же create_user. Для валидации созданы сигналы перед сохранением.
     '''
     username = None
     first_name = models.CharField(
@@ -376,9 +391,11 @@ class WEBAccount(AbstractUser):
     def clean(self):
         super().clean()
         if not self.first_name:
-            raise ValidationError({'first_name': _("First name can't be ampty.")})
+            raise ValidationError({'first_name':
+                                   _("First name can't be ampty.")})
         if not self.last_name:
-            raise ValidationError({'last_name': _("Last name can't be ampty.")})
+            raise ValidationError({'last_name':
+                                   _("Last name can't be ampty.")})
         if not self.email:
             raise ValidationError({'email': _("email can't be ampty.")})
         if not self.phone:
@@ -434,5 +451,12 @@ def validate_phone_unique(value, user):
                               code='invalid')
     if user.phone != value:
         if WEBAccount.objects.filter(phone=value).exists():
-            raise ValidationError({"phone": "WEB account with such phone already exists."},
-                                  code='invalid')
+            raise ValidationError(
+                {"phone": "WEB account with such phone already exists."},
+                code='invalid')
+
+
+def user_add_new_order_data(order):
+    order.user.orders_qty += 1
+    order.user.orders_amount += order.final_amount_with_shipping
+    order.user.save(update_fields=['orders_qty', 'orders_amount'])

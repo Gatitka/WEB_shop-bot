@@ -17,11 +17,6 @@ from web_shop_with_bots.settings import GOOGLE_API_KEY
 
 from .utils import google_validate_address_and_get_coordinates
 
-DELIVERY_CHOICES = (
-    ("delivery", "Доставка"),
-    ("takeaway", "Самовывоз")
-)
-
 
 class Delivery(TranslatableModel):
     translations = TranslatedFields(
@@ -40,7 +35,7 @@ class Delivery(TranslatableModel):
     type = models.CharField(
         max_length=8,
         verbose_name="Тип *",
-        choices=DELIVERY_CHOICES
+        choices=settings.DELIVERY_CHOICES
     )
     is_active = models.BooleanField(
         default=False,
@@ -167,8 +162,8 @@ class DeliveryZone(models.Model):
         return self.polygon.contains(point)
 
     class Meta:
-        verbose_name = 'район доставки'
-        verbose_name_plural = 'районы доставки'
+        verbose_name = 'зона доставки'
+        verbose_name_plural = 'зоны доставки'
 
     def __str__(self):
         return f'{self.name}'
@@ -264,3 +259,22 @@ class Restaurant(models.Model):
         lat, lon, status = google_validate_address_and_get_coordinates(self.address)
         self.coordinates = Point(lon, lat)
         return super().save()
+
+
+class Courier(models.Model):
+    city = models.CharField(
+        max_length=20,
+        verbose_name="город",
+        choices=settings.CITY_CHOICES
+    )
+    name = models.CharField(
+        max_length=20,
+        verbose_name='Имя'
+    )
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name='активен'
+    )
+
+    def __str__(self):
+        return self.name

@@ -1,11 +1,11 @@
 from delivery_contacts.services import get_delivery_cost_zone
 from decimal import Decimal
 from django.utils.translation import gettext_lazy as _
-
 from shop.models import (get_amount, get_promocode_results,
                          get_delivery_discount, check_total_discount,
                          get_auth_first_order_discount,
-                         cash_discount)
+                         cash_discount, current_cash_disc_status)
+
 
 def get_reply_data_takeaway(delivery,
                             cart=None,
@@ -60,7 +60,8 @@ def get_rep_dic_takeaway(amount, promocode_data,
 
 def get_reply_data_delivery(delivery, city, lat, lon,
                             cart=None,
-                            orderdishes=None, promocode=None, payment_type=None,
+                            orderdishes=None, promocode=None,
+                            payment_type=None,
                             language=None, request=None):
 
     amount = get_amount(cart, orderdishes)
@@ -108,7 +109,8 @@ def get_rep_dic_delivery(amount, promocode_data, total_discount,
         'amount': amount,
         'promocode': promocode_data,
         'total_discount': total_discount,
-        'first_order': fo_status
+        'first_order': fo_status,
+        'cash_discount': current_cash_disc_status()
     }
 
     reply_data = get_rep_dic(reply_data, free_delivery,

@@ -40,7 +40,7 @@ class BaseProfileAdmin(admin.ModelAdmin):
         ('Основное', {
             'fields': (
                 ('first_name', 'last_name', 'phone'),
-                ('email', 'web_account', 'messenger_account'),
+                ('web_account', 'messenger_account'),
                 ('orders_qty'),
             )
         }),

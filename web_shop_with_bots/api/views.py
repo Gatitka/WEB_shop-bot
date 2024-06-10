@@ -16,7 +16,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from catalog.validators import validator_dish_exists_active
 from api.exceptions import CustomHttp400
 from catalog.models import Dish
-from catalog.validators import validator_dish_exists_active
 from delivery_contacts.models import Delivery, Restaurant
 from delivery_contacts.services import (get_delivery,
                                         get_delivery_cost_zone_by_address,
@@ -25,14 +24,14 @@ from delivery_contacts.services import (get_delivery,
 from delivery_contacts.utils import (get_google_api_key,
                                      parce_coordinates, get_address_comment)
 from promos.models import PrivatPromocode, PromoNews
-from shop.models import Order, OrderDish, Discount
+from shop.models import Order, OrderDish, Discount, current_cash_disc_status
 from shop.services import (get_base_profile_and_shopping_cart, get_cart,
                            base_profile_first_order, get_cash_discount)
 from .services import (get_promoc_resp_dict, get_repeat_order_form_data,
                        get_reply_data_delivery, get_reply_data_takeaway)
 from shop.validators import validate_user_order_exists
 from users.models import BaseProfile, UserAddress
-from . import serializers as srlz
+
 from .filters import CategoryFilter
 import logging.config
 from django.utils.decorators import method_decorator
@@ -41,9 +40,12 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.utils.translation import get_language_from_request
 import json
-
-
+from tm_bot.models import get_status_tmbot
+from django.views.decorators.cache import cache_page
+import api.serializers as srlz
 import logging
+
+
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
@@ -60,6 +62,7 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
     permission_classes = [AllowAny,]
     serializer_class = srlz.ContactsDeliverySerializer
 
+    @method_decorator(cache_page(60 * 15))  # кэширование на 15 минут
     def list(self, request, *args, **kwargs):
         contacts_delivery_data = []
 
@@ -83,6 +86,8 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
                     delivery, many=True).data if delivery else None
             }
             contacts_delivery_data.append(city_contacts_delivery_data)
+        cash_discount_data = {'cash_discount': current_cash_disc_status()}
+        contacts_delivery_data.append(cash_discount_data)
 
         return Response(contacts_delivery_data, status=status.HTTP_200_OK)
 
@@ -275,6 +280,7 @@ class MenuViewSet(mixins.ListModelMixin,
 
     http_method_names = ['get', 'post']
 
+    @method_decorator(cache_page(60 * 15))  # кэширование на 15 минут
     def list(self, request, *args, **kwargs):
 
         response_data = {
@@ -297,6 +303,7 @@ class MenuViewSet(mixins.ListModelMixin,
         #     items_qty = shopping_cart.items_qty
         #     response_data['cart'] = {'items_qty': items_qty}
         # else:
+
 
         qs = self.get_queryset()
         unique_qs = []
@@ -645,7 +652,7 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         serializer.is_valid(raise_exception=True)
         logger.info(f'/create_order_takeaway/ '
                     f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
-        instance = serializer.save(delivery=delivery)
+        instance = serializer.save()
 
         # Преобразуем сохраненный объект в словарь
         serialized_data = self.get_serializer(instance).data
@@ -693,13 +700,16 @@ class TakeawayOrderViewSet(mixins.CreateModelMixin,
         #                                          request=request)
 
         # else:
-        orderdishes = serializer.validated_data.get('orderdishes')
-        promocode = serializer.validated_data.get('promocode')
 
-        reply_data = get_reply_data_takeaway(delivery,
-                                             orderdishes=orderdishes,
-                                             promocode=promocode,
-                                             request=request)
+        reply_data = serializer.get_reply_data_takeaway()
+
+        # orderdishes = serializer.validated_data.get('orderdishes')
+        # promocode = serializer.validated_data.get('promocode')
+
+        # reply_data = get_reply_data_takeaway(delivery,
+        #                                      orderdishes=orderdishes,
+        #                                      promocode=promocode,
+        #                                      request=request)
         logger.info(f'/create_order_takeaway/pre_checkout/'
                     f' REPLY_DATA: {reply_data}')
         return Response(reply_data, status=status.HTTP_200_OK)
@@ -786,7 +796,7 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         serializer.is_valid(raise_exception=True)
         logger.info(f'/create_order_delivery/ '
                     f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
-        instance = serializer.save(delivery=delivery)
+        instance = serializer.save()
 
         # Преобразуем сохраненный объект в словарь
         serialized_data = self.get_serializer(instance).data
@@ -828,20 +838,22 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
         logger.info(f'/create_order_delivery/pre_checkout/ '
                     f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
 
-        city = serializer.validated_data.get('city')
-        lat, lon = parce_coordinates(
-            serializer.initial_data.get('coordinates'))
-        orderdishes = serializer.validated_data.get('orderdishes')
-        promocode = serializer.validated_data.get('promocode')
-        payment_type = serializer.validated_data.get('payment_type')
-        language = serializer.validated_data.get('language')
+        # city = serializer.validated_data.get('city')
+        # lat, lon = parce_coordinates(
+        #     serializer.initial_data.get('coordinates'))
+        # orderdishes = serializer.validated_data.get('orderdishes')
+        # promocode = serializer.validated_data.get('promocode')
+        # payment_type = serializer.validated_data.get('payment_type')
+        # language = serializer.validated_data.get('language')
 
-        reply_data = get_reply_data_delivery(delivery, city, lat, lon,
-                                             orderdishes=orderdishes,
-                                             promocode=promocode,
-                                             payment_type=payment_type,
-                                             language=language,
-                                             request=request)
+        # reply_data = get_reply_data_delivery(delivery, city, lat, lon,
+        #                                      orderdishes=orderdishes,
+        #                                      promocode=promocode,
+        #                                      payment_type=payment_type,
+        #                                      language=language,
+        #                                      request=request)
+
+        reply_data = serializer.get_reply_data_delivery()
 
         logger.info(f'/create_order_delivery/pre_checkout/ '
                     f'REPLY_DATA: {reply_data}')
@@ -1055,17 +1067,15 @@ class GetDiscountsAPIView(APIView):
         logger.info(f'/get_discounts/ '
                     f'REQUEST: {request} USER:{request.user}')
         discounts = {}
-        cash_discount = get_cash_discount()
-
-        if cash_discount:
-            discounts.update({'cash_discount': {
-                                'discount_am': cash_discount.discount_am,
-                                'discount_perc': cash_discount.discount_perc
+        discounts_list = Discount.objects.all()
+        for discount in discounts_list:
+            discounts.update({discount.pk: {
+                                'is_active': discount.is_active,
+                                'discount_am': discount.discount_am,
+                                'discount_perc': discount.discount_perc
                                 }
-                              }
-                             )
-        else:
-            discounts.update({'cash_discount': None})
+                              })
+
         return Response(discounts)
 
 
@@ -1093,3 +1103,39 @@ def get_dish_price(request):
                                     status=400)
 
     return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+
+@csrf_exempt
+@require_POST
+def save_bot_order(request):
+    if request.method == 'POST':
+        request_body = request.body
+        decoded_string = request_body.decode('utf-8')
+        logger.info(f'/save_bot_order/ REQUEST: {decoded_string}')
+
+        # Получаем данные из POST запроса
+        logger.info(f'/save_bot_order/ REQUEST: {request.POST}')
+        id = request.POST.get("id")
+        status = get_status_tmbot(request.POST.get("statusName"))
+        order = Order.objects.filter(source='3',
+                                     source_id=id).first()
+
+        if order:
+            if status is None or status == order.status:
+                logger.info(f'Bot order #{order.source_id}/ '
+                            'status changed in bot, but not in ORM.')
+                return JsonResponse({}, status=200)
+
+            order.status = status
+            order.save()
+            logger.info(f'Bot order #{order.source_id}/ '
+                        f'ORM order #{order.id} '
+                        f'updated status {order.status}.')
+            return JsonResponse({}, status=200)
+
+        serializer = srlz.BotOrderSerializer(data=request.POST)
+        serializer.is_valid()
+        return JsonResponse({}, status=201)
+
+    logger.error(f"Bot order #{request} isn't saved. ",
+                 "Request method is not 'POST'")

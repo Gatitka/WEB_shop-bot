@@ -81,21 +81,19 @@ def _get_delivery_zone(delivery_zones, lat=None, lon=None):
 
     if lat is not None and lon is not None:
         for zone in delivery_zones:
-            if (zone.name in ['zone1', 'zone2', 'zone3']
-               and zone.is_point_inside(lat, lon)):
-
+            if zone.is_point_inside(lat, lon):
                 delivery_zone = zone
-
 
     return delivery_zone
 
 
-def get_delivery_cost(amount, delivery, delivery_zone, delivery_cost=None, free_delivery=None):
+def get_delivery_cost(amount, delivery, delivery_zone,
+                      delivery_cost=None, free_delivery=None):
     """
     Рассчитывает стоимость доставки с учетом суммы заказа и зоны доставки.
     """
     # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
-    if delivery_zone.name not in ['уточнить', 'по запросу'] :
+    if delivery_zone.name not in ['уточнить', 'по запросу']:
 
         if free_delivery is True:
             return Decimal(0)

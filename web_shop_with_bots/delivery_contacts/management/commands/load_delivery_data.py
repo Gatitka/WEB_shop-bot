@@ -1,5 +1,5 @@
 import os
-
+from datetime import time
 from django.core.management import BaseCommand, call_command
 
 from delivery_contacts.models import Delivery, Restaurant
@@ -22,24 +22,18 @@ class Command(BaseCommand):
             is_default=True,
             image=os.path.join('contacts', 'shop1.jpg')
         )
-        shop2, created = Restaurant.objects.get_or_create(
-            short_name='центр2',
-            address='Štark arena',
-            open_time="11:00",
-            close_time="22:00",
-            phone="+381 11 222 3333",
-            city='Beograd',
-            is_active=True,
-            image=os.path.join('contacts', 'shop2.jpg')
-        )
 
         delivery1, delivery1_created = Delivery.objects.get_or_create(
             type='delivery',
             city='Beograd',
             is_active=True,
             image=os.path.join('contacts', 'delivery1.jpg'),
+
         )
         if delivery1_created:
+            delivery1.min_time = time(11,0)
+            delivery1.max_time = time(22,0)
+
             delivery1.set_current_language('ru')
             delivery1.description = (
                 "Бесплатная доставка\n"
@@ -69,6 +63,9 @@ class Command(BaseCommand):
             is_active=True,
         )
         if delivery2_created:
+            delivery2.min_time = time(11, 0)
+            delivery2.max_time = time(22, 0)
+
             delivery2.set_current_language('ru')
             delivery2.description = 'Скидка при самовывозе 10%.'
             delivery2.save()

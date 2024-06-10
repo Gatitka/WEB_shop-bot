@@ -1,5 +1,4 @@
 from django.contrib import admin
-from django_summernote.admin import SummernoteModelAdmin
 from parler.admin import (SortedRelatedFieldListFilter, TranslatableAdmin,
                           TranslatableTabularInline)
 
@@ -8,7 +7,6 @@ from utils.utils import activ_actions
 from .models import PrivatPromocode, Promocode, PromoNews
 
 
-# class SummerAdmin(SummernoteModelAdmin):
 @admin.register(PromoNews)
 class PromoNewsAdmin(TranslatableAdmin):
     """Настройки админ панели промо-новостей."""
@@ -45,8 +43,6 @@ class PromoNewsAdmin(TranslatableAdmin):
     # def get_queryset(self, request):
     #     return super().get_queryset(request).prefetch_related('translations')
 
-
-# admin.site.register(PromoNews, SummerAdmin)
 
 @admin.register(Promocode)
 class PromocodeAdmin(admin.ModelAdmin):

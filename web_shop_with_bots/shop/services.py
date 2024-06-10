@@ -1,14 +1,8 @@
 from django.db.models import Prefetch
-from decimal import Decimal
-from .models import CartDish, ShoppingCart, Discount
+from .models import CartDish, ShoppingCart, Discount, Order
 from users.models import BaseProfile
 from .validators import cart_valiation
-from decimal import Decimal
-from django.db.models import Max
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from promos.services import get_promocode_discount_amount
-from django.conf import settings
 
 
 def get_base_profile_w_cart(current_user):
@@ -128,3 +122,9 @@ def base_profile_first_order(current_user):
 
 def get_cash_discount():
     return Discount.objects.filter(type='2', is_active=True).first()
+
+
+def get_active_discounts():
+
+    Discount.objects.filter(is_active=True).first()
+    return

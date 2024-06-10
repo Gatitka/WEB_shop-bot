@@ -1,5 +1,4 @@
-from django_filters import FilterSet, NumberFilter, filters
-
+from django_filters import FilterSet, filters
 from catalog.models import Dish
 
 

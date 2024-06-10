@@ -27,8 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', function() {
     var myDeliveryAddressElement = document.getElementById('id_my_delivery_address');
     var coordinatesElement = document.getElementById('id_coordinates');
+    var addressCommentElement = document.getElementById('id_address_comment');
 
-    if (myDeliveryAddressElement && coordinatesElement) {
+    if (myDeliveryAddressElement && coordinatesElement && addressCommentElement) {
         myDeliveryAddressElement.addEventListener('change', function() {
             var selectedAddress = myDeliveryAddressElement.value;
             var coordinatesDataElement = document.getElementById('id_my_address_coordinates');
@@ -38,6 +39,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Устанавливаем координаты в поле coordinates
             coordinatesElement.value = coordinates || '';
+
+            var addressCommentDataElement = document.getElementById('id_my_address_comments');
+            var addressCommentDataString = addressCommentDataElement.value;
+            var addressCommentData = JSON.parse(addressCommentDataString);
+            var addressComment = addressCommentData[selectedAddress];
+
+            // Устанавливаем координаты в поле coordinates
+            addressCommentElement.value = addressComment || '';
+
+            const recipientAddressInput = document.querySelector('#id_recipient_address');
+            // Получаем только адрес из выбранного варианта
+            var addressParts = myDeliveryAddressElement.options[myDeliveryAddressElement.selectedIndex].textContent.split(', кв');
+            // Если адрес состоит только из одной части, устанавливаем его как адрес получателя
+            if (addressParts.length === 1) {
+                recipientAddressInput.value = addressParts[0];
+            } else {
+                // Иначе, если адрес состоит из нескольких частей, устанавливаем первую часть (без комментария)
+                recipientAddressInput.value = addressParts[0];
+            }
+
         });
     }
 });
