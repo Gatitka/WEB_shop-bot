@@ -3,58 +3,69 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from delivery_contacts.models import Restaurant
+from delivery_contacts.utils import parse_address_comment
+from .utils import (split_and_get_comment,
+                    get_delivery_time_if_none)
+from datetime import timedelta
 
 
 def validate_delivery_time(value, delivery, restaurant=None):
-    if value is not None:
-        if value <= timezone.localtime():
-            raise ValidationError(_("Delivery time can't be in the past."))
-        delivery_time = value.time()
-
-    else:
-        current_time = timezone.localtime()
-        delivery_time = current_time.time()
-
     if delivery is None:
         raise ValidationError(
-                _("Delivery method is required for "
-                    "delivery time validation.")
+                ("Delivery is required.")
             )
 
-    # Проверяем, что время находится в диапазоне
-    # работы доставки в модели доставки
     if delivery.type == 'delivery':
-        min_time = delivery.min_time
-        max_time = delivery.max_time
+        min_time = delivery.min_acc_time
+        max_time = delivery.max_acc_time
+        handoff_min_time = delivery.min_time
+        handoff_max_time = delivery.max_time
 
-        if not min_time < delivery_time < max_time:
-            min_time_str = min_time.strftime('%H:%M')
-            max_time_str = max_time.strftime('%H:%M')
-
-            raise ValidationError(
-                (_(f"Choose time {min_time_str} - {max_time_str}")),
-                code='invalid_order_time'
-            )
-
-    elif delivery.type == 'takeaway':
+    if delivery.type == 'takeaway':
         if restaurant is not None:
             restaurant = Restaurant.objects.filter(id=restaurant).first()
             if restaurant:
-                min_time = restaurant.open_time
-                max_time = restaurant.close_time
+                min_time = restaurant.min_acc_time
+                max_time = restaurant.max_acc_time
+                handoff_min_time = restaurant.open_time
+                handoff_max_time = restaurant.close_time
 
-                if not min_time <= delivery_time <= max_time:
-                    min_time_str = min_time.strftime('%H:%M')
-                    max_time_str = max_time.strftime('%H:%M')
-                    raise ValidationError(
-                        (f'Choose time '
-                            f'{min_time_str} - {max_time_str}'),
+    if value is None:
+        current_localtime = timezone.localtime()
+        current_time = current_localtime.time()
 
-                        code='invalid_delivery_time'
-                    )
+        # Проверяем, что время размещения заказа с "сегодня/как можно скорее"
+        # находится в диапазоне приема заказов на сегодня.
+        if not min_time <= current_time <= max_time:
+            min_time_str = handoff_min_time.strftime('%H:%M')
+            max_time_str = handoff_max_time.strftime('%H:%M')
 
-    else:
-        return value
+            raise ValidationError(
+                (f"Worktime {min_time_str}-{max_time_str}"),
+                code='invalid_order_time'
+            )
+
+    if value is not None:
+        if value <= timezone.localtime():
+            raise ValidationError(_("Delivery time can't be in the past."))
+
+        two_months_later = timezone.localtime() + timedelta(days=60)
+        if value > two_months_later:
+            raise ValidationError(_(("Delivery time can't be more "
+                                     "than 2 months ahead.")))
+
+        delivery_time = value.time()
+
+        # Проверяем, что выбранное время выдачи находится в диапазоне
+        # доступного времени выдачи доставки/самовывоза.
+        if not handoff_min_time <= delivery_time <= handoff_max_time:
+            min_time_str = handoff_min_time.strftime('%H:%M')
+            max_time_str = handoff_max_time.strftime('%H:%M')
+
+            raise ValidationError(
+                (f"Worktime {min_time_str}-{max_time_str}"),
+                code='invalid_order_time'
+            )
 
 
 def validate_delivery_data(delivery, restaurant, recipient_address):
@@ -134,3 +145,13 @@ def validate_city(value):
     if value not in valid_cities:
         raise ValidationError(
             _("City is incorect."))
+
+
+def validate_comment(value):
+    address_comment, comment = split_and_get_comment(value)
+    address_comment_data = parse_address_comment(address_comment)
+    for key in address_comment_data.keys():
+        if len(address_comment_data[key]) > 100:
+            raise ValidationError(f"{key} is over 100 symbols")
+    if comment is not None and len(comment) > 1500:
+        raise ValidationError("comment is over 1500 symbols")

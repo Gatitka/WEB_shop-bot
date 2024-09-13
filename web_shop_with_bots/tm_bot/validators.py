@@ -7,13 +7,13 @@ from django.utils.translation import gettext_lazy as _
 
 def get_msgr_data_validated(attrs):
     # Проверяем, что оба поля заполнены
-    msngr_type, msngr_username = attrs.get('msngr_type'), attrs.get('msngr_username')
+    msngr_type = attrs.get('msngr_type')
+    msngr_username = attrs.get('msngr_username')
 
-    if msngr_type is not None or msngr_username is not None:
+    if msngr_type in ['', None] or msngr_username in ['', None]:
         # Если одно из полей заполнено, а другое нет, вызываем исключение
-        if msngr_type in [None, ''] or msngr_username in [None, '']:
-            raise ValidationError(
-                "Both 'msngr_username' and 'msngr_type' must be filled.")
+        raise ValidationError(
+            "Both 'msngr_username' and 'msngr_type' must be filled.")
 
     validate_msngr_type_username_full(msngr_type, msngr_username)
 
@@ -42,8 +42,6 @@ def validate_msngr_type_username_full(msngr_type, msngr_username):
                 raise ValidationError("Wts username must start with '+' or invalid phone number.")
         except Exception:
             raise ValidationError("Wts username must start with '+' or invalid phone number.")
-
-
 
 
 def validate_messenger_account(value):

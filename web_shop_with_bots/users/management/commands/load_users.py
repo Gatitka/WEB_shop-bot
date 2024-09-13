@@ -1,7 +1,7 @@
 import os
 
 from django.contrib.auth import get_user_model
-from django.core.management import BaseCommand, call_command
+from django.core.management import BaseCommand
 
 from users.models import UserAddress
 

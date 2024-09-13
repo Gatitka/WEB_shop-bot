@@ -1,8 +1,11 @@
 from django.db.models import Max
 from django.utils import timezone
+from django.utils.html import format_html
+from django.urls import reverse
+from datetime import timedelta
 
 
-def get_next_item_id_today(model, field):
+def get_next_item_id_today(model, field, restaurant):
     today_start = timezone.localtime(
         timezone.now()).replace(hour=0, minute=0, second=0, microsecond=0)
     # Начало текущего дня
@@ -13,7 +16,8 @@ def get_next_item_id_today(model, field):
     )
 
     max_id = model.objects.filter(
-        created__range=(today_start, today_end)
+        created__range=(today_start, today_end),
+        restaurant=restaurant
     ).aggregate(Max(field))[f'{field}__max']
 
     # Устанавливаем номер заказа на единицу больше MAX текущей даты
@@ -44,7 +48,7 @@ def get_next_item_id_today_model(model, field):
         return max_id + 1
 
 
-def get_first_item_true(obj):
+def get_first_order_true(obj):
     # проверка на первый заказ только для заказов с сайта source='4'
     model_class = obj.__class__
     if obj.source == '4':
@@ -84,3 +88,70 @@ def get_flag(instance):
     else:
         flag = 'RS'
     return flag
+
+
+def custom_source(obj):
+    # краткое название поля в list
+    source_id = f'#{obj.source_id}' if obj.source_id is not None else ''
+    if obj.status == 'WCO':
+        return format_html(
+            '<span style="color:green; font-weight:bold;">{}<br>{}</span>',
+            obj.get_source_display(),
+            source_id)
+
+    return format_html('{}<br>{}', obj.get_source_display(), source_id)
+
+
+def custom_order_number(obj):
+    # Создаем URL для редактирования заказа
+    edit_url = reverse('admin:shop_order_change', args=[obj.pk])
+    # Форматируем текст ссылки и возвращаем его
+    return format_html('<a href="{}">{} /{}</a>',
+                       edit_url, obj.order_number, obj.id)
+
+
+def get_delivery_time_if_none(delivery_time,
+                              min_time, max_time,
+                              current_time,
+                              deliv_min_time=None):
+
+    if min_time <= delivery_time <= max_time:
+        return None
+
+    if min_time > delivery_time:
+        # если время вне работы и до открытия, то день тот же
+        if deliv_min_time:
+            value = current_time.replace(
+                hour=deliv_min_time.hour,
+                minute=deliv_min_time.minute,
+                second=0,
+                microsecond=0
+            )
+
+        else:
+            value = current_time.replace(
+                hour=min_time.hour,
+                minute=min_time.minute,
+                second=0,
+                microsecond=0
+            )
+
+    elif max_time < delivery_time:
+        # если время вне работы и после закрытия, то +1 день
+        tomorrow = current_time + timedelta(days=1)
+        if deliv_min_time:
+            value = tomorrow.replace(
+                hour=deliv_min_time.hour,
+                minute=deliv_min_time.minute,
+                second=0,
+                microsecond=0
+            )
+        else:
+            value = tomorrow.replace(
+                hour=min_time.hour,
+                minute=min_time.minute,
+                second=0,
+                microsecond=0
+            )
+
+    return value

@@ -29,7 +29,9 @@ def base_profile_minus_order(sender, instance, **kwargs):
     """Удаление 1 заказа при удалении."""
     if instance.user:
         instance.user.orders_qty -= 1
-        instance.user.save(update_fields=['orders_qty'])
+        if instance.is_first_order:
+            instance.user.first_web_order = False
+        instance.user.save(update_fields=['orders_qty', 'first_web_order'])
 
 
 # @receiver(m2m_changed, sender=Order.dishes.through)

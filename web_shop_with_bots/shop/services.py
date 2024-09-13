@@ -10,17 +10,6 @@ def get_base_profile_w_cart(current_user):
         web_account=current_user
     ).first()
 
-    # if base_profile and hasattr(base_profile, 'shopping_cart'):
-    #     return BaseProfile.objects.filter(
-    #         web_account=current_user,
-    #     ).select_related(
-    #         'shopping_cart',
-    #         'shopping_cart__promocode'
-    #     ).prefetch_related(
-    #         'shopping_cart__cartdishes'
-    #     ).first()
-    # else:
-
 
 def get_cart_base_profile(base_profile, validation=True, half_validation=False):
 

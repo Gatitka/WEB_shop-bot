@@ -4,6 +4,13 @@ from parler.utils.context import switch_language
 from django.utils import timezone
 from exceptions import BotMessageSendError
 import logging
+from delivery_contacts.utils import get_translate_address_comment
+import re
+from aiogram import types
+from .models import OrdersBot, AdminChatTM
+
+from asgiref.sync import async_to_sync
+from tm_bot.handlers.status import send_new_order_notification
 
 
 logger = logging.getLogger(__name__)
@@ -14,7 +21,20 @@ def send_message_new_order(instance):
         о новом заказе на сайте."""
 
     message = get_message(instance)
-    return send_message_telegram(settings.CHAT_ID, message)
+    cleaned_message = escape_markdown(message)
+    chat_id = get_chat_id_by_order(instance)
+    return send_message_telegram(chat_id, cleaned_message)
+    # return async_to_sync(send_new_order_notification)(instance.id,
+    #                                                  instance.status,
+    #                                                  cleaned_message)
+
+
+def escape_markdown(text):
+    # Символы Markdown, которые требуют экранирования
+    markdown_chars = r'_*~`[]()<>#+-=|{}.!'
+    # Экранируем каждый символ Markdown
+    escaped_text = ''.join(f'\\{char}' if char in markdown_chars else char for char in text)
+    return escaped_text
 
 
 def get_message(instance):
@@ -30,8 +50,10 @@ def get_message(instance):
 
     total_data = get_total_data(instance)
 
+    process_comment= get_process_comment(instance)
+
     message = (
-        f"❗️**Заказ на сайте** 'Yume Sushi':\n"
+        f"❗️Заказ на сайте 'Yume Sushi':\n"
         f"{order_data}"
 
         "👉 Данные покупателя:\n"
@@ -53,8 +75,9 @@ def get_message(instance):
         # 1. Ролл Хоккайдо 1x1 000 din = 1 000 din
         f"{orderdishes_data}"
 
-        "**---**\n"
+        "---\n"
         f"{total_data}"
+        f"{process_comment}"
     )
     return message
 
@@ -63,8 +86,10 @@ def get_order_data(instance):
     """ Номер #1. ПЕРВЫЙ ЗАКАЗ."""
     first_order = ""
     if instance.is_first_order:
-        first_order = 'ПЕРВЫЙ ЗАКАЗ'
-
+        if instance.user:
+            first_order = 'ПЕРВЫЙ ЗАКАЗ'
+        else:
+            first_order = 'ПЕРВЫЙ ЗАКАЗ (незарег)'
     return f"Номер #{instance.order_number}. {first_order}\n\n"
 
 
@@ -72,7 +97,7 @@ def get_user_data(instance):
     """ # Diana, +384677436384,
         # (Tm) @Diana_Dernovici, (1 зак)  🙋‍♂️👤"""
     msngr_acc_rep = ''
-    user_icon = '👤'
+    user_icon = ''
 
     if instance.user:
         orders_qty = instance.user.orders_qty
@@ -80,9 +105,10 @@ def get_user_data(instance):
             msngr_acc = instance.user.messenger_account
             msngr_acc_rep = (
                 f"({msngr_acc.msngr_type}) {msngr_acc.msngr_username}, ")
-
         msngr_acc_and_orders = (
             f"{msngr_acc_rep}({orders_qty} зак)\n")
+        user_icon = '👤'
+
     else:
         msngr_acc_and_orders = ''
 
@@ -98,7 +124,8 @@ def get_delivery_data(instance):
     if instance.delivery.type == 'delivery':
         delivery_data = (
             "🚗 Привезти\n"
-            f"Адрес: {instance.recipient_address}\n"
+            f"Адрес: {instance.recipient_address}, "
+            f"{get_translate_address_comment(instance.address_comment)}\n"
         )
 
     elif instance.delivery.type == 'takeaway':
@@ -115,7 +142,7 @@ def get_delivery_data(instance):
         else:
             # Если delivery_time в будущем, возвращаем дату и время
             delivery_time = (f"Время: "
-                             f"{instance.delivery_time.strftime('%d-%m-%Y- %H:%M')}\n")
+                             f"{instance.delivery_time.strftime('%d.%m.%Y %H:%M')}\n")
     else:
         delivery_time = "Время: как можно скорее\n"
 
@@ -148,6 +175,7 @@ def get_orderdishes_data(instance):
         num += 1
         orderdishes += str
 
+    orderdishes += f"Приборы: {instance.items_qty}\n"
     return orderdishes
 
 
@@ -176,31 +204,77 @@ def get_total_data(instance):
     return total_data
 
 
-def send_error_message_order_unsaved(order_id, e):
+def get_process_comment(instance):
+    title = "\n---\n!!!ВНИМАНИЕ!!!\n"
+
+    if instance.process_comment in [None, '']:
+        process_comment = ''
+
+    if instance.process_comment not in [None, '']:
+        process_comment = (
+            f"{title}"
+            f"{instance.process_comment}"
+        )
+    if (instance.delivery.type == 'delivery'
+            and instance.delivery_zone.name == 'уточнить'):
+
+        process_comment += (
+            "Зона доставки не определена или вне зон доставки.\n"
+            "Уточнить адрес."
+        )
+
+    return process_comment
+
+
+def get_chat_id_by_order(order):
+    admin_chat = AdminChatTM.objects.filter(
+                                    restaurant=order.restaurant).first()
+    if admin_chat:
+        return admin_chat.chat_id
+    else:
+        return settings.CHAT_ID
+
+
+def get_chat_id_by_bot(bot):
+    admin_chat = AdminChatTM.objects.filter(
+                                    city=bot.city).first()
+    if admin_chat:
+        return admin_chat.chat_id
+    else:
+        return settings.CHAT_ID
+
+
+def send_error_message_order_unsaved(bot, order_id, e):
     """ Отправка сообщения телеграм-ботом в админский чат
         о том, что заказ из бота не сохранился."""
 
     message = f'Заказ TM BOT #{order_id} не сохранился в базе данных.'
-    send_message_telegram(settings.CHAT_ID, message)
+    chat_id = get_chat_id_by_bot(bot)
+    send_message_telegram(chat_id, message)
 
 
-def send_error_message_order_saved(order_id):
+def send_error_message_order_saved(order):
     """ Отправка сообщения телеграм-ботом в админский чат
         о том, что заказ из бота сохранился но с ошибками."""
 
-    message = f'! Заказ TM BOT #{order_id} сохранился с ошибками.'
-    send_message_telegram(settings.CHAT_ID, message)
+    message = f'! Заказ TM BOT #{order.source_id} сохранился с ошибками.'
+    chat_id = get_chat_id_by_order(order)
+    send_message_telegram(chat_id, message)
 
 
-def send_message_telegram(chat_id, message):
+def send_message_telegram(chat_id, message, keyboard=None):
     # Отправляем сообщение
-    url = f'https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage'
+
+    url = f"https://api.telegram.org/bot{settings.ADMIN_BOT_TOKEN}/sendMessage"
     payload = {
         'chat_id': chat_id,
         'text': message,
-        'parse_mode': 'Markdown'
+        'parse_mode': "MarkdownV2"
     }
-    response = requests.post(url, data=payload)
+    if keyboard:
+        payload['reply_markup'] = keyboard.json()
+
+    response = requests.post(url, json=payload)
     response = response.json()
     if response['ok'] is False:
         raise BotMessageSendError(
@@ -210,7 +284,6 @@ def send_message_telegram(chat_id, message):
 
 def send_request_order_status_update(new_status, order_id):
     token = settings.BOTOBOT_API_KEY
-    #token = settings.BOT_TOKEN
     url = f"https://www.botobot.ru/api/v1/updateOrderStatus/{token}"
 
     if new_status == 'WCO':

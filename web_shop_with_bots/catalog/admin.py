@@ -1,9 +1,13 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from parler.admin import TranslatableAdmin, TranslatableTabularInline
-# from django.core.cache import cache
-from .models import UOM, Category, Dish, DishCategory
+from .models import (UOM, Category, Dish, DishCategory,
+                     RestaurantDishList, CityDishList)
 from django.contrib.admin.views.decorators import staff_member_required
+from utils.admin_permissions import (
+    has_restaurant_orders_admin_permissions,
+    has_city_orders_admin_permissions)
+from django.db.models import Prefetch
 
 
 def make_active(modeladmin, request, queryset):
@@ -160,3 +164,42 @@ class UOMAdmin(TranslatableAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related('translations')
+
+
+@admin.register(RestaurantDishList)
+class RestaurantDishAdmin(admin.ModelAdmin):
+    filter_horizontal = ('dish',)
+
+    # def get_queryset(self, request):
+    #     queryset = super().get_queryset(request).select_related(
+    #         'restaurant'
+    #     ).prefetch_related(
+    #         Prefetch('dish',
+    #                  queryset=Dish.objects.prefetch_related('translations'))
+    #     )
+    #     return queryset
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return super().has_change_permission(request)
+
+        return has_restaurant_orders_admin_permissions(request,
+                                                       obj)
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "dish":
+            # Подгружаем все блюда с переводами сразу, если это необходимо
+            kwargs["queryset"] = Dish.objects.all().prefetch_related('translations')
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+
+@admin.register(CityDishList)
+class CityDishListAdmin(admin.ModelAdmin):
+    filter_horizontal = ('dish',)    # Виджет для удобного управления ManyToMany связью
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return super().has_change_permission(request)
+
+        return has_city_orders_admin_permissions(request,
+                                                 obj)

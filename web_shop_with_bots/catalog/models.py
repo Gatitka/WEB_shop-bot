@@ -7,6 +7,8 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from parler.models import TranslatableModel, TranslatedFields
 from pytils.translit import slugify
+from django.conf import settings
+from delivery_contacts.models import Restaurant
 
 
 class Category(TranslatableModel):
@@ -135,7 +137,7 @@ class Dish(TranslatableModel):
     is_active = models.BooleanField(
         verbose_name='активен',
         default=False,
-        help_text='Активные позиции виды пользователям.'
+        help_text='Активные позиции отображаются на сайте.'
     )
     image = models.ImageField(
         upload_to='menu/dish_images/',
@@ -231,7 +233,6 @@ class Dish(TranslatableModel):
         help_text="Кол-во приборов в порции.",
         null=True, blank=True
     )
-
     # def clean(self) -> None:
     #     self.short_name = self.short_name.strip().lower()
     #     return super().clean()
@@ -273,7 +274,7 @@ class Dish(TranslatableModel):
     admin_photo.allow_tags = True
 
     def __str__(self):
-        return self.short_name
+        return f'{self.article} {self.short_name}'
 
     class Meta:
         ordering = ['pk']
@@ -336,3 +337,44 @@ class UOM(TranslatableModel):
 
     def __str__(self) -> str:
         return f"{self.name}"
+
+
+class CityDishList(models.Model):
+    """ Модель для сопоставления связи блюда и города."""
+    city = models.CharField(
+        max_length=20,
+        verbose_name="город",
+        choices=settings.CITY_CHOICES,
+    )
+    dish = models.ManyToManyField(
+        Dish,
+    )
+
+    class Meta:
+        verbose_name = 'Блюдо / Город'
+        verbose_name_plural = 'Блюда / Город'
+
+    def __str__(self) -> str:
+        return f"Меню {self.city}"
+
+
+class RestaurantDishList(models.Model):
+    """ Модель для сопоставления связи блюдо - ресторан."""
+    restaurant = models.ForeignKey(
+        Restaurant,
+        on_delete=models.PROTECT,
+        verbose_name='ресторан',
+        related_name='restaurantdishes',
+        blank=True,
+        null=True,
+    )
+    dish = models.ManyToManyField(
+        Dish,
+    )
+
+    class Meta:
+        verbose_name = 'Блюдо / Ресторан'
+        verbose_name_plural = 'Блюда / Ресторан'
+
+    def __str__(self) -> str:
+        return f"Меню {self.restaurant}"

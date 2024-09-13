@@ -96,11 +96,11 @@ msgstr "Birthdate is in future."
 
 #: .\validators.py:36
 msgid "Password must contain at least one letter and one digit."
-msgstr "Password must contain at least one letter and one digit."
+msgstr "Пароль должен иметь хотя бы 1 букву или 1 цифру."
 
 #: .\validators.py:42
 msgid "Your password must contain at least one letter and one digit."
-msgstr "Your password must contain at least one letter and one digit."
+msgstr "Пароль должен иметь хотя бы 1 букву или 1 цифру."
 
 #: .\validators.py:49
 msgid "Input should be a string"

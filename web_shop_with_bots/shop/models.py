@@ -13,7 +13,7 @@ from delivery_contacts.models import (Delivery, DeliveryZone,
 from delivery_contacts.utils import get_delivery_cost
 from promos.models import Promocode
 from promos.services import get_promocode_discount_amount
-from shop.utils import get_first_item_true, get_next_item_id_today
+from shop.utils import get_first_order_true, get_next_item_id_today
 from users.models import BaseProfile, UserAddress
 from users.validators import validate_first_and_last_name
 from django.utils.translation import gettext_lazy as _
@@ -46,7 +46,7 @@ class Order(models.Model):
         blank=True, null=True
     )
     device_id = models.CharField(
-        max_length=100,
+        max_length=200,
         blank=True, null=True
     )
     created = models.DateTimeField(
@@ -80,7 +80,7 @@ class Order(models.Model):
     )
     recipient_address = models.CharField(
         verbose_name='адрес доставки',
-        max_length=200,
+        max_length=400,
         blank=True, null=True,
     )
 
@@ -117,14 +117,14 @@ class Order(models.Model):
     address_comment = models.CharField(
         verbose_name='Данные адреса',
         blank=True, null=True,
-        max_length=50,
+        max_length=400,
         default='flat: , floor: , interfon: ',
-        help_text='flat: , floor: , interfon: '
+        help_text='flat: #####, floor: #####, interfon: ##########'
         )
     coordinates = models.CharField(
         verbose_name='координаты',
         blank=True, null=True,
-        max_length=50,
+        max_length=100,
         )
     my_delivery_address = models.ForeignKey(
         UserAddress,
@@ -149,7 +149,7 @@ class Order(models.Model):
     )
     persons_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во приборов *',
-        validators=[MaxValueValidator(10)],
+        validators=[MaxValueValidator(50)],
         null=True, blank=True
     )
 
@@ -159,6 +159,13 @@ class Order(models.Model):
         max_digits=8, decimal_places=2,
         verbose_name='сумма заказа до скидки, DIN',
         help_text="Посчитается автоматически.",
+    )
+    amount_with_shipping = models.DecimalField(
+        verbose_name='Сумма заказа с учетом доставки, DIN',
+        help_text="Посчитается автоматически.",
+        default=0,
+        blank=True,
+        max_digits=8, decimal_places=2
     )
     promocode = models.ForeignKey(
         Promocode,
@@ -185,39 +192,39 @@ class Order(models.Model):
         default=0, null=True,
         max_digits=8, decimal_places=2
     )
-    auth_fst_ord_disc = models.BooleanField(
-        verbose_name='скидка за первый заказ',
-        default=False
-    )
-    auth_fst_ord_disc_amount = models.DecimalField(
-        verbose_name='скидка за первый заказ, DIN',
-        help_text="рассчитывается автоматически.",
-        default=0,
-        null=True,
-        max_digits=8, decimal_places=2
-    )
-    takeaway_disc = models.BooleanField(
-        verbose_name='скидка самовывоз',
-        default=False
-    )
-    takeaway_disc_amount = models.DecimalField(
-        verbose_name='скидка самовывоз, DIN',
-        help_text="рассчитывается автоматически.",
-        default=0,
-        null=True,
-        max_digits=8, decimal_places=2
-    )
-    cash_discount_disc = models.BooleanField(
-        verbose_name='скидка за оплату наличными',
-        default=False
-    )
-    cash_discount_amount = models.DecimalField(
-        verbose_name='скидка за оплату наличными, DIN',
-        help_text="рассчитывается автоматически.",
-        default=0,
-        null=True,
-        max_digits=8, decimal_places=2
-    )
+    # auth_fst_ord_disc = models.BooleanField(
+    #     verbose_name='скидка за первый заказ',
+    #     default=False
+    # )
+    # auth_fst_ord_disc_amount = models.DecimalField(
+    #     verbose_name='скидка за первый заказ, DIN',
+    #     help_text="рассчитывается автоматически.",
+    #     default=0,
+    #     null=True,
+    #     max_digits=8, decimal_places=2
+    # )
+    # takeaway_disc = models.BooleanField(
+    #     verbose_name='скидка самовывоз',
+    #     default=False
+    # )
+    # takeaway_disc_amount = models.DecimalField(
+    #     verbose_name='скидка самовывоз, DIN',
+    #     help_text="рассчитывается автоматически.",
+    #     default=0,
+    #     null=True,
+    #     max_digits=8, decimal_places=2
+    # )
+    # cash_discount_disc = models.BooleanField(
+    #     verbose_name='скидка за оплату наличными',
+    #     default=False
+    # )
+    # cash_discount_amount = models.DecimalField(
+    #     verbose_name='скидка за оплату наличными, DIN',
+    #     help_text="рассчитывается автоматически.",
+    #     default=0,
+    #     null=True,
+    #     max_digits=8, decimal_places=2
+    # )
     manual_discount = models.DecimalField(
         verbose_name='Доп скидка, DIN',
         help_text="Опциональная доп скидка вводится вручную в формате '0000.00'.<br>Добавится к скидке/промокоду.",
@@ -285,7 +292,7 @@ class Order(models.Model):
         default=settings.DEFAULT_CREATE_LANGUAGE
     )
     comment = models.TextField(
-        max_length=400,
+        max_length=1500,
         verbose_name='Комментарий',
         help_text=(
             'Уточнение по адресу доставки: частный дом / '
@@ -306,12 +313,12 @@ class Order(models.Model):
     source_id = models.CharField(
         'ID источника',
         max_length=20,
-        help_text="ID заказа в системе-источнике.",
+        help_text="ID заказа в системе-источнике (Bot/Wolt/Glovo/Smoke).",
         null=True, blank=True,
     )
     msngr_account = models.ForeignKey(
         MessengerAccount,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
         verbose_name='Аккаунт в соц сетях',
         related_name='orders',
         blank=True, null=True
@@ -325,8 +332,13 @@ class Order(models.Model):
     )
     process_comment = models.TextField(
         'ошибки сохранения',
-        max_length=500,
+        max_length=1500,
         null=True, blank=True,
+    )
+    admin_tm_msg_id = models.CharField(
+        verbose_name='Номер сообщения в админском чате',
+        max_length=500,
+        blank=True, null=True
     )
 
     class Meta:
@@ -337,8 +349,16 @@ class Order(models.Model):
             models.UniqueConstraint(
                 fields=['order_number', 'created'],
                 name='unique_order_number_created'
-            )
+            ),
         ]
+
+        permissions = [("can_create_order_rest_1", "Can create order rest 1"),
+                       ("can_change_order_rest_1", "Can change order rest 1"),
+                       ("can_delete_order_rest_1", "Can delete order rest 1"),
+                       ("can_create_order_rest_2", "Can create order rest 2"),
+                       ("can_change_order_rest_2", "Can change order rest 2"),
+                       ("can_delete_order_rest_2", "Can delete order rest 2")
+                       ]
 
     def __str__(self):
         created = self.created.strftime('%H:%M  %Y.%m.%d')
@@ -370,11 +390,12 @@ class Order(models.Model):
         self.discounted_amount = Decimal(0)
 
         promocode_data, self.promocode_disc_amount, free_delivery = (
-            get_promocode_results(self.amount, self.promocode)
+            get_promocode_results(self.amount_with_shipping, self.promocode)
         )
 
         if self.source not in ['1', '3', '4']:
             self.discounted_amount = self.amount
+            self.amount_with_shipping = self.amount
             return False, False
 
         max_discount, max_discount_amount, fo_status = (
@@ -382,7 +403,7 @@ class Order(models.Model):
                          self.payment_type,
                          self.delivery,
                          self.source,
-                         self.amount,
+                         self.amount_with_shipping,
                          self.language,
                          self.discount))
 
@@ -390,48 +411,15 @@ class Order(models.Model):
                                           max_discount, max_discount_amount)
         if self.manual_discount:
             self.total_discount_amount += self.manual_discount
-        # self.takeaway_disc_amount = get_delivery_discount(self.delivery,
-        #                                                   self.amount)
-        # self.manual_discount = (self.manual_discount if self.manual_discount
-        #                         else Decimal(0))
-
-        # self.cash_discount_amount = cash_discount(self.amount,
-        #                                           self.payment_type,
-        #                                           self.language)
-
-        # self.auth_fst_ord_disc_amount, fo_status = Decimal(0), False
-        # if self.source in ['4']:
-        #     self.auth_fst_ord_disc_amount, fo_status = (
-        #                         get_auth_first_order_discount(
-        #                             self.amount,
-        #                             base_profile=self.user))
-
-        # total_discount_sum = Decimal(
-        #                         self.promocode_disc_amount
-        #                         + self.takeaway_disc_amount
-        #                         + self.auth_fst_ord_disc_amount
-        #                         + self.cash_discount_amount
-        #                         + self.manual_discount
-        #                     ).quantize(Decimal('0.01'))
-
-        # если заказ создан пользоватлем, то проверяется МАКС скидка 25%
-        # если изменение при сохранении админом, то проверки на макс НЕТ.
-        # total_discount, disc_lim_message = total_discount_sum, ''
-        # if self.source == '4':
-        #     if self.created_by == 1 and self.status == 'WCO':
-        #         total_discount, disc_lim_message = (
-        #                             check_total_discount(
-        #                                 self.amount,
-        #                                 total_discount_sum)
-        #                             )
 
         self.discounted_amount = Decimal(
-                                    self.amount - self.total_discount_amount
+                                    self.amount_with_shipping
+                                    - self.total_discount_amount
                                 ).quantize(Decimal('0.01'))
 
         return free_delivery, fo_status
 
-    def calculate_final_amount_with_shipping(self, free_delivery=False):
+    def calculate_amount_with_shipping(self, free_delivery=False):
         """
         Рассчитывает final_amount с учетом скидки от промокода.
         """
@@ -449,8 +437,8 @@ class Order(models.Model):
             if self.delivery_zone:
                 self.delivery_zone_db = self.delivery_zone.pk
 
-        self.final_amount_with_shipping = (
-            Decimal(self.discounted_amount) + Decimal(self.delivery_cost)
+        self.amount_with_shipping = (
+            Decimal(self.amount) + Decimal(self.delivery_cost)
         ).quantize(Decimal('0.01'))
 
         self.delivery_db = self.delivery.pk
@@ -462,15 +450,17 @@ class Order(models.Model):
         """
         self.full_clean()
 
-        self.get_restaurant(self.restaurant,
+        self.get_restaurant(self.city,
+                            self.restaurant,
                             self.delivery.type,
                             self.recipient_address)
 
         if self.pk is None:  # Если объект новый
 
-            self.order_number = get_next_item_id_today(Order, 'order_number')
+            self.order_number = get_next_item_id_today(Order, 'order_number',
+                                                       self.restaurant)
 
-            self.is_first_order = get_first_item_true(self)
+            self.is_first_order = get_first_order_true(self)
 
             self.items_qty = 0
 
@@ -481,44 +471,65 @@ class Order(models.Model):
             return
 
         # Если объект уже существует, выполнить рассчеты и другие действия
+        self.calculate_amount_with_shipping()
+
         free_delivery, fo_status = (
             self.calculate_discontinued_amount())
 
-        self.calculate_final_amount_with_shipping(free_delivery)
+        self.final_amount_with_shipping = self.discounted_amount
 
         itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
         self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
+        if self.persons_qty != self.items_qty:
+            self.persons_qty = self.items_qty
 
         super(Order, self).save(*args, **kwargs)
         # далее есть сигнал на сохранение актуальной корзины пользователя,
         # если есть, в completed
 
-    def get_restaurant(self, restaurant, delivery_type,
+    def get_restaurant(self, city, restaurant, delivery_type,
                        recipient_address=None):
         """
         Метод получения ресторана, исходя из запроса.
-        Если есть ресторан, с отметкой is_default,
+        Если есть в городе ресторан, с отметкой is_default,
         то все заказы переводятся на него.
         """
-        default_restaurant = Restaurant.objects.filter(is_default=True).first()
+        default_restaurant = Restaurant.objects.filter(
+            city=city,
+            is_default=True).first()
         if default_restaurant:
             self.restaurant = default_restaurant
         else:
             if delivery_type == 'takeaway':
                 self.restaurant = restaurant
             if delivery_type == 'delivery':
-                self.restaurant = Restaurant.objects.get(id=1)
+                self.restaurant = restaurant
 
     def get_admin_url(self):
         if self.source == 'P1-1':  # Предположим, у вас есть метод для определения типа заказа
             return reverse('admin:shop_orderglovoproxy_change', args=[self.pk])
         elif self.source == 'P1-2':  # Предположим, у вас есть метод для определения типа заказа
             return reverse('admin:shop_orderwoltproxy_change', args=[self.pk])
+        elif self.source == 'P2-1':  # Предположим, у вас есть метод для определения типа заказа
+            return reverse('admin:shop_ordersmokeproxy_change', args=[self.pk])
         return reverse('admin:shop_order_change', args=[self.pk])
+
+    def transit_all_msngr_orders_to_base_profile(self, user):
+        msngr_account = self.msngr_account
+        updated_orders_count = Order.objects.filter(
+            msngr_account=msngr_account,
+            source='3',
+            user=None
+        ).update(user=user)
+
+        # Обновляем количество заказов у пользователя
+        user.orders_qty = F('orders_qty') + updated_orders_count
+        user.save(update_fields=['orders_qty'])
 
 
 class OrderWoltProxy(Order):
     objects = models.Manager()
+
     class Meta:
         proxy = True
         verbose_name = 'заказ Wolt'
@@ -527,10 +538,20 @@ class OrderWoltProxy(Order):
 
 class OrderGlovoProxy(Order):
     objects = models.Manager()
+
     class Meta:
         proxy = True
         verbose_name = 'заказ Glovo'
         verbose_name_plural = 'заказы Glovo'
+
+
+class OrderSmokeProxy(Order):
+    objects = models.Manager()
+
+    class Meta:
+        proxy = True
+        verbose_name = 'заказ Smoke'
+        verbose_name_plural = 'заказы Smoke'
 
 
 class OrderDish(models.Model):
@@ -596,10 +617,12 @@ class OrderDish(models.Model):
         elif self.order.source in ['P1-2']:
             self.unit_amount = self.dish.final_price_p1 * self.quantity
             self.unit_price = self.dish.final_price_p1
+        elif self.order.source in ['P2-1']:
+            self.unit_amount = self.dish.final_price_p2 * self.quantity
+            self.unit_price = self.dish.final_price_p2
         else:
             self.unit_amount = self.dish.final_price * self.quantity
             self.unit_price = self.dish.final_price
-
 
         super(OrderDish, self).save(*args, **kwargs)
 
@@ -608,12 +631,11 @@ class OrderDish(models.Model):
                 ).aggregate(ta=Sum('unit_amount'))['ta']
         self.order.amount = total_amount if total_amount is not None else 0
         self.order.save(update_fields=[
-            'delivery_cost', 'items_qty',
-            'amount',
-            'promocode_disc_amount', 'auth_fst_ord_disc_amount',
-            'takeaway_disc_amount', 'cash_discount_amount',
+            'delivery_cost', 'items_qty', 'persons_qty',
+            'amount', 'amount_with_shipping',
+            'promocode_disc_amount', 'discount_amount',
+            'discount', 'discount_amount',
             'discounted_amount', 'final_amount_with_shipping',
-            'discount', 'discount_amount'
             ])
 
     def delete(self, *args, **kwargs):
@@ -845,10 +867,12 @@ def current_cash_disc_status():
     return None
 
 
-def get_discount(user, payment, delivery, source, amount, language, discount):
+def get_discount(user, payment, delivery, source, amount, language, discount,
+                 is_first_order=False):
 
     order_details = get_order_details(user,
-                                      payment, delivery, source, language)
+                                      payment, delivery, source, language,
+                                      is_first_order)
     if discount is None or discount.id not in [4, 5]:
         order_details['amount'] = amount
         discounts = Discount.objects.filter(is_active=True)
@@ -861,10 +885,13 @@ def get_discount(user, payment, delivery, source, amount, language, discount):
 
 
 def get_order_details(user,
-                      payment, delivery, source, language):
+                      payment, delivery, source, language, is_first_order):
     order_details = {}
-    order_details['auth_first_order'] = check_auth_first_order(
-                           base_profile=user)
+    if is_first_order in [False, None]:
+        order_details['auth_first_order'] = check_auth_first_order(
+                            base_profile=user)
+    else:
+        order_details['auth_first_order'] = True
     order_details['takeaway'] = check_takeaway(source, delivery)
     order_details['cash_payment'] = check_payment(source, delivery, payment,
                                                   language)
@@ -874,12 +901,12 @@ def get_order_details(user,
 def check_auth_first_order(base_profile=None,
                            web_account=None):
     if base_profile:
-        if base_profile.orders_qty == 0:
+        if base_profile.first_web_order is False:
             return True
 
     elif web_account:
         if web_account.is_authenticated:
-            if web_account.base_profile.orders_qty == 0:
+            if web_account.base_profile.orders_qty is False:
                 return True
 
     return False
@@ -895,9 +922,9 @@ def check_takeaway(source, delivery):
 def check_payment(source, delivery, payment, language):
     if (source in ['1', '3', '4']
         and delivery.type == 'delivery'
-        and payment == 'cash'
-        and language == 'ru'):
-            return True
+            and payment == 'cash'
+            and language == 'ru'):
+        return True
     return False
 
 
@@ -927,8 +954,6 @@ def promocode_vs_discount(promocode_disc_am, max_disc_am):
         return {'promo': True, 'max_disc': False}
     else:
         return {'promo': False, 'max_disc': True}
-
-
 
 
 class ShoppingCart(models.Model):

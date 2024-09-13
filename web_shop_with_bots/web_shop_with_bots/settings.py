@@ -22,17 +22,6 @@ LOG_DIRECTORY = os.path.join(BASE_DIR, 'logging')
 if not os.path.exists(LOG_DIRECTORY):
     os.makedirs(LOG_DIRECTORY)
 
-# Не нужно создавать файл вручную, TimedRotatingFileHandler сделает это сам
-# LOG_FILE_NAME = f'yume_{timezone.now().strftime("%Y-%m-%d")}.log'
-# LOG_FILE_PATH = os.path.join(
-#     LOG_DIRECTORY, LOG_FILE_NAME
-# )
-
-# # Проверяем, существует ли файл, и создаем его, если он отсутствует
-# if not os.path.exists(LOG_FILE_PATH):
-#     with open(LOG_FILE_PATH, 'w'):
-#         pass
-
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -44,14 +33,13 @@ LOGGING = {
     },
     "handlers": {
         "console": {
-            "level": os.getenv('CONSOLE_LOG_LEVEL'),
+            "level": os.getenv('CONSOLE_LOG_LEVEL', 'DEBUG'),
             "class": "logging.StreamHandler",
             "formatter": "verbose",
         },
         "file": {
-            'level': os.getenv('FILE_LOG_LEVEL'),
+            'level': os.getenv('FILE_LOG_LEVEL', 'DEBUG'),
             'class': 'logging.handlers.TimedRotatingFileHandler',
-            # 'filename': LOG_FILE_PATH,
             'filename': os.path.join(LOG_DIRECTORY, 'yume.log'),
             'formatter': 'verbose',
             'encoding': 'utf-8',
@@ -74,47 +62,119 @@ LOGGING = {
     },
     "loggers": {
         "api": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('API_LOG_LEVEL'),
             "propagate": True,
         },
         "catalog": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('CATALOG_LOG_LEVEL'),
             "propagate": True,
         },
         "delivery_contacts": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('DELIVERY_LOG_LEVEL'),
             "propagate": True,
         },
         "promos": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('PROMOS_LOG_LEVEL'),
             "propagate": True,
         },
         "shop": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('SHOP_LOG_LEVEL'),
             "propagate": True,
         },
         "tm_bot": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('TM_BOT_LOG_LEVEL'),
             "propagate": True,
         },
         "users": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('USERS_LOG_LEVEL'),
             "propagate": True,
         },
         "cron": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('CRON_LOG_LEVEL'),
             "propagate": True,
         },
         "web_shop_with_bots": {
-            "handlers": ["console", "file", "mail"],
+            "handlers": [*(["console"] if os.getenv(
+                            'ENABLE_CONSOLE_LOGGING',
+                            'True') == 'True' else []),
+                         *(["file"] if os.getenv(
+                             'ENABLE_FILE_LOGGING',
+                             'True') == 'True' else []),
+                         *(["mail"] if os.getenv(
+                             'ENABLE_MAIL_LOGGING',
+                             'True') == 'True' else [])],
             "level": os.getenv('WSWB_LOG_LEVEL'),
             "propagate": True,
         },
@@ -126,7 +186,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 
 DOCKER_COMPOSE_NAME = os.getenv('DOCKER_COMPOSE_NAME')
 
-DEBUG = os.getenv('DEBUG')
+DEBUG = os.getenv('DEBUG') == 'True'
 TEST_SERVER = os.getenv('TEST_SERVER')
 SERVER = os.getenv('SERVER')
 
@@ -143,7 +203,7 @@ allowed_hosts = default_allowed_hosts.copy()
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
         allowed_hosts.append(str(TEST_SERVER))
-    if SERVER:
+    elif SERVER:
         allowed_hosts.append(str(SERVER))
 
 
@@ -153,7 +213,6 @@ ALLOWED_HOSTS = allowed_hosts
 
 
 default_installed_apps = [
-    'django_crontab',
     'catalog.apps.CatalogConfig',
     'shop.apps.ShopConfig',
     'users.apps.UsersConfig',
@@ -161,6 +220,7 @@ default_installed_apps = [
     'promos.apps.PromosConfig',
     'delivery_contacts.apps.DeliveryContactsConfig',
     'settings.apps.SettingsConfig',
+    'audit.apps.AuditConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -175,12 +235,14 @@ default_installed_apps = [
     'corsheaders',
     'drf_yasg',
     'rest_framework.authtoken',
-    'debug_toolbar',
     'django_filters',
     'parler',   # language
     'django.contrib.gis',
-    'django_celery_beat',
-    'rangefilter'
+    # 'django_celery_beat',
+    'rangefilter',
+    'django_summernote',
+    'django_admin_inline_paginator',
+    'debug_toolbar',
 ]
 installed_apps = default_installed_apps.copy()
 # Insert the TEST_SERVER and SERVER into the list if available
@@ -195,13 +257,19 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
-    'middlewares.AdminRULocaleMiddleware',
+    'web_shop_with_bots.middlewares.AdminRULocaleMiddleware',
     # мидлвэр для отображения админки только на русском языке
-    'middlewares.APIENLocaleMiddleware',
+    'web_shop_with_bots.middlewares.APIENLocaleMiddleware',
     # мидлвэр для перевода всех запросов на en для единства ответов ошибок
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+
+    'web_shop_with_bots.middlewares.AuditMiddleware',
+    # мидлвэр для аудирования всех запросов к сайту
+    # 'web_shop_with_bots.middlewares.APILoggingMiddleware',
+    # мидлвэр для логирования всех запросов на к API
+
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'debug_toolbar.middleware.DebugToolbarMiddleware',
@@ -263,6 +331,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'users.validators.AlphanumericPasswordValidator',
     },
+    {
+        'NAME': 'users.validators.MaximumLengthValidator',
+    },
 ]
 
 
@@ -287,19 +358,27 @@ REST_FRAMEWORK = {
     'DATETIME_INPUT_FORMATS': [
         '%d.%m.%Y %H:%M',
     ],
-    'EXCEPTION_HANDLER': 'api.utils.utils.custom_exception_handler',
 
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.UserRateThrottle',
-        'rest_framework.throttling.AnonRateThrottle',
-    ],
-    'DEFAULT_THROTTLE_RATES': {
+    'TIME_FORMAT': '%H:%M',
+
+    'EXCEPTION_HANDLER': 'api.utils.utils.custom_exception_handler',
+}
+
+if DEBUG:
+    REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = (
+        'rest_framework.renderers.JSONRenderer',
+    )
+
+if ENVIRONMENT != 'development':
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
         'user': '10000/day', #  Лимит для UserRateThrottle
         'anon': '1000/day',  #  Лимит для AnonRateThrottle
     }
+    REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = [
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.AnonRateThrottle"
+    ]
 
-
-}
 
 access_token_lifetime = os.getenv('ACCESS_TOKEN_LIFETIME')
 refresh_token_lifetime = os.getenv('REFRESH_TOKEN_LIFETIME')
@@ -379,30 +458,22 @@ DJOSER = {
 # -------------------------------- Redis ----------------------------------
 
 
-
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://:redisadmin0@127.0.0.1:6379/1"  #local
-        # "LOCATION": "redis://:redisadmin0@redis:6379/1"    #server
+        "LOCATION": os.getenv('REDIS_LOCATION', "redis://redis:6379/1")
+        # "LOCATION": "redis://:redisadmin0@127.0.0.1:6379/1"  #local with pass
+        # "LOCATION": "redis://:redisadmin0@redis:6379/1"    #test_server/production with pass
+        # "LOCATION": "redis://redis:6379/1"  #backend container for frontend development
     }
 }
 
-CELERY_BROKER_URL = 'redis://:redisadmin0@redis:6379/0'
+# CELERY_BROKER_URL = 'redis://:redisadmin0@redis:6379/0'
+# если применяется пароль к redis, то прописать и тут
 
 PARLER_ENABLE_CACHING = False
 
-CRONJOBS = [
-    ('*/5 * * * *', 'web_shop_with_bots.cron.backup_database',
-     {"PGPASSWORD": POSTGRES_PASSWORD}),
-    ('30 14 27 * *', 'web_shop_with_bots.cron.backup_database',
-     {"PGPASSWORD": POSTGRES_PASSWORD}),
-    ('0 2 * * *', 'web_shop_with_bots.cron.delete_expired_tokens')
-]
-
-BACKUP_DIRECTORY = os.path.join(PROGECT_DIR, 'backups')
-if not os.path.exists(BACKUP_DIRECTORY):
-    os.makedirs(BACKUP_DIRECTORY)
+CACHE_TIME = os.getenv('CACHE_TIME', 0)
 
 # -------------------------------- DATETIME + OTHER ------------------------------------------
 
@@ -492,7 +563,7 @@ cors_allowed_origins = default_cors_allowed_origins.copy()
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{TEST_SERVER}")
-    if SERVER:
+    elif SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{SERVER}")
 CORS_ALLOWED_ORIGINS = cors_allowed_origins
 
@@ -525,7 +596,7 @@ csrf_trusted_origins = default_csrf_trusted_origins.copy()
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{TEST_SERVER}"))
-    if SERVER:
+    elif SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{SERVER}"))
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
 
@@ -555,7 +626,7 @@ if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
 
 # -------------------------------- SENTRY MISTAKES INFORMATION----------------------------
 
-if ENVIRONMENT == 'test_server':
+if ENVIRONMENT in ['test_server', 'production']:
     sentry_sdk.init(
         dsn=os.getenv('SENTRY_DSN'),
         integrations=[DjangoIntegration()],
@@ -564,7 +635,7 @@ if ENVIRONMENT == 'test_server':
 # -------------------------------- TELEGRAM BOT  ----------------------------
 
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+ADMIN_BOT_TOKEN = os.getenv('ADMIN_BOT_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
 BOTOBOT_API_KEY = os.getenv('BOTOBOT_API_KEY')
 SEND_BOTOBOT_UPDATES = os.getenv('SEND_BOTOBOT_UPDATES')
@@ -573,7 +644,7 @@ SEND_BOTOBOT_UPDATES = os.getenv('SEND_BOTOBOT_UPDATES')
 
 CITY_CHOICES = [
     ('Beograd', 'Beograd'),
-    # ('Novi_sad', 'Novi Sad'),
+    ('NoviSad', 'Novi Sad'),
 ]
 DEFAULT_CITY = 'Beograd'
 DEFAULT_RESTAURANT = 1
@@ -615,7 +686,8 @@ ORDER_STATUS_CHOICES = (
     (WAITING_CONFIRMATION, "ожидает подтверждения"),
     (CONFIRMED, "подтвержден"),
     (ON_DELIVERY, "передан в доставку"),
-    (CANCELED, "отменен")
+    (CANCELED, "отменен"),
+    (DELIVERED, "выдан")
 )
 
 ORDER_STATUS_TRANSLATIONS = {
@@ -656,6 +728,7 @@ PAYMENT_METHODS = [
 SOURCE_TYPES = [
     ('P1-1', 'Glovo'),
     ('P1-2', 'Wolt'),
+    ('P2-1', 'Smoke'),
     ('1', 'телефон'),
     ('2', 'ресторан'),
     ('3', 'TM_Bot'),
@@ -671,3 +744,27 @@ PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT = '2'
 # требуют времени для обработки. Однако имейте в виду, что увеличение
 # этого времени может привести к более долгому времени ожидания отладки
 # в случае, если выражения должны быть вычислены во время отладки.
+
+
+
+
+# -------------------------------- SUMMERNOTE  ----------------------------
+
+SUMMERNOTE_CONFIG = {
+    'iframe': False,  # Использовать iframe или нет
+    'airMode': False,  # Режим редактирования по умолчанию (False = полный редактор)
+    'toolbar': [
+        ['style', ['style']],
+        ['font', ['bold', 'underline', 'clear']],
+        ['color', ['color']],
+        ['para', ['ul', 'ol', 'paragraph']],
+        # ['table', ['table']],
+        ['insert', ['link']],        # 'picture', 'video']],
+        ['view', ['fullscreen', 'codeview', 'help']],
+    ],
+    'summernote': {
+        'width': '100%',
+        'height': '180',
+    },
+    'attachment_require_authentication': True,  # Требовать аутентификацию для загрузки файлов
+}

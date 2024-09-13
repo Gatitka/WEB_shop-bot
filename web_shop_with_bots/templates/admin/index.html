@@ -1,0 +1,15 @@
+{% extends "admin/index.html" %}
+{% load static %}
+
+{% block content %}
+    {{ block.super }}
+    <h2>Sales Data</h2>
+    <canvas id="salesChart" width="800" height="400"></canvas>
+    <button id="toggleDisplay">Кол-во заказов/Сумма заказов</button>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+    <script src="{% static 'my_admin/js/admin/sales_charts.js' %}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}

@@ -1,10 +1,19 @@
 from django.contrib import admin
-from parler.admin import (SortedRelatedFieldListFilter, TranslatableAdmin,
-                          TranslatableTabularInline)
-
+from parler.admin import (TranslatableAdmin,
+                          TranslatableModelForm)
+from django_summernote.widgets import SummernoteWidget
 from utils.utils import activ_actions
 
 from .models import PrivatPromocode, Promocode, PromoNews
+
+
+class PromoNewsForm(TranslatableModelForm):
+    class Meta:
+        model = PromoNews
+        fields = '__all__'
+        widgets = {
+            'content': SummernoteWidget(),
+        }
 
 
 @admin.register(PromoNews)
@@ -17,7 +26,7 @@ class PromoNewsAdmin(TranslatableAdmin):
     search_fields = ('translations__title__icontains',
                      'translations__full_text__icontains')
     list_filter = ('is_active', 'city')
-
+    form = PromoNewsForm
     fieldsets = (
         ('Основное', {
             'fields': (

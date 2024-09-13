@@ -15,6 +15,7 @@ function getCurrentDomain() {
 document.addEventListener('DOMContentLoaded', () => {
     const addressInput = document.getElementById('id_recipient_address');
     const coordinatesInput = document.getElementById('id_coordinates'); // Добавлено определение поля с координатами
+    const citySelect = document.getElementById('id_city'); // Поле выбора города
     const options = {
         componentRestrictions: { country: 'rs' },
         strictBounds: true,

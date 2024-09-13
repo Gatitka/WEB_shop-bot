@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////   ПОЛУЧЕНИЕ ЦЕН
 document.addEventListener('DOMContentLoaded', function() {
 
-    var fetchedDiscount = {}; // Объект для хранения полученных скидок
+    var fetchedDiscounts = {}; // Объект для хранения полученных скидок
     const currentDomain = getCurrentDomain();
 
     // Функция для выполнения запроса к эндпоинту и сохранения данных о скидке
@@ -164,50 +164,106 @@ document.addEventListener('DOMContentLoaded', function() {
 ///////////////////////////////////////////////   РАССЧЕТ СКИДОК
 
     // Создаем экземпляр MutationObserver для отслеживания изменений в элементе '.field-amount .readonly'
+    // Элемент '.field-amount .readonly', за которым нужно следить
+    var amountField = document.querySelector('.field-amount .readonly');
     var amountObserver = new MutationObserver(function(mutationsList) {
         for (var mutation of mutationsList) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
-                // Если произошли изменения в содержимом, вызываем функции для расчета скидок
-                // calculateTakeawayDiscount();
-                // calculateCashDiscount();
                 calculateDiscountedAmount();
             }
         }
     });
-
-    // Элемент '.field-amount .readonly', за которым нужно следить
-    var amountField = document.querySelector('.field-amount .readonly');
-
     // Начинаем отслеживать изменения в элементе '.field-amount .readonly'
     if (amountField) {
         amountObserver.observe(amountField, { attributes: false, childList: true, subtree: true });
     }
 
-
-    // Слушаем изменения в поле суммы заказа и полях скидок
-    var discountFields = document.querySelectorAll('.field-discount_amount .readonly, .field-promocode_disc_amount .readonly');
-
-    // Создаем экземпляр MutationObserver
-    var observer = new MutationObserver(function(mutationsList) {
-        for(var mutation of mutationsList) {
+    // Создаем экземпляр MutationObserver для отслеживания изменений в элементе '.field-amount .readonly'
+    // Элемент '.field-amount .readonly', за которым нужно следить
+    var discountField = document.querySelector('.field-discount_amount .readonly');
+    var discountObserver = new MutationObserver(function(mutationsList) {
+        for (var mutation of mutationsList) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
-                // Если произошли изменения в содержимом, вызываем функцию расчета скидок
                 calculateDiscountedAmount();
             }
         }
     });
+    if (discountField) {
+        discountObserver.observe(amountField, { attributes: false, childList: true, subtree: true });
+    }
 
-    // Начинаем отслеживать изменения в полях скидок
-    discountFields.forEach(function(field) {
-        observer.observe(field, { attributes: false, childList: true, subtree: true });
-    });
+    // .field-promocode_disc_amount .readonly'
 
     var manualDiscountField = document.getElementById('id_manual_discount');
     if (manualDiscountField) {
-        manualDiscountField.addEventListener('change', function() {
+        manualDiscountField.addEventListener('input', function() {
             calculateDiscountedAmount();
         });
     }
+
+    // Обработчик изменений выбора скидки
+    document.querySelectorAll('input[name="discount"]').forEach(function(el) {
+        el.addEventListener('change', function() {
+            calculateDiscountAmount();
+            calculateDiscountedAmount();
+        });
+    });
+
+    // Функция для расчета и отображения скидки
+    function calculateDiscountAmount() {
+        var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent);
+        var discountField = document.querySelector('.field-discount_amount .readonly');
+        var discountRadioButtons = document.querySelectorAll('input[name="discount"]');
+        var discountAmount = 0;
+
+        discountRadioButtons.forEach(function(radio) {
+            if (radio.checked) {
+                var discountId = radio.value;
+                console.log('discountId:', discountId);
+                console.log('fetchedDiscounts', fetchedDiscounts);
+                var discount = fetchedDiscounts[discountId];
+
+                if (discount && discount.is_active) {
+                    if (discount.discount_perc !== null) {
+                        discountAmount = amountField * (discount.discount_perc / 100);
+                    } else if (discount.discount_am !== null) {
+                        discountAmount = discount.discount_am;
+                    }
+                }
+            }
+            console.log('Amount:', amountField);
+            console.log('Discount Amount:', discountAmount);
+
+            discountField.textContent = discountAmount.toFixed(2);
+        });
+    }
+
+    // Функция для расчета суммы с учетом скидок
+    function calculateDiscountedAmount() {
+        var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent) || 0;
+        var discountAmount = parseFloat(document.querySelector('.field-discount_amount .readonly').textContent) || 0;
+        var manualDisc = parseFloat(document.getElementById('id_manual_discount').value) || 0;
+        var discAmount = amountField - discountAmount - manualDisc;   // - promocodeDisc
+
+        console.log('Amount:', amountField);
+        console.log('Discount Amount:', discountAmount);
+        console.log('Manual Discount:', manualDisc);
+        console.log('Discounted Amount:', discAmount);
+
+        // var finalDiscountedAmount = handleDiscountedAmountChange(amountField, discAmount); // Проверяем сумму с учетом скидки 25%
+        document.querySelector('.field-discounted_amount .readonly').textContent = discAmount.toFixed(2);
+        calculateFinalAmountWithShipping(); //
+    }
+
+    // Функция для рассчета суммы с учетом доставки
+    function calculateFinalAmountWithShipping() {
+        var discountedAmount = parseFloat(document.querySelector('.field-discounted_amount .readonly').textContent) || 0;
+        var deliveryCost = parseFloat(document.getElementById('id_delivery_cost').value) || 0;
+        var autoDeliveryCost = parseFloat(document.getElementById('id_auto_delivery_cost').value) || 0;
+        var finalAmountWithShipping = discountedAmount + (deliveryCost || autoDeliveryCost);
+        document.querySelector('.field-final_amount_with_shipping .readonly').textContent = finalAmountWithShipping.toFixed(2);
+    }
+
 
     var autoDeliveryCost = document.getElementById('id_auto_delivery_cost');
     if (autoDeliveryCost) {
@@ -247,62 +303,12 @@ document.addEventListener('DOMContentLoaded', function() {
         return discAmount;
     }
 
-    // Функция для расчета суммы с учетом скидок
-    function calculateDiscountedAmount() {
-        var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent) || 0;
-        var amountDisc = parseFloat(document.querySelector('.field-discount_amount .readonly').textContent) || 0;
-        // var promocodeDisc = parseFloat(document.querySelector('.field-promocode_disc_amount .readonly').textContent) || 0;
-        var manualDisc = parseFloat(document.getElementById('id_manual_discount').value) || 0;
-        var discAmount = amountField - amountDisc - manualDisc;   // - promocodeDisc
-        console.log('discAmount:', discAmount);
-        var finalDiscountedAmount = handleDiscountedAmountChange(amountField, discAmount); // Проверяем сумму с учетом скидки 25%
-        document.querySelector('.field-discounted_amount .readonly').textContent = finalDiscountedAmount.toFixed(2);
-        calculateFinalAmountWithShipping(); //
-    }
 
-    // Функция для рассчета суммы с учетом доставки
-    function calculateFinalAmountWithShipping() {
-        var discountedAmount = parseFloat(document.querySelector('.field-discounted_amount .readonly').textContent) || 0;
-        var deliveryCost = parseFloat(document.getElementById('id_delivery_cost').value) || 0;
-        var autoDeliveryCost = parseFloat(document.getElementById('id_auto_delivery_cost').value) || 0;
-        var finalAmountWithShipping = discountedAmount + (deliveryCost || autoDeliveryCost);
-        document.querySelector('.field-final_amount_with_shipping .readonly').textContent = finalAmountWithShipping.toFixed(2);
-    }
 
-    // Функция для расчета и отображения скидки
-    function calculateDiscountAmount() {
-        var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent);
-        var discountField = document.querySelector('.field-discount_amount .readonly');
-        var discountRadioButtons = document.querySelectorAll('input[name="discount"]');
 
-        discountRadioButtons.forEach(function(radio) {
-            if (radio.checked) {
-                var discountId = radio.value;
-                var discount = fetchedDiscount[discountId];
 
-                if (discount && discount.is_active) {
-                    var discountAmount = 0;
 
-                    if (discount.discount_perc !== null) {
-                        discountAmount = amountField * (discount.discount_perc / 100);
-                    } else if (discount.discount_am !== null) {
-                        discountAmount = discount.discount_am;
-                    }
 
-                    discountField.value = discountAmount.toFixed(2);
-                } else {
-                    discountField.value = '0.00';
-                }
-            }
-        });
-
-        calculateDiscountedAmount();
-    }
-
-    // Обработчик изменений выбора скидки
-    document.querySelectorAll('input[name="discount"]').forEach(function(el) {
-        el.addEventListener('change', calculateDiscountAmount);
-    });
     // // Функция для рассчета скидки на самовывоз
     // function calculateTakeawayDiscount() {
     //     var deliveryType = document.querySelector('input[name="delivery"]:checked').value;

@@ -9,10 +9,18 @@ WORKDIR /app
 # Дальнейшие инструкции будут выполняться в директории /app
 RUN pip install gunicorn==20.1.0
 RUN apt-get update && apt-get install -y \
+    sudo \
+    nano
+
+RUN apt-get update && apt-get install -y \
     gdal-bin \
     python3-gdal \
-    libgdal-dev \
+    libgdal-dev
+
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
+
 RUN ldconfig
 
 # Скопировать с локального компьютера файл зависимостей

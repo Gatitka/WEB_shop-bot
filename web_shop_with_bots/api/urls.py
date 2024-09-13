@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from .views import (ContactsDeliveryViewSet, DeliveryOrderViewSet,
                     GetGoogleAPIKeyAPIView, MenuViewSet, MyAddressViewSet,
@@ -11,19 +11,26 @@ from .views import (ContactsDeliveryViewSet, DeliveryOrderViewSet,
 
 app_name = 'api'
 
+
+if settings.ENVIRONMENT == 'development':
+    router_type = DefaultRouter()
+elif settings.ENVIRONMENT == 'production':
+    router_type = SimpleRouter()
+
+
 # Создание роутеров для разных разделов API
-menu_router = DefaultRouter()
+menu_router = router_type
 menu_router.register(r'menu', MenuViewSet, basename='menu')
 
-cart_router = DefaultRouter()
+cart_router = router_type
 cart_router.register(r'shopping_cart', ShoppingCartViewSet,
                      basename='shopping_cart')
 
-contacts_router = DefaultRouter()
+contacts_router = router_type
 contacts_router.register(r'contacts', ContactsDeliveryViewSet,
                          basename='contacts')
 
-profile_router = DefaultRouter()
+profile_router = router_type
 profile_router.register(r'me/my_addresses', MyAddressViewSet,
                         basename='user_addresses')
 profile_router.register(r'me/my_orders', MyOrdersViewSet,
@@ -31,16 +38,16 @@ profile_router.register(r'me/my_orders', MyOrdersViewSet,
 profile_router.register(r'me/my_promocodes', MyPromocodesViewSet,
                         basename='user_orders')
 
-promos_router = DefaultRouter()
+promos_router = router_type
 promos_router.register(r'promonews', PromoNewsViewSet, basename='promonews')
 
-order_router = DefaultRouter()
+order_router = router_type
 order_router.register(r'create_order_takeaway', TakeawayOrderViewSet,
                       basename='create-order-takeaway')
 order_router.register(r'create_order_delivery', DeliveryOrderViewSet,
                       basename='create-order-delivery')
 
-users_router = DefaultRouter()
+users_router = router_type
 users_router.register(r'auth/users', MyUserViewSet, basename='users')
 
 # Сборка всех роутеров в один URL-конфиг

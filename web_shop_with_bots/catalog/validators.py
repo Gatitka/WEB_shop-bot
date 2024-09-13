@@ -28,7 +28,7 @@ def validator_dish_exists_active(value):
                 "pk": value})
 
 
-def get_dish_validate_exists_active(value):
+def get_dish_validate_exists_active(value, city, restaurant):
     if value is not None:
         if not value.isdigit():
             raise ValidationError({
@@ -36,16 +36,38 @@ def get_dish_validate_exists_active(value):
                 "code": "invalid",
                 "pk": value})
 
-        dish = Dish.objects.filter(article=value).first()
-        if not dish:
+    dish = Dish.objects.filter(article=value).prefetch_related(
+        'citydishlist_set', 'restaurantdishlist_set'
+    ).first()
+
+    # Проверяем, есть ли такие блюда вообще
+    if not dish:
+        raise ValidationError({
+            "detail": "There's no such dish in our menu.",
+            "code": "invalid",
+            "pk": value
+        })
+
+    if restaurant is None:
+        # Проверяем, есть ли блюдо в указанном городе
+        if (not dish.citydishlist_set.filter(city=city).exists()
+            or not dish.is_active):
+
             raise ValidationError({
-                "detail": "There's no such dish in our menu.",
+                "detail": "We are sorry, but this dish is currently inavailable.",
                 "code": "invalid",
-                "pk": value})
-        if not dish.is_active:
+                "pk": value
+            })
+
+    # Если ресторан указан, проверяем доступность блюда в конкретном ресторане
+    else:
+        if (not dish.restaurantdishlist_set.filter(restaurant=restaurant).exists()
+            or not dish.is_active):
+
             raise ValidationError({
-                "detail": "We are sorry, but this dish is "
-                            "currently inavailable.",
+                "detail": "We are sorry, but this dish is currently inavailable.",
                 "code": "invalid",
-                "pk": value})
+                "pk": value
+            })
+
     return dish

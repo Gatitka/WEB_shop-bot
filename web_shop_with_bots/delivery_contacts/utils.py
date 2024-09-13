@@ -8,10 +8,11 @@ from django.core.exceptions import ValidationError
 from web_shop_with_bots.settings import GOOGLE_API_KEY
 
 
-def receive_responce_from_google(address):
+def receive_responce_from_google(address, city):
+    final_address = check_address_contains_city(address, city)
     params = {
         'key': GOOGLE_API_KEY,
-        'address': address
+        'address': final_address
     }
 
     base_url = 'https://maps.googleapis.com/maps/api/geocode/json?'
@@ -28,8 +29,8 @@ def receive_responce_from_google(address):
         return None
 
 
-def google_validate_address_and_get_coordinates(address):
-    data = receive_responce_from_google(address)
+def google_validate_address_and_get_coordinates(address, city=None):
+    data = receive_responce_from_google(address, city)
     try:
         if data['status'] == 'OK':
             geometry = data['results'][0]['geometry']
@@ -54,6 +55,20 @@ def google_validate_address_and_get_coordinates(address):
                  'Проверьте точность адреса доставки.')
             )
 
+
+def check_address_contains_city(address, city):
+    keywords = ["Белград", "Belgrade", "Београд", "Beograd",
+                "Novi Sad", "Нови Сад", "Нови Сад", "Novi Sad",
+                "Novi-Sad", "Нови-Сад", "Нови-Сад", "Novi-Sad",
+                "NoviSad", "НовиСад", "НовиСад", "NoviSad",]
+
+    # Приводим адрес к нижнему регистру для корректной проверки
+    address_lower = address.lower()
+
+    # Проверяем, содержится ли хотя бы одно из ключевых слов в адресе
+    if any(keyword.lower() in address_lower for keyword in keywords):
+        return address
+    return f"{address}, {city}"
 
 # def get_delivery_cost_zone(delivery_zones, discounted_amount, delivery,
 #                            lat, lon):
@@ -180,3 +195,54 @@ def get_address_comment(address):
     floor = address.floor if address.floor is not None else ''
     interfon = address.interfon if address.interfon is not None else ''
     return f"flat: {flat}, floor: {floor}, interfon: {interfon}"
+
+
+import re
+
+def parse_address_comment(address_comment):
+    """
+    Функция для парсинга строки формата 'flat: 100, floor: 5, interfon: fggftfhj'.
+    Поддерживает неполные данные.
+    """
+    if address_comment is None:
+        return {
+            'flat': '',
+            'floor': '',
+            'interfon': ''
+        }
+
+    # Определяем шаблон регулярного выражения для парсинга строки
+    pattern = re.compile(r'(flat:\s*([^,]+))?|'
+                         r'(floor:\s*([^,]+))?|'
+                         r'(interfon:\s*([^,]+))?')
+
+    # Ищем все совпадения в строке
+    matches = pattern.findall(address_comment)
+
+    # Подготавливаем словарь с пустыми значениями
+    result = {
+        'flat': '',
+        'floor': '',
+        'interfon': ''
+    }
+
+    # Обрабатываем найденные совпадения
+    for match in matches:
+        if match[1]:  # если найдено значение flat
+            result['flat'] = match[1].strip()
+        elif match[3]:  # если найдено значение floor
+            result['floor'] = match[3].strip()
+        elif match[5]:  # если найдено значение interfon
+            result['interfon'] = match[5].strip()
+
+    return result
+
+
+def get_translate_address_comment(address_comment):
+    parsed_data = parse_address_comment(address_comment)
+    if parsed_data:
+        return (f"кв\\: {parsed_data['flat']}, "
+                f"этаж\\: {parsed_data['floor']}, "
+                f"интерфон\\: {parsed_data['interfon']}")
+
+    return address_comment

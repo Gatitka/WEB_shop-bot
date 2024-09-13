@@ -17,6 +17,8 @@ from tm_bot.models import MessengerAccount
 import logging
 from .validators import (validate_birthdate, validate_first_and_last_name,
                          coordinates_validator)
+from django.db.models import Sum
+from delivery_contacts.models import Restaurant
 
 
 logger = logging.getLogger(__name__)
@@ -28,9 +30,16 @@ class UserRoles(models.TextChoices):
 
 
 class UserAddress(models.Model):
+    city = models.CharField(
+        max_length=40,
+        verbose_name="город *",
+        choices=settings.CITY_CHOICES,
+        default=settings.DEFAULT_CITY,
+        blank=True, null=True,
+    )
     address = models.CharField(
         'адрес',
-        max_length=100
+        max_length=400
     )
     base_profile = models.ForeignKey(
         'BaseProfile',
@@ -54,19 +63,19 @@ class UserAddress(models.Model):
         validators=[coordinates_validator,]
     )
     floor = models.CharField(
-        max_length=10,
+        max_length=120,
         blank=True,
         null=True,
         verbose_name='этаж',
     )
     flat = models.CharField(
-        max_length=10,
+        max_length=120,
         blank=True,
         null=True,
         verbose_name='квартира',
     )
     interfon = models.CharField(
-        max_length=10,
+        max_length=120,
         blank=True,
         null=True,
         verbose_name='домофон'
@@ -79,12 +88,18 @@ class UserAddress(models.Model):
     def __str__(self):
         return f'Адрес {self.address}'
 
+    def clean(self):
+        super().clean()
+        if self.base_profile.addresses.count() >= 3 and not self.pk:
+            raise ValidationError("User can't have more than 3 addresses.")
+
     def save(self, *args, **kwargs):
         if self.address and (not self.coordinates):
             # Если есть адрес, но нет координат, извлекаем координаты из адреса
             try:
                 lat, lon, status = (
-                    google_validate_address_and_get_coordinates(self.address))
+                    google_validate_address_and_get_coordinates(self.address,
+                                                                self.city))
                 self.coordinates = f'{lat}, {lon}'
                 self.point = Point(float(lon), float(lat))
 
@@ -120,19 +135,19 @@ class BaseProfile(models.Model):
         )
     messenger_account = models.OneToOneField(
         MessengerAccount,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
         related_name='profile',
         verbose_name='Мессенджер',
         blank=True, null=True
         )
     first_name = models.CharField(
         'Имя',
-        max_length=150,
+        max_length=300,
         blank=True, null=True
         )
     last_name = models.CharField(
         'Фамилия',
-        max_length=150,
+        max_length=300,
         blank=True, null=True
         )
     phone = PhoneNumberField(
@@ -151,20 +166,13 @@ class BaseProfile(models.Model):
         verbose_name='адреса',
         blank=True, null=True
     )
-    city = models.CharField(
-        max_length=20,
-        verbose_name="город *",
-        choices=settings.CITY_CHOICES,
-        default=settings.DEFAULT_CITY,
-        blank=True, null=True,
-    )
     date_joined = models.DateTimeField(
         'Дата регистрации',
         auto_now_add=True
     )
     notes = models.CharField(
         'Пометки',
-        max_length=400,
+        max_length=1500,
         blank=True, null=True
     )
     date_of_birth = models.DateField(
@@ -196,6 +204,10 @@ class BaseProfile(models.Model):
         default=0,
         blank=True,
     )
+    first_web_order = models.BooleanField(
+        '1й зак на сайте',
+        default=False
+    )
 
     class Meta:
         # ordering = ['-id']
@@ -214,6 +226,15 @@ class BaseProfile(models.Model):
             args=[self.pk])
         return url
 
+    def get_orders_data(self):
+        if hasattr(self, 'orders'):
+            orders_aggregate = self.orders.aggregate(
+                total_sum=Sum('final_amount_with_shipping'))
+            total_sum = orders_aggregate.get('total_sum', 0) or 0
+        else:
+            total_sum = 0
+        return f"{total_sum} rsd ({self.orders_qty} зак.)"
+
     @staticmethod
     def base_profile_update(instance):
         base_profile = BaseProfile.objects.filter(
@@ -226,16 +247,19 @@ class BaseProfile(models.Model):
             base_profile.last_name = instance.last_name
             base_profile.phone = instance.phone
             base_profile.email = instance.email
-
             base_profile.save(update_fields=[
-                'web_account', 'first_name', 'last_name', 'phone', 'email'
+                'web_account', 'first_name', 'last_name', 'phone',
+                'email',
                 ]
             )
 
     @staticmethod
-    def base_profile_messegner_account_add(messenger, instance):
+    def base_profile_messegner_account_update(messenger, instance):
         if instance.base_profile.messenger_account:
-            if messenger is None:
+            # если у юзера есть аккаунт
+
+            if messenger == {} or messenger is None:
+                # удалить привязку и аккаунт
                 msngr_account = instance.base_profile.messenger_account
                 instance.base_profile.messenger_account = None
                 instance.base_profile.save(
@@ -244,25 +268,139 @@ class BaseProfile(models.Model):
                 msngr_account.delete()
 
             else:
-                instance.base_profile.messenger_account.save(
-                    msngr_type=messenger['msngr_type'],
-                    msngr_username=messenger['msngr_username'],
-                )
+                # если у юзера есть мессенджер и МА уже существует,
+                # то проверяем, есть ли у нового MA.profile.
+                # Если есть:
+                #     - скидываем юзернейм у MA
+                #     - удяляем существующий МА у юзера
+                #     - создаем новый MA с данными
+                # Если нет:
+                #     - привязываем МА к юзеру
+                if isinstance(messenger, MessengerAccount):
+                    if (hasattr(messenger, 'profile')
+                        and
+                        messenger.profile is not None
+                        and
+                        instance != messenger.profile):
+                        # если владельцы НЕ совпадают, скидываем записи в старом аккаунте,
+                        # создаем новый и привязываем его к юзеру
+                        msngr_type = messenger.msngr_type
+                        msngr_username = messenger.msngr_username
+                        messenger.reset_telegram_account_info()
+
+                        msngr_account = instance.base_profile.messenger_account
+                        msngr_account.delete()
+
+                        language = instance.web_language
+                        messenger_acc_new = MessengerAccount.objects.create(
+                            msngr_type=msngr_type,
+                            msngr_username=msngr_username,
+                            registered=True,
+                            language=language
+                        )
+                        instance.base_profile.messenger_account = (
+                            messenger_acc_new)
+                        instance.base_profile.save(
+                            update_fields=['messenger_account']
+                        )
+
+                    elif hasattr(messenger, 'profile') is False:
+                        # если владельца МА нет, то привязываем его к юзеру
+                        messenger.registered = True
+                        messenger.save(update_fields=['registered'])
+
+                        if hasattr(messenger, 'orders') and messenger.orders.exists():
+                            order = messenger.orders.first()
+                            order.transit_all_msngr_orders_to_base_profile(
+                                instance.base_profile)
+
+                        instance.base_profile.messenger_account = messenger
+                        instance.base_profile.save(
+                            update_fields=['messenger_account']
+                            )
+
+                else:
+                    msngr_account = instance.base_profile.messenger_account
+                    msngr_account.delete()
+
+                    language = instance.web_language
+                    messenger_acc_new = MessengerAccount.objects.create(
+                        msngr_type=msngr_type,
+                        msngr_username=msngr_username,
+                        registered=True,
+                        language=language
+                    )
+                    instance.base_profile.messenger_account = (
+                        messenger_acc_new)
+                    instance.base_profile.save(
+                        update_fields=['messenger_account']
+                    )
 
         else:
+            # если у юзера НЕТ аккаунта
             if messenger:
-                language = instance.web_language
-                messenger_account, _ = MessengerAccount.objects.get_or_create(
-                    msngr_type=messenger.get('msngr_type'),
-                    msngr_username=messenger.get('msngr_username'),
-                )
-                messenger_account.registered = True
-                messenger_account.language = language
-                messenger_account.save('registered', 'language')
-                instance.base_profile.messenger_account = messenger_account
-                instance.base_profile.save(
-                    update_fields=['messenger_account']
+                if isinstance(messenger, MessengerAccount):
+
+                    if (hasattr(messenger, 'profile')
+                        and
+                        messenger.profile is not None
+                        and
+                        instance != messenger.profile):
+                        # если владельцы НЕ совпадают, скидываем записи в старом аккаунте,
+                        # создаем новый и привязываем его к юзеру
+                        msngr_type = messenger.msngr_type,
+                        msngr_username = messenger.msngr_username
+                        messenger.reset_telegram_account_info()
+
+                        language = instance.web_language
+                        messenger_acc_new = MessengerAccount.objects.create(
+                            msngr_type=msngr_type,
+                            msngr_username=msngr_username,
+                            registered=True,
+                            language=language
+                        )
+                        instance.base_profile.messenger_account = (
+                            messenger_acc_new)
+                        instance.base_profile.save(
+                            update_fields=['messenger_account']
+                        )
+
+                    elif hasattr(messenger, 'profile') is False:
+                        # если владельца МА нет, то привязываем его к юзеру
+                        messenger.registered = True
+                        messenger.save(update_fields=['registered'])
+
+                        if hasattr(messenger, 'orders') and messenger.orders.exists():
+                            order = messenger.orders.first()
+                            order.transit_all_msngr_orders_to_base_profile(
+                                instance.base_profile)
+
+                        instance.base_profile.messenger_account = messenger
+                        instance.base_profile.save(
+                            update_fields=['messenger_account']
+                            )
+
+                else:
+                    language = instance.web_language
+                    messenger_account = MessengerAccount.objects.create(
+                        msngr_type=messenger.get('msngr_type'),
+                        msngr_username=messenger.get('msngr_username'),
+                        registered=True,
+                        language=language
                     )
+                    instance.base_profile.messenger_account = messenger_account
+                    instance.base_profile.save(
+                        update_fields=['messenger_account']
+                        )
+
+    def get_flag(self):
+        if self.base_language == 'ru':
+            flag = 'RU'
+        elif self.base_language == 'en':
+            flag = 'EN'
+        else:
+            flag = 'RS'
+        return flag
 
 
 class CustomWEBAccountManager(BaseUserManager):
@@ -316,7 +454,7 @@ class WEBAccount(AbstractUser):
         validators=[validate_first_and_last_name,],
     )
     last_name = models.CharField(
-        _('last_name'),
+        'last_name',
         max_length=150,
         validators=[validate_first_and_last_name,]
     )
@@ -326,20 +464,27 @@ class WEBAccount(AbstractUser):
         validators=[MinLengthValidator(8)],
         null=True, blank=True
     )
+    phone = PhoneNumberField(
+        _('phone'),
+        unique=True,
+    )
     email = models.EmailField(
         'email',
         max_length=254,
         unique=True
+    )
+    city = models.CharField(
+        max_length=40,
+        verbose_name="город *",
+        choices=settings.CITY_CHOICES,
+        default=settings.DEFAULT_CITY,
+        blank=True, null=True,
     )
     web_language = models.CharField(
         'Язык сайта',
         max_length=10,
         choices=settings.LANGUAGES,
         default=settings.DEFAULT_CREATE_LANGUAGE
-    )
-    phone = PhoneNumberField(
-        _('phone'),
-        unique=True,
     )
     notes = models.TextField(
         'Пометки',
@@ -375,6 +520,13 @@ class WEBAccount(AbstractUser):
         'подписка',
         default=True,
         help_text='Подписка на рассылки.'
+    )
+    restaurant = models.ForeignKey(
+        Restaurant,
+        on_delete=models.SET_NULL,
+        related_name='admin',
+        verbose_name='ресторан',
+        blank=True, null=True
     )
 
     class Meta:
@@ -458,5 +610,6 @@ def validate_phone_unique(value, user):
 
 def user_add_new_order_data(order):
     order.user.orders_qty += 1
-    order.user.orders_amount += order.final_amount_with_shipping
-    order.user.save(update_fields=['orders_qty', 'orders_amount'])
+    if order.is_first_order:
+        order.user.first_web_order = True
+    order.user.save(update_fields=['orders_qty', 'first_web_order'])

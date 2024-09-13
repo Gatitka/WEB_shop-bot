@@ -177,6 +177,7 @@ package.json
 media/
 static/
 docs/
+templates/email/
 tmp/
 logging/
 

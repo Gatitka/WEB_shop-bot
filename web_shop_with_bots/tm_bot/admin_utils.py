@@ -39,7 +39,7 @@ def export_tm_accounts_to_excel(modeladmin, request, queryset):
                'msngr_first_name', 'msngr_last_name', 'msngr_phone',
                'subscription', 'registered',
                'language',
-               'date_joined',
+               'created',
                'notes',
                'msngr_link'
                ])
@@ -53,7 +53,7 @@ def export_tm_accounts_to_excel(modeladmin, request, queryset):
                 obj.msngr_last_name, obj.msngr_phone,
                 obj.subscription, obj.registered,
                 obj.language,
-                obj.date_joined.astimezone(None).strftime('%Y-%m-%d %H:%M:%S'),
+                obj.created.astimezone(None).strftime('%Y-%m-%d %H:%M:%S'),
                 obj.notes,
                 obj.msngr_link
             ]

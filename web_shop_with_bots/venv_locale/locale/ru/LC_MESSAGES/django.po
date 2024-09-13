@@ -63,4 +63,19 @@ msgid "This password is too common."
 msgstr "This password is too common."
 
 msgid "Your password can’t be a commonly used password."
-msgstr "Your password can’t be a commonly used password."
+msgstr "Ваш пароль не должен быть распространенным."
+
+msgid "The password is too similar to the last_name."
+msgstr "The password is too similar to the last_name."
+
+msgid "The password is too similar to the %(verbose_name)s."
+msgstr "The password is too similar to the %(verbose_name)s."
+
+msgid "This password is entirely numeric."
+msgstr "This password is entirely numeric."
+
+msgid "Ensure this field have no more than %(max_length)d character."
+msgstr "Ensure this field have no more than %(max_length)d characters."
+
+msgid "Your password must have no more than %(max_length)d characters."
+msgstr "Пароль не должен превышать %(max_length)d знаков."

@@ -40,10 +40,12 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.utils.translation import get_language_from_request
 import json
-from tm_bot.models import get_status_tmbot
+from tm_bot.models import get_status_tmbot, OrdersBot, get_bot
 from django.views.decorators.cache import cache_page
 import api.serializers as srlz
 import logging
+from django.shortcuts import render
+from django.conf import settings
 
 
 logger = logging.getLogger(__name__)
@@ -62,28 +64,40 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
     permission_classes = [AllowAny,]
     serializer_class = srlz.ContactsDeliverySerializer
 
-    @method_decorator(cache_page(60 * 15))  # кэширование на 15 минут
+    @method_decorator(cache_page(settings.CACHE_TIME))
     def list(self, request, *args, **kwargs):
+        logger.info(f'contacts/ REQUEST: {self.request.data} '
+                    f'USER:{self.request.user}')
         contacts_delivery_data = []
 
         # Получаем уникальные города из ресторанов
-        cities = set(Restaurant.objects.values_list('city', flat=True))
+        cities = set(Restaurant.objects.filter(
+                        is_active=True).values_list('city', flat=True))
+        # Получаем все активные рестораны для данного города
+        restaurants_qs = Restaurant.objects.filter(is_active=True)
+        # Получаем условия доставки для данного города
+        delivery_qs = Delivery.objects.filter(is_active=True)
+        bots_qs = OrdersBot.objects.filter(is_active=True)
 
         for city in cities:
             # Получаем все активные рестораны для данного города
-            restaurants = Restaurant.objects.filter(city=city, is_active=True)
+            restaurants = restaurants_qs.filter(city=city)
             # Получаем условия доставки для данного города
-            delivery = Delivery.objects.filter(city=city, is_active=True)
+            delivery = delivery_qs.filter(city=city)
+            bots = bots_qs.filter(city=city)
 
             # Сериализуем данные о ресторанах и усл доставки для данного города
             city_contacts_delivery_data = {
                 'city': city,
 
                 'restaurants': srlz.RestaurantSerializer(
-                    restaurants, many=True).data,
+                    restaurants, many=True).data if restaurants else None,
 
                 'delivery': srlz.DeliverySerializer(
-                    delivery, many=True).data if delivery else None
+                    delivery, many=True).data if delivery else None,
+
+                'bots': srlz.OrdersBotSerializer(
+                    bots, many=True).data if bots else None
             }
             contacts_delivery_data.append(city_contacts_delivery_data)
         cash_discount_data = {'cash_discount': current_cash_disc_status()}
@@ -121,12 +135,12 @@ class MyAddressViewSet(mixins.ListModelMixin,
             raise CustomHttp400("Such address is unavailable.", code='invalid')
 
     def perform_create(self, serializer):
-        logger.info(f'me/my_addresses/ REQUEST: {self.request.data} '
+        logger.info(f'me/my_addresses/ CREATE REQUEST: {self.request.data} '
                     f'USER:{self.request.user}')
         serializer.save(base_profile=self.request.user.base_profile)
 
     def perform_update(self, serializer):
-        logger.info(f'me/my_addresses/ REQUEST: {self.request.data} '
+        logger.info(f'me/my_addresses/ UPDATE REQUEST: {self.request.data} '
                     f'USER:{self.request.user}')
         serializer.save()
 
@@ -280,7 +294,7 @@ class MenuViewSet(mixins.ListModelMixin,
 
     http_method_names = ['get', 'post']
 
-    @method_decorator(cache_page(60 * 15))  # кэширование на 15 минут
+    @method_decorator(cache_page(settings.CACHE_TIME))
     def list(self, request, *args, **kwargs):
 
         response_data = {
@@ -891,10 +905,28 @@ class DeliveryOrderViewSet(mixins.CreateModelMixin,
 
 class MyUserViewSet(UserViewSet):
 
+    def update(self, request, *args, **kwargs):
+        logger.info(f'/profile/ UPDATE REQUEST RECEIVED: {self.request.data} '
+                    f'USER: {self.request.user}')
+
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data)
+
+        serializer.is_valid(raise_exception=True)
+        logger.info(f'/profile/ UPDATE'
+                    f'SERIALIZER_VALIDATED_DATA: {serializer.validated_data}')
+        self.perform_update(serializer)
+
+        logger.info(f'/profile/ UPDATE successfully saved.')
+        return Response(serializer.data)
+
     def perform_update(self, serializer):
         serializer.save()
 
     def destroy(self, request, *args, **kwargs):
+        logger.info(f'profile/ DELETE REQUEST: {self.request.data} '
+                    f'USER:{self.request.user}')
+
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -962,11 +994,15 @@ class UserDataAPIView(APIView):
             else:
                 msgr_link = None
 
+            #orders_data = user.get_orders_data()
+            orders_data = None
+
             user_data = {
                 'recipient_name': user.first_name,
                 'recipient_phone': str(user.phone),
                 'language': user.base_language,
                 'msgr_link': msgr_link,
+                'orders_data': orders_data,
                 'my_addresses': my_addresses_data
             }
             logger.info(f'/get_user_data/ '
@@ -1115,9 +1151,12 @@ def save_bot_order(request):
 
         # Получаем данные из POST запроса
         logger.info(f'/save_bot_order/ REQUEST: {request.POST}')
+
+        bot = get_bot(data=request.POST)
         id = request.POST.get("id")
         status = get_status_tmbot(request.POST.get("statusName"))
         order = Order.objects.filter(source='3',
+                                     city=bot.city,
                                      source_id=id).first()
 
         if order:
@@ -1133,7 +1172,10 @@ def save_bot_order(request):
                         f'updated status {order.status}.')
             return JsonResponse({}, status=200)
 
-        serializer = srlz.BotOrderSerializer(data=request.POST)
+        context = {'extra_kwargs': {'bot': bot},
+                   'request': request}
+        serializer = srlz.BotOrderSerializer(data=request.POST,
+                                             context=context)
         serializer.is_valid()
         return JsonResponse({}, status=201)
 

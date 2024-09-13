@@ -8,18 +8,110 @@ from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
 from tm_bot.validators import validate_msngr_username
 from catalog.models import Dish
-from delivery_contacts.models import Delivery
+from delivery_contacts.models import Delivery, Restaurant
 import logging
 from delivery_contacts.services import (
     google_validate_address_and_get_coordinates,
     get_delivery_cost_zone
 )
 from decimal import Decimal
-from django.utils.translation import activate, get_language
+from django.db.models import Sum
+
 
 logger = logging.getLogger(__name__)
 
-# from users.models import BaseProfile
+
+class AdminChatTM(models.Model):
+    chat_id = models.CharField(
+        'ID чата в ТМ',
+        max_length=100,
+        validators=[MinLengthValidator(4)],
+        unique=True,
+        blank=True, null=True,
+        help_text="Получить через BotFather."
+    )
+    city = models.CharField(
+        max_length=40,
+        verbose_name="город *",
+        choices=settings.CITY_CHOICES,
+        default=settings.DEFAULT_CITY,
+        blank=True, null=True,
+    )
+    restaurant = models.OneToOneField(
+        Restaurant,
+        on_delete=models.PROTECT,
+        verbose_name='ресторан',
+        related_name='admin_chat',
+        default=settings.DEFAULT_RESTAURANT,
+        blank=True, null=True
+    )
+
+    class Meta:
+        ordering = ['city']
+        verbose_name = 'Админ-чат TM'
+        verbose_name_plural = 'Админ-чаты TM'
+
+
+class OrdersBot(models.Model):
+    msngr_type = models.CharField(
+        'msngr typ',
+        max_length=3,
+        choices=settings.MESSENGERS,
+    )
+    name = models.CharField(
+        'Название',
+        max_length=100,
+        validators=[MinLengthValidator(4)],
+        unique=True,
+        blank=True, null=True,
+    )
+    msngr_id = models.CharField(
+        'ID бота в ТМ',
+        max_length=100,
+        validators=[MinLengthValidator(4)],
+        unique=True,
+        blank=True, null=True,
+        help_text="Получить через BotFather."
+    )
+    source_id = models.CharField(
+        'ID на платформе',
+        max_length=100,
+        validators=[MinLengthValidator(4)],
+        unique=True,
+        blank=True, null=True,
+        help_text="ID бота на платформе ботов."
+    )
+    city = models.CharField(
+        max_length=40,
+        verbose_name="город *",
+        choices=settings.CITY_CHOICES,
+        default=settings.DEFAULT_CITY,
+        unique=True,
+        blank=True, null=True,
+    )
+    link = models.URLField(
+        max_length=200,
+        help_text='Стандартная ссылка на бота.'
+    )
+    frontend_link = models.URLField(
+        max_length=200,
+        help_text='Сссылка для отображения на сайте. Собирает статистику по клиентам, которые перешли с сайта.'
+    )
+    is_active = models.BooleanField(
+        verbose_name='активен',
+        default=False,
+        help_text='Активный чат отображается на сайте.'
+    )
+    api_key = models.CharField(
+        max_length=50,
+        verbose_name="API ключ д/валидации источника сообщений",
+        blank=True, null=True,
+    )
+
+    class Meta:
+        ordering = ['city']
+        verbose_name = 'Бот д/приема заказов'
+        verbose_name_plural = 'Боты д/приема заказов'
 
 
 class MessengerAccount(models.Model):
@@ -85,14 +177,14 @@ class MessengerAccount(models.Model):
         choices=settings.LANGUAGES,
         default=settings.DEFAULT_CREATE_LANGUAGE
     )
-    date_joined = models.DateTimeField(
+    created = models.DateTimeField(
         'Дата регистрации',
         auto_now_add=True
     )
 
     # дата последней активности
 
-    notes = models.CharField(
+    notes = models.TextField(
         'Комментарии',
         max_length=400,
         blank=True, null=True
@@ -103,16 +195,25 @@ class MessengerAccount(models.Model):
         blank=True, null=True,
         help_text="Ссылка на чат, внесется автоматически."
     )
+    city = models.CharField(
+        max_length=40,
+        verbose_name="город *",
+        choices=settings.CITY_CHOICES,
+        default=settings.DEFAULT_CITY,
+        blank=True, null=True,
+    )
     # в админке поле не используется, т.к. необходимо HTML форматирование
 
     class Meta:
-        ordering = ['-date_joined']
+        ordering = ['-created']
         verbose_name = 'Соц сети аккаунт'
         verbose_name_plural = 'Соц сети аккаунты'
 
     def __str__(self):
-        return (f'{self.msngr_username}  {self.msngr_first_name} '
-                f'{self.msngr_last_name}')
+
+        return (f"{self.msngr_username}({self.msngr_type})")   #  "
+                #f"{self.msngr_first_name if self.msngr_first_name is not None else ''} "
+                #f"{self.msngr_last_name if self.msngr_last_name is not None else ''}")
 
     def save(self, *args, **kwargs):
         # Проверяем, создаем ли мы новый объект или обновляем существующий
@@ -135,18 +236,21 @@ class MessengerAccount(models.Model):
     def get_msngr_link(self):
         # Генерирует ссылку на чат в мессенджере на основе msngr_username
         # В данном примере, предполагается, что вы используете Telegram
-        if self.msngr_type == 'tm':
+        if self.msngr_username == '':
+            self.msngr_link = ''
+
+        elif self.msngr_type == 'tm':
             username = self.msngr_username[1:]
             self.msngr_link = (
                 f"<a href='https://t.me/{username}'"
-                f" target='_blank'>чат @{username}(Tm)</a>"
+                f" target='_blank'>чат {username}(Tm)</a>"
             )
 
         elif self.msngr_type == 'wts':
             username = self.msngr_username
             self.msngr_link = (
                 f"<a href='https://wa.me/{username}'"
-                f" target='_blank'>чат +{username}(Wts)</a>"
+                f" target='_blank'>чат {username}(Wts)</a>"
             )
 
     @staticmethod
@@ -176,6 +280,29 @@ class MessengerAccount(models.Model):
         # response = requests.post(url, data=payload)
         # return response.json()
         pass
+
+    def reset_telegram_account_info(self):
+        old_notes = self.notes if self.notes else ""
+        new_notes = (
+            f"Удаление юзернейма и линка во избежании конфликта с новыми "
+            f"пользователями. "
+            f"Старый username: {self.msngr_username}."
+        )
+        self.notes = f"{old_notes}\n{new_notes}".strip()
+        self.msngr_username = ''
+        self.msngr_link = ''
+        self.save()
+
+    def get_orders_data(self):
+        if hasattr(self, 'orders'):
+            orders_aggregate = self.orders.aggregate(
+                total_sum=Sum('final_amount_with_shipping'))
+            total_sum = orders_aggregate.get('total_sum', 0) or 0
+            orders_qty = self.orders.count()
+        else:
+            total_sum = 0
+            orders_qty = 0
+        return f"{total_sum} rsd ({orders_qty} зак.)"
 
 
 def msgr_account_unique(value):
@@ -213,9 +340,9 @@ def create_messenger_account(sender, instance, **kwargs):
     instance.send_message_to_telegram(instance.msngr_username, message)
 
 
-def get_delivery_data_tmbot(self, data, amount):
+def get_delivery_data_tmbot(self, data, city, amount):
     process_comment = ''
-    delivery = get_delivery_tmbot(data.get("delivery[type]"))
+    delivery = get_delivery_tmbot(data.get("delivery[type]"), city)
     address = data.get('address')
 
     delivery_zone, coordinates, delivery_cost = None, None, Decimal(0)
@@ -224,11 +351,11 @@ def get_delivery_data_tmbot(self, data, amount):
         try:
             if address != '':
                 lat, lon, status = google_validate_address_and_get_coordinates(
-                                    address)
+                                    address, city)
             elif data.get('comment') != '':
                 address = data.get('comment')
                 lat, lon, status = google_validate_address_and_get_coordinates(
-                                    address)
+                                    address, city)
             else:
                 lat, lon = None, None
 
@@ -236,14 +363,15 @@ def get_delivery_data_tmbot(self, data, amount):
             lat, lon = None, None
 
         delivery_cost, delivery_zone = get_delivery_cost_zone(
-                                            settings.DEFAULT_CITY,
+                                            city,
                                             amount, delivery,
                                             lat, lon)
         coordinates = f"{lat}, {lon}"
-    return delivery, delivery_zone, coordinates, delivery_cost, address, process_comment
+    return (delivery, delivery_zone, coordinates,
+            delivery_cost, address, process_comment)
 
 
-def get_delivery_tmbot(tmbot_deliv_type, city=settings.DEFAULT_CITY):
+def get_delivery_tmbot(tmbot_deliv_type, city):
     if tmbot_deliv_type == 'pickup':
         return Delivery.objects.get(city=city, type='takeaway')
     elif tmbot_deliv_type == 'courier':
@@ -258,7 +386,7 @@ def get_time_tmbot(tmbot_time):
     if tmbot_time in ['', 'как можно скорее']:
         time_comment = ''
     else:
-        time_comment = 'tmbot_time'
+        time_comment = str(tmbot_time)
     return time, time_comment, process_comment
 
 
@@ -270,6 +398,7 @@ def get_orderdishes_tmbot(self, data):
     orderdishes = []
     amount = 0
     index = 0
+    items_qty = 0
 
     article = data.get(f'goods[{index}][article]')
     while article is not None:
@@ -295,10 +424,11 @@ def get_orderdishes_tmbot(self, data):
                             'quantity': count})
         unit_amount = dish.final_price * count
         amount += unit_amount
+        items_qty += count    #!!!!!
         index += 1
         article = data.get(f'goods[{index}][article]')
 
-    return orderdishes, amount, process_comment
+    return orderdishes, amount, items_qty, process_comment
 
 
 def get_tm_user(self, data):
@@ -338,3 +468,24 @@ def get_status_tmbot(tmbot_status):
     else:
         status = None
     return status
+
+
+def get_city_tmbot(shop_id):
+    bot = OrdersBot.objects.filter(source_id=shop_id).first()
+    if bot:
+        return bot.city
+    return settings.DEFAULT_CITY
+
+
+def get_bot(data):
+    shop_id = data.get("shop[id]")
+    bot = OrdersBot.objects.get(source_id=shop_id)
+    # if bot:
+    #     if bot.api_key is not None and not api_key_is_valid(bot, data):
+    #         return ValidationError("API key isn't correct")
+
+    return bot
+
+
+def api_key_is_valid(bot, data):
+    return bot.api_key == data.get("API")

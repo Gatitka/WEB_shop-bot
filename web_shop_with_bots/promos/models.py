@@ -9,6 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from parler.models import TranslatableModel, TranslatedFields
 from django.core.validators import MinValueValidator
 from users.models import BaseProfile
+from django_summernote.fields import SummernoteTextField
 
 from .services import get_promocode_discount_amount
 
@@ -16,16 +17,18 @@ from .services import get_promocode_discount_amount
 class PromoNews(TranslatableModel):
     """ Модель для промо новостей."""
     translations = TranslatedFields(
-        title=models.TextField(
-            max_length=100,
-            verbose_name='заголовок',
-            blank=True, null=True
-        ),
-        full_text=models.TextField(
-            max_length=600,
-            verbose_name='описание',
-            blank=True, null=True
-        ),
+        title=SummernoteTextField(),
+        full_text=SummernoteTextField(),
+        # title=models.TextField(
+        #     max_length=100,
+        #     verbose_name='заголовок',
+        #     blank=True, null=True
+        # ),
+        # full_text=models.TextField(
+        #     max_length=600,
+        #     verbose_name='описание',
+        #     blank=True, null=True
+        # ),
     )
     is_active = models.BooleanField(
         default=False,
@@ -39,17 +42,17 @@ class PromoNews(TranslatableModel):
     created = models.DateField(
         'Дата добавления', auto_now_add=True
     )
-    image_ru = models.ImageField(
+    image_ru = models.FileField(
             upload_to='promo/',
             verbose_name='изображение ru',
             blank=True, null=True
     )
-    image_en = models.ImageField(
+    image_en = models.FileField(
             upload_to='promo/',
             verbose_name='изображение en',
             blank=True, null=True
     )
-    image_sr_latn = models.ImageField(
+    image_sr_latn = models.FileField(
             upload_to='promo/',
             verbose_name='изображение sr-latn',
             blank=True, null=True

@@ -2,10 +2,11 @@ import json
 from django.conf import settings
 from django import forms
 
-from delivery_contacts.models import Delivery
+from delivery_contacts.models import Delivery, Courier, Restaurant
 from delivery_contacts.services import get_delivery_zone
 from delivery_contacts.utils import parce_coordinates
-from shop.models import (Order, OrderGlovoProxy, OrderWoltProxy)
+from shop.models import (Order, OrderGlovoProxy, OrderWoltProxy,
+                         OrderSmokeProxy)
 from shop.validators import (validate_delivery_time)
 from phonenumber_field.validators import validate_international_phonenumber
 from users.models import UserAddress
@@ -36,13 +37,17 @@ def url_params_from_lookup_dict(lookups):
 
 class OrderAdminForm(forms.ModelForm):
     process_comment = forms.CharField(
-               label='Ошибки при сохранении',
-               required=False,
-               widget=forms.Textarea(attrs={
+                label='Ошибки при сохранении',
+                required=False,
+                widget=forms.Textarea(attrs={
                                             'autocomplete': 'on',
                                             'class': 'vLargeTextField',
                                             'maxlength': 500,
-                                        }))
+                                        }),
+                help_text=(
+                    "После исправления ошибок сохранения заказа "
+                    "удалите комент."
+                ))
 
     recipient_address = forms.CharField(
                label='Адрес доставки',
@@ -76,11 +81,13 @@ class OrderAdminForm(forms.ModelForm):
         required=False,
         help_text=(
             "Если zone определяется (прим. zone3), то поля   "
-            "'ЗОНА ДОСТАВКИ, СТОИМОСТЬ ДОСТАВКИ'   можно не заполнять.<br>"
-            "Если результат рассчета 'УТОЧНИТЬ', то нужно:<br>"
+            "'ЗОНА ДОСТАВКИ, СТОИМОСТЬ ДОСТАВКИ'   можно не заполнять.<br><br>"
+            "Если результат = 'УТОЧНИТЬ', то нужно:<br>"
             " - уточнить адрес;<br>"
             " - выбрать вручную одну из zone;<br>"
-            " - выбрать зону 'по запросу' и вручную внести стоимость доставки."
+            " - выбрать зону 'ПО ЗАПРОСУ' и вручную внести стоимость доставки.<br><br>"
+            "Для сохранения нестандартной стоимости в стандартной зоне, "
+            "смените зону на 'ПО ЗАПРОСУ' и внесите свою стоимость."
             )
     )
     error_message = forms.CharField(
@@ -98,6 +105,12 @@ class OrderAdminForm(forms.ModelForm):
                 'style':
                 'font-size: small; color: red; display: none; width: 900px;'}),
         required=False
+    )
+    invoice = forms.ChoiceField(
+        choices=((True, 'Да'), (False, 'Нет')),
+        widget=forms.RadioSelect,
+        label='чек',
+        initial=True  # Устанавливаем дефолтное значение как 'Да'
     )
 
     # flat = forms.CharField(
@@ -126,11 +139,34 @@ class OrderAdminForm(forms.ModelForm):
     #         Order._meta.get_field('user').remote_field,
     #         admin.site)
     # )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        user = self.user
+        # Устанавливаем значение по умолчанию для города и ресторана
+        if self.instance.pk is None and not user.is_superuser:
+            set_admin_data(self, user)
+
+        # отображение process_comment
         if self.instance is None or self.instance.process_comment is None:
             self.fields['process_comment'].widget = forms.HiddenInput()
 
+        # отображение способов платежа для заказа
+        if 'payment_type' in self.fields:
+            excluded_methods = ['partner']  # Список методов, которые исключить
+            filtered_payment_methods = [
+                method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
+            filtered_payment_methods.insert(0, (None, '---------'))
+            self.fields['payment_type'].choices = filtered_payment_methods
+
+        # выбор курьера только для доставки
+        # if self.instance and self.instance.delivery.type == 'takeaway':
+        #     self.fields['courier'].widget = forms.HiddenInput()
+        # else:
+        #     self.fields['courier'].queryset = Courier.objects.filter(
+        #                                                     is_active=True)
+
+        # если юзер известен, то загрузка его избранных адресов
         user = self.instance.user
         if 'user' in self.initial:
             user = self.initial['user']
@@ -167,6 +203,14 @@ class OrderAdminForm(forms.ModelForm):
         model = Order
         fields = '__all__'
 
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        Переопределяем метод get_form для передачи пользователя в форму.
+        """
+        form = super().get_form(request, obj, **kwargs)
+        form.user = request.user  # Передаем текущего пользователя в форму
+        return form
+
     def clean_recipient_name(self):
         source = self.data.get('source')
         recipient_name = self.data.get('recipient_name')
@@ -193,7 +237,7 @@ class OrderAdminForm(forms.ModelForm):
         coordinates = self.data.get('coordinates')
 
         if (delivery is not None and delivery.type == 'delivery'
-                and source in ['1', '4']):
+                and source in ['1', '3', '4']):
 
             if my_delivery_address not in [None, '']:
 
@@ -335,12 +379,32 @@ class OrderAdminForm(forms.ModelForm):
 
         return recipient_phone
 
-    def clean_payment_type(self):
-        payment_type = self.cleaned_data['payment_type']
-        if payment_type is None:
+    def clean_restaurant(self):
+        restaurant = self.data.get('restaurant')
+        city = self.data.get('city')
+        restaurant = Restaurant.objects.get(id=restaurant)
+        if restaurant.city != city:
             raise forms.ValidationError(
-                "Укажите способ оплаты.")
+                "Проверьте соответствие полей Город и Ресторан.")
+
+        return restaurant
+
+    def clean_payment_type(self):
+        source = self.data.get('source')
+        payment_type = self.cleaned_data['payment_type']
+        if source in ['1', '4']:
+            if payment_type is None:
+                raise forms.ValidationError(
+                    "Укажите способ оплаты.")
         return payment_type
+
+    def clean_process_comment(self):
+        source = self.data.get('source')
+        process_comment = self.cleaned_data['process_comment']
+        if source in ['1', '3', '4']:
+            if process_comment == '':
+                return None
+        return process_comment
 
     def clean(self):
         cleaned_data = super().clean()
@@ -348,6 +412,9 @@ class OrderAdminForm(forms.ModelForm):
         if 'my_delivery_address' in self._errors:
             del self._errors['my_delivery_address']
             cleaned_data['my_delivery_address'] = self.my_delivery_address
+        if not self.user.is_superuser and cleaned_data['restaurant'] not in self.user.restaurants.all():
+            raise forms.ValidationError("You cannot edit orders from other restaurants.")
+        return cleaned_data
 
         return cleaned_data
 
@@ -382,6 +449,14 @@ class OrderGlovoAdminForm(forms.ModelForm):
 
         return cleaned_data
 
+    def __init__(self, *args, **kwargs):
+        user = self.user
+        super().__init__(*args, **kwargs)
+
+        # Устанавливаем значение по умолчанию для города и ресторана
+        if self.instance.pk is None and not user.is_superuser:
+            set_admin_data(self, user)
+
 
 class OrderWoltAdminForm(forms.ModelForm):
     class Meta:
@@ -402,3 +477,52 @@ class OrderWoltAdminForm(forms.ModelForm):
         self.instance.created_by = 2
 
         return cleaned_data
+
+    def __init__(self, *args, **kwargs):
+        user = self.user
+        super().__init__(*args, **kwargs)
+
+        # Устанавливаем значение по умолчанию для города и ресторана
+        if self.instance.pk is None and not user.is_superuser:
+            set_admin_data(self, user)
+
+
+class OrderSmokeAdminForm(forms.ModelForm):
+    class Meta:
+        model = OrderSmokeProxy
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cleaned_data['source'] = 'P2-1'
+        cleaned_data['delivery'] = None
+        cleaned_data['payment_type'] = 'partner'
+        cleaned_data['created_by'] = 2
+        self.instance.source = 'P2-1'
+        self.instance.delivery = Delivery.objects.get(
+                                            city=settings.DEFAULT_CITY,
+                                            type='takeaway')
+        self.instance.payment_type = 'partner'
+        self.instance.created_by = 2
+
+        return cleaned_data
+
+    def __init__(self, *args, **kwargs):
+        user = self.user
+        super().__init__(*args, **kwargs)
+
+        # Устанавливаем значение по умолчанию для города и ресторана
+        if self.instance.pk is None and not user.is_superuser:
+            set_admin_data(self, user)
+
+
+def set_admin_data(self, user):
+    try:
+        restaurant = user.restaurant
+        self.fields['restaurant'].initial = restaurant
+        if restaurant.city:
+            self.fields['city'].initial = restaurant.city
+        else:
+            self.fields['city'].initial = user.city
+    except Restaurant.DoesNotExist:
+        self.fields['city'].initial = user.city

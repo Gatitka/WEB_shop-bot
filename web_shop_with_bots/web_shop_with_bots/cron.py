@@ -15,10 +15,12 @@ def backup_database():
     backup_file = f"/backups/db_backup_{current_date}.dump"
 
     # Создайте команду для выполнения бэкапа
-    command = ("sudo docker compose -f ",
-               f"{settings.DOCKER_COMPOSE_NAME} ",
-               "exec db sh -c ",
-               f"'pg_dump -U {settings.POSTGRES_USER} ",
+    # command = ("sudo docker compose -f ",
+    #            f"{settings.DOCKER_COMPOSE_NAME} ",
+    #            "exec db sh -c ",
+    #            f"'pg_dump -U {settings.POSTGRES_USER} ",
+    #            f"-d {settings.POSTGRES_DB} -F c -b -v -f {backup_file}'")
+    command = (f"'pg_dump -U {settings.POSTGRES_USER} ",
                f"-d {settings.POSTGRES_DB} -F c -b -v -f {backup_file}'")
     full_command = " ".join(command)
     logger.info(f"full_command{full_command}")
@@ -32,7 +34,7 @@ def backup_database():
 
 
 # production \     docker compose -f docker-compose.production_cache_crontab.yml exec db sh -c 'pg_dump -U postgres -d yume_db -F c -b -v -f /backups/db_backups_27-05-2024.sql'
-# test_server \     docker compose -f docker-compose.test_server_cache_crontab.yml exec db sh -c 'pg_dump -U postgres -d yume_db -F c -b -v -f /backups/db_backups_27-05-2024.sql'
+# test_server \     docker compose -f /root/YUME_SUSHI/docker-compose.test_server_cache_crontab.yml exec db sh -c 'pg_dump -U postgres -d yume_db -F c -b -v -f /backups/db_backups_27-05-2024.sql'
 # local\  pg_dump -U postgres -d yume_db -F c -b -v -f /backups/db_backup_today.dump
 
 def delete_expired_tokens():

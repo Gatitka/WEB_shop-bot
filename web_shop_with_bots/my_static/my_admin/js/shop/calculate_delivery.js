@@ -75,6 +75,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Обработчик события клика на кнопке "Рассчитать стоимость доставки"
     calculateDeliveryButton.addEventListener('click', function() {
+        // Функция для рассчета суммы с учетом доставки
+        function calculateFinalAmountWithShipping() {
+            var discountedAmount = parseFloat(document.querySelector('.field-discounted_amount .readonly').textContent) || 0;
+            var deliveryCost = parseFloat(document.getElementById('id_delivery_cost').value) || 0;
+            var autoDeliveryCost = parseFloat(document.getElementById('id_auto_delivery_cost').value) || 0;
+            var finalAmountWithShipping = discountedAmount + (deliveryCost || autoDeliveryCost);
+            document.querySelector('.field-final_amount_with_shipping .readonly').textContent = finalAmountWithShipping.toFixed(2);
+        }
+
         // Получаем значения из полей формы
         var cityElement = document.getElementById('id_city');
         var recipientAddressElement = document.getElementById('id_recipient_address');
@@ -171,6 +180,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 autoDeliveryZoneElement.value = response.auto_delivery_zone || '';
                 autoDeliveryCostElement.value = response.auto_delivery_cost || '';
                 hideError()
+                calculateFinalAmountWithShipping(); // функция из claculate_new_order_fields
             } else if (xhr.readyState === XMLHttpRequest.DONE) {
                 showError('Ошибка при выполнении запроса');
                 errorMessageElement.style.display = 'block';

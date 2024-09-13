@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
+from django.utils.translation import gettext as _, ngettext
 
 
 def validate_first_and_last_name(value):
@@ -53,7 +54,7 @@ class AlphanumericPasswordValidator:
 
 
 def coordinates_validator(coordinates):
-    if coordinates is not None:
+    if coordinates not in [None, 'None, None']:
         if not isinstance(coordinates, str):
             raise ValidationError(_("Input should be a string"))
 
@@ -68,11 +69,11 @@ def coordinates_validator(coordinates):
         except ValueError:
             raise ValidationError(_("Both parts of the input string should be convertible to float."))
 
-        if not (44 <= latitude <= 46):
-            raise ValidationError(_("Latitude should be between 44 and 46 degrees."))
+        # if not (44 <= latitude <= 46):
+        #     raise ValidationError(_("Latitude should be between 44 and 46 degrees."))
 
-        if not (19 <= longitude <= 22):
-            raise ValidationError(_("Longitude should be between 19 and 22 degrees."))
+        # if not (19 <= longitude <= 22):
+        #     raise ValidationError(_("Longitude should be between 19 and 22 degrees."))
 
 
 # 19.464173820140182
@@ -80,3 +81,30 @@ def coordinates_validator(coordinates):
 
 # 45.6370791312015,
 # 44.51678371302423,
+
+
+class MaximumLengthValidator:
+    """
+    Validate whether the password is within maximum length.
+    """
+    def __init__(self, max_length=128):
+        self.max_length = max_length
+
+    def validate(self, password, user=None):
+        if len(password) > self.max_length:
+            raise ValidationError(
+                ngettext(
+                    "Ensure this field have no more than %(max_length)d character.",
+                    "Ensure this field have no more than %(max_length)d characters.",
+                    self.max_length
+                ),
+                code='password_too_long',
+                params={'max_length': self.max_length},
+            )
+
+    def get_help_text(self):
+        return ngettext(
+            "Your password must have no more than %(max_length)d character.",
+            "Your password must have no more than %(max_length)d characters.",
+            self.max_length
+        ) % {'max_length': self.max_length}

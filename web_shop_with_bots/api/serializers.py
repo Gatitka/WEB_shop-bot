@@ -22,7 +22,7 @@ from shop.models import (CartDish, Order, OrderDish,
                          get_discount, promocode_vs_discount,
                          current_cash_disc_status)
 from shop.validators import (validate_delivery_time, validate_payment_type,
-                             validate_city)
+                             validate_city, validate_comment)
 from shop.utils import split_and_get_comment
 import tm_bot.models as tmbmod
 from tm_bot.validators import (get_msgr_data_validated)
@@ -36,7 +36,7 @@ from .services import get_rep_dic
 from decimal import Decimal
 from tm_bot.services import (send_message_new_order,
                              send_error_message_order_unsaved,
-                             send_error_message_order_saved,)
+                             send_error_message_order_saved)
 from djoser.serializers import UserCreateSerializer
 from django.utils.translation import get_language
 import logging
@@ -53,17 +53,34 @@ User = get_user_model()
 
 
 class MessengerAccountSerializer(serializers.ModelSerializer):
-    msngr_username = serializers.CharField()
-    msngr_type = serializers.CharField()
+    msngr_username = serializers.CharField(required=False, allow_null=True)
+    msngr_type = serializers.CharField(required=False, allow_null=True,)
 
     class Meta:
         model = tmbmod.MessengerAccount
         fields = ('msngr_username', 'msngr_type')
 
     def to_internal_value(self, data):
-        get_msgr_data_validated(data)
-        # msgr_account_unique(data['msngr_username'])
-        return super().to_internal_value(data)
+        """Проверка заполнены ли все поля, соответствуют ли они требованиям.
+        Если все ок, то ищется мессенджер аккаунт (MA) с такими type, username.
+        - если MA находится, то он возвращается в основной сериализатор,
+        - если МА НЕ находится, то возвращается словарь из type/username.
+        """
+        msngr_username = data['msngr_username']
+        msngr_type = data.get('msngr_type', None)
+        if msngr_username == '' and msngr_type is None:
+            return {}
+        else:
+            get_msgr_data_validated(data)
+            messenger_account = tmbmod.MessengerAccount.objects.filter(
+                msngr_type=msngr_type,
+                msngr_username=msngr_username).first()
+
+            if messenger_account is not None:
+                return messenger_account
+
+            else:
+                return super().to_internal_value(data)
 
 
 class LanguageField(serializers.CharField):
@@ -80,6 +97,8 @@ class LanguageField(serializers.CharField):
 
 
 class MyUserCreateSerializer(UserCreateSerializer):
+    city = serializers.CharField(max_length=20, required=True,
+                                 validators=[validate_city,])
 
     def validate(self, attrs):
         # Вызываем метод validate родительского класса
@@ -96,6 +115,10 @@ class MyUserCreateSerializer(UserCreateSerializer):
                 attrs['web_language'] = validate_language(language)
         # Возвращаем валидированные атрибуты
         return attrs
+
+    class Meta(UserCreateSerializer.Meta):
+        fields = UserCreateSerializer.Meta.fields + (
+                    'city',)
 
 
 class MyUserSerializer(serializers.ModelSerializer):
@@ -118,21 +141,46 @@ class MyUserSerializer(serializers.ModelSerializer):
 
     phone = PhoneNumberField(required=False)
 
+    city = serializers.CharField(max_length=20, required=True,
+                                 validators=[validate_city,])
+
     class Meta:
         model = User
         fields = ('first_name', 'last_name',
                   'email', 'phone',
                   'date_of_birth',
                   'messenger_account', 'is_subscribed',
+                  'city'
                   )
         read_only_fields = ('email', 'date_of_birth')
 
+    def validate_messenger_account(self, value):
+        request = self.context['request']
+        messenger_account = value
+        if isinstance(messenger_account, tmbmod.MessengerAccount):
+            base_profile = request.user.base_profile
+            if (hasattr(messenger_account, 'profile')
+                and
+                messenger_account.profile is not None
+                and
+                    base_profile.messenger_account is not None
+                and
+                    base_profile == messenger_account.profile):
+
+                value = None
+                # значит МА с переданными данными уже существует и привязан
+                # к пользователю, пересохранять не нужно
+
+        return value
+
     def validate(self, attrs):
         request = self.context['request']
+
         phone = self.initial_data.get('phone')
         if phone:
             phone = self.initial_data['phone']
             validate_phone_unique(phone, request.user)
+
         return super().validate(attrs)
 
     def update(self, instance, validated_data):
@@ -149,19 +197,25 @@ class MyUserSerializer(serializers.ModelSerializer):
 
             if 'messenger_account' in base_profile_validated_data:
                 messenger_account = base_profile_validated_data.get(
-                    'messenger_account')
-                if messenger_account is not None:
-                    messenger_account = (
-                        tmbmod.MessengerAccount.fulfill_messenger_account(
-                            base_profile_validated_data.get(
-                                'messenger_account')
-                        )
-                    )
+                    'messenger_account', None)
 
-                BaseProfile.base_profile_messegner_account_add(
-                    messenger_account,
-                    instance
-                )
+                # if (messenger_account is not None
+                #     and not isinstance(
+                #         messenger_account, tmbmod.MessengerAccount)):
+                #     messenger_account = (
+                #         tmbmod.MessengerAccount.fulfill_messenger_account(
+                #             base_profile_validated_data.get(
+                #                 'messenger_account')
+                #         )
+                #     )
+                if ((instance.base_profile.messenger_account is not None
+                     and messenger_account is None)
+                        or
+                        messenger_account is not None):
+                    BaseProfile.base_profile_messegner_account_update(
+                        messenger_account,
+                        instance
+                    )
 
             if 'date_of_birth' in base_profile_validated_data:
                 date_of_birth = (
@@ -202,8 +256,13 @@ class DishShortSerializer(serializers.ModelSerializer):
         return rep
 
     def to_internal_value(self, data):
+        city = self.context.get('city')
+        restaurant = self.context.get('restaurant')
         if data is not None:
-            dish = get_dish_validate_exists_active(data)
+            # if restaurant is not None:
+            #     restaurant = Restaurant.objects.filter(id=restaurant).first()
+
+            dish = get_dish_validate_exists_active(data, city, restaurant)
             return dish
         return data
 
@@ -333,8 +392,12 @@ class UserAddressSerializer(serializers.ModelSerializer):
                                         validators=[coordinates_validator,],
                                         )
 
+    city = serializers.CharField(max_length=20, required=True,
+                                 validators=[validate_city,])
+
     class Meta:
-        fields = ('id', 'address', 'coordinates', 'flat', 'floor', 'interfon')
+        fields = ('id', 'address', 'coordinates', 'flat', 'floor',
+                  'interfon', 'city')
         model = UserAddress
         read_only_fields = ('id',)
 
@@ -403,6 +466,7 @@ class DishMenuSerializer(TranslatableModelSerializer):
                   'weight_volume', 'weight_volume_uom',
                   'units_in_set', 'units_in_set_uom',
                   'is_in_shopping_cart',
+                  'utensils',
                   )
         model = Dish
         read_only_fields = ('article', 'priority',
@@ -414,6 +478,7 @@ class DishMenuSerializer(TranslatableModelSerializer):
                             'weight_volume', 'weight_volume_uom',
                             'units_in_set', 'units_in_set_uom',
                             'is_in_shopping_cart',
+                            'utensils'
                             )
 
     def get_is_in_shopping_cart(self, dish: Dish) -> bool:
@@ -442,6 +507,17 @@ class DishMenuSerializer(TranslatableModelSerializer):
         return rep
 
 # ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
+
+
+class OrdersBotSerializer(serializers.ModelSerializer):
+    """
+    Базовый сериализатор для модели Restaurant, только чтение!
+    """
+
+    class Meta:
+        fields = ('msngr_type', 'frontend_link', 'name')
+        model = tmbmod.OrdersBot
+        read_only_fields = ('msngr_type', 'link', 'name')
 
 
 class RestaurantSerializer(serializers.ModelSerializer):
@@ -476,14 +552,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
             return None
 
     def get_workhours(self, obj):
-        # Извлекаем координаты из объекта модели и сериализуем их без SRID
-        min_time = obj.open_time
-        max_time = obj.close_time
-
-        min_time_str = min_time.strftime('%H:%M')
-        max_time_str = max_time.strftime('%H:%M')
-
-        return f"{min_time_str} - {max_time_str}"
+        return obj.get_workhours()
 
 
 class DeliverySerializer(TranslatableModelSerializer):
@@ -493,14 +562,26 @@ class DeliverySerializer(TranslatableModelSerializer):
     translations = TranslatedFieldsField(shared_model=Delivery)
 
     class Meta:
-        fields = ('id', 'type', 'translations', 'image')
+        fields = ('type', 'translations', 'image', 'min_time', 'max_time')
         model = Delivery
-        read_only_fields = ('id', 'city', 'type', 'translations', 'image')
+        read_only_fields = ('city', 'type', 'translations', 'image',
+                            'min_time', 'max_time')
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
+        rep['phone'] = None
         if rep.get('type') == 'takeaway':
             del rep['image']
+
+        if rep.get('type') == 'delivery':
+            # Получение телефона для ресторана "по умолчанию" в выбранном городе
+            restaurant = Restaurant.objects.filter(
+                city=instance.city,
+                is_default=True).first()
+
+            # Добавление поля phone в представление, если ресторан найден
+            if restaurant:
+                rep['phone'] = str(restaurant.phone)
 
         return rep
 
@@ -652,6 +733,19 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
 # --------------------------- ЗАКАЗ ------------------------------
 
 
+class ExtendedRestaurantSerializer(RestaurantSerializer):
+    dishes = serializers.SerializerMethodField()
+
+    class Meta(RestaurantSerializer.Meta):
+        fields = RestaurantSerializer.Meta.fields + ('dishes',)
+
+    def get_dishes(self, obj):
+        """Получает список идентификаторов блюд, связанных с рестораном."""
+        # Получаем блюда через промежуточную модель RestaurantDishList
+        dishes = Dish.objects.filter(restaurantdishlist__restaurant=obj)
+        return list(dishes.values_list('article', flat=True))  # Возвращаем список идентификаторов
+
+
 class OrderDishWriteSerializer(serializers.ModelSerializer):
     """
     Сериализатор для записи Orderdishes в заказ.
@@ -662,6 +756,19 @@ class OrderDishWriteSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ('dish', 'quantity')
         model = OrderDish
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Получаем значение города из initial data
+        city_value = self.data.get('city')
+        restaurant_value = self.data.get('restaurant')
+
+        # Передаем значение города в контекст вложенного сериализатора
+        if city_value:
+            self.fields['dish'].context.update(
+                {'city': city_value,
+                 'restaurant': restaurant_value})
 
 
 class BaseOrderSerializer(serializers.ModelSerializer):
@@ -699,6 +806,32 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                   'city', 'delivery_time',
                   'orderdishes', 'amount', 'promocode', 'payment_type')
         model = Order
+
+    # def __init__(self, *args, **kwargs):
+    #     super().__init__(*args, **kwargs)
+    #     # Получаем значение города из initial data
+    #     if self.initial_data:
+    #         city_value = self.initial_data.get('city')
+    #         restaurant_value = self.initial_data.get('restaurant')
+
+    #     # Передаем значение города в контекст вложенного сериализатора
+    #     if city_value:
+    #         self.fields['orderdishes'].context.update(
+    #             {'city': city_value,
+    #              'restaurant': restaurant_value})
+
+    def to_internal_value(self, data):
+        # Получаем значение города и ресторана из входных данных
+        city_value = data.get('city')
+        restaurant_value = data.get('restaurant')
+
+        # Передаем значение города и ресторана в контекст вложенного сериализатора
+        if city_value:
+            self.fields['orderdishes'].context.update(
+                {'city': city_value, 'restaurant': restaurant_value})
+
+        # Теперь вызываем базовую реализацию to_internal_value
+        return super().to_internal_value(data)
 
     def validate_delivery_time(self, value):
         delivery = self.context.get('extra_kwargs', {}).get('delivery')
@@ -738,13 +871,16 @@ class BaseOrderSerializer(serializers.ModelSerializer):
     # в validate методе может быть просчет и сохранение amount.
     # валидация промокода на мин сумму, заказа на мин сумму.
     def validate(self, data):
+        if data.get('orderdishes') in [[], '', None]:
+            raise serializers.ValidationError(
+                _("No dishes chosen."))
 
         if data.get('promocode') and data['promocode'].min_order_amount:
             amount = get_amount(items=data.get('orderdishes'))
             if amount < data['promocode'].min_order_amount:
                 raise serializers.ValidationError(
-                        _("This promocode requires order amount ."))
-
+                        _(("Promocode doesn't match order amount"
+                           "requirements.")))
         # if request.user.is_authenticated:
 
         #     base_profile, cart, cartdishes, promocode = (
@@ -768,23 +904,38 @@ class BaseOrderSerializer(serializers.ModelSerializer):
 
     def process(self):
         cart = self.validated_data.get('cart', None)
+        # получаем общую сумму товаров
         self.validated_data['amount'] = get_amount(
                                             cart,
                                             self.validated_data['orderdishes'])
 
+        # получаем стоимость доставки
+        if self.delivery.type == 'delivery':
+            self.process_delivery_calc()
+        else:
+            self.validated_data['delivery_cost'] = Decimal(0)
+
+        # получаем стоимость товаров + доставка
+        self.validated_data['amount_with_shipping'] = (
+            self.validated_data['amount']
+            + self.validated_data['delivery_cost']).quantize(
+                Decimal('0.01'))
+
+        # получаем данные промокода
         self.promocode_data, promocode_disc_am, self.free_delivery = (
-            get_promocode_results(self.validated_data['amount'],
+            get_promocode_results(self.validated_data['amount_with_shipping'],
                                   self.validated_data['promocode'],
                                   self.context.get('request'),
                                   cart)
         )
 
+        # получаем максимальную скидку на заказ
         max_discount, max_discount_amount, self.fo_status = (
             get_discount(self.validated_data.get('user'),
                          self.validated_data.get('payment_type'),
                          self.delivery,
                          self.validated_data.get('source'),
-                         self.validated_data.get('amount'),
+                         self.validated_data.get('amount_with_shipping'),
                          self.validated_data.get('language'),
                          self.validated_data.get('discount')))
 
@@ -793,19 +944,22 @@ class BaseOrderSerializer(serializers.ModelSerializer):
                                           max_discount_amount)
 
         self.validated_data['discounted_amount'] = (
-            (self.validated_data['amount'] - self.total_discount_amount)).quantize(
+            (self.validated_data['amount_with_shipping']
+             - self.total_discount_amount)).quantize(
                 Decimal('0.01'))
         self.validated_data['final_amount_with_shipping'] = (
             self.validated_data['discounted_amount'])
 
     def process_delivery_calc(self):
         lat, lon = parce_coordinates(self.initial_data['coordinates'])
-        self.validated_data['delivery_cost'], self.validated_data['delivery_zone'] = (
+
+        (self.validated_data['delivery_cost'],
+         self.validated_data['delivery_zone']) = (
             get_delivery_cost_zone(self.validated_data['city'],
                                    self.validated_data['amount'],
                                    self.validated_data['delivery'],
                                    lat, lon,
-                                   self.free_delivery
+                                   # self.free_delivery
                                    )
         )
 
@@ -853,7 +1007,6 @@ class BaseOrderSerializer(serializers.ModelSerializer):
 
     def get_reply_data_delivery(self):
         self.process()
-        self.process_delivery_calc()
         self.get_rep_basic()
         self.get_rep_dic_delivery()
         return self.reply_data
@@ -900,8 +1053,7 @@ class BaseOrderSerializer(serializers.ModelSerializer):
 
         else:
             if self.instance is None:
-                total = (self.validated_data['discounted_amount']
-                         + self.validated_data['delivery_cost'])
+                total = self.validated_data['discounted_amount']
 
                 self.reply_data['delivery_cost'] = self.validated_data['delivery_cost']
 
@@ -969,10 +1121,6 @@ class TakeawayOrderWriteSerializer(BaseOrderSerializer):
 
     def create(self, validated_data):
         self.process()
-        # request = self.context.get('request')
-
-        # user = (request.user.base_profile
-        #         if request.user.is_authenticated else None)
 
         if 'orderdishes' in self.validated_data:
             orderdishes = self.validated_data.pop('orderdishes')
@@ -987,6 +1135,8 @@ class TakeawayOrderWriteSerializer(BaseOrderSerializer):
                     user_add_new_order_data(order)
 
                 send_message_new_order(order)
+                # from tm_bot.handlers.status import send_new_order_notification
+                # send_new_order_notification(order.id, order.status)
 
             # cart = validated_data.pop('cart')
             # cartdishes = validated_data.pop('cartdishes')
@@ -1040,7 +1190,7 @@ class TakeawayConditionsSerializer(serializers.ModelSerializer):
             is_active=True
         )
 
-        return RestaurantSerializer(restaurants, many=True).data
+        return ExtendedRestaurantSerializer(restaurants, many=True).data
 
 
 class DeliveryOrderSerializer(BaseOrderSerializer):
@@ -1052,11 +1202,49 @@ class DeliveryOrderSerializer(BaseOrderSerializer):
     recipient_name = serializers.CharField(
                         validators=[validate_first_and_last_name,])
 
+    comment = serializers.CharField(validators=[validate_comment,])
+
     class Meta(BaseOrderSerializer.Meta):
         fields = BaseOrderSerializer.Meta.fields + (
                     'recipient_address', 'my_delivery_address',
                     'coordinates', 'recipient_name', 'comment',
                     'items_qty', 'persons_qty')
+
+    def validate_recipient_address(self, value):
+        ''' Если координаты изначально даются НЕ перезапрашиваем их.
+        Если координат нет, запрашиваем их по адресу.'''
+
+        my_address = self.initial_data.get('my_delivery_address')
+        city = self.initial_data.get('city')
+        lat, lon = parce_coordinates(
+                            self.initial_data.get('coordinates'))
+
+        if my_address in [None, '']:
+            if lat is None and lon is None:
+                try:
+                    lat, lon, status = (
+                        google_validate_address_and_get_coordinates(value,
+                                                                    city)
+                    )
+
+                except Exception as e:
+                    logger.info(
+                        'validate_recipient_address'
+                        f'recipient_address:{value}, '
+                        f'exc:{e}')
+                    lat, lon = None, None
+
+                self.initial_data['lat'], self.initial_data['lon'] = lat, lon
+                self.initial_data['coordinates'] = f"{lat}, {lon}"
+
+        else:
+            if lat is None and lon is None:
+                my_address = UserAddress.objects.filter(
+                                                id=int(my_address)).first()
+                lat, lon = parce_coordinates(my_address.coordinates)
+                self.initial_data['coordinates'] = f"{lat}, {lon}"
+
+        return value
 
 
 class DeliveryOrderWriteSerializer(BaseOrderSerializer):
@@ -1070,6 +1258,8 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
     recipient_name = serializers.CharField(
                         validators=[validate_first_and_last_name,])
 
+    comment = serializers.CharField(validators=[validate_comment,])
+
     class Meta:
         fields = ('order_number', 'created',
                   'status_display',
@@ -1081,7 +1271,7 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
                   'delivery_cost',
                   'payment_type', 'comment',
                   'items_qty', 'persons_qty',
-                  'language'
+                  'language', 'coordinates',
                   )
         model = Order
         read_only_fields = ('order_number', 'created',
@@ -1089,29 +1279,54 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
                             )
 
     def validate_recipient_address(self, value):
+        ''' Игнорируем передаваемые координаты и принудительно
+        перезапрашиваем их по адресу.'''
         my_address = self.initial_data.get('my_delivery_address')
+        city = self.initial_data.get('city')
+        lat, lon = parce_coordinates(
+                            self.initial_data.get('coordinates'))
 
         if my_address in [None, '']:
+            if lat is None and lon is None:
+                try:
+                    lat, lon, status = (
+                        google_validate_address_and_get_coordinates(value,
+                                                                    city)
+                    )
 
-            try:
-                lat, lon, status = (
-                    google_validate_address_and_get_coordinates(value)
-                )
+                except Exception as e:
+                    logger.info(
+                        'FAIL validate_recipient_address'
+                        f'recipient_address:{value}, '
+                        f'exc:{e}')
+                    lat, lon = None, None
 
-            except Exception as e:
-                logger.info(
-                    'validate_recipient_address'
-                    f'recipient_address:{value}, '
-                    f'exc:{e}')
-                lat, lon = None, None
-
-            self.initial_data['lat'], self.initial_data['lon'] = lat, lon
-            self.initial_data['coordinates'] = f"{lat}, {lon}"
+                self.initial_data['lat'], self.initial_data['lon'] = lat, lon
+                self.initial_data['coordinates'] = f"{lat}, {lon}"
 
         else:
-            my_address = UserAddress.objects.filter(id=int(my_address)).first()
-            lat, lon = parce_coordinates(my_address.coordinates)
-            self.initial_data['coordinates'] = f"{lat}, {lon}"
+            if lat is None and lon is None:
+                my_address = UserAddress.objects.filter(
+                                                id=int(my_address)).first()
+                lat, lon = parce_coordinates(my_address.coordinates)
+                self.initial_data['coordinates'] = f"{lat}, {lon}"
+
+        # пере получаем координаты для проверки переданных координат и адреса
+        try:
+            self.lat_check, self.lon_check, status = (
+                        google_validate_address_and_get_coordinates(value,
+                                                                    city)
+                    )
+        except Exception as e1:
+            logger.info(
+                'FAIL validate_recipient_address check'
+                f'recipient_address:{value}, '
+                f'exc:{e1}')
+            self.initial_data['process_comment'] = (
+                f"Не удалось получить координаты для их перепроверки ",
+                "при сохранении заказа"
+            )
+            self.lat_check, self.lon_check = None, None
 
         return value
 
@@ -1133,12 +1348,12 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
         # validated_data['coordinates'] = self.initial_data['coordinates']
 
         self.process()
-        self.process_delivery_calc()
+        self.doublecheck_address_coordinates()
 
         address_comment, comment = (
             split_and_get_comment(validated_data['comment']))
-        validated_data['address_comment'] = address_comment
-        validated_data['comment'] = comment
+        self.validated_data['address_comment'] = address_comment
+        self.validated_data['comment'] = comment
 
         if 'orderdishes' in self.validated_data:
             orderdishes = self.validated_data.pop('orderdishes')
@@ -1181,22 +1396,78 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
 
         return rep
 
+    def doublecheck_address_coordinates(self):
+        delivery_cost_check, delivery_zone_check = (
+            get_delivery_cost_zone(self.validated_data['city'],
+                                   self.validated_data['amount'],
+                                   self.validated_data['delivery'],
+                                   self.lat_check, self.lon_check,
+                                   # self.free_delivery
+                                   )
+        )
+        if delivery_cost_check != self.validated_data['delivery_cost']:
+            logger.error(
+                "\nFAIL validate_recipient_address/coordinates:\n"
+                "RECEIVED and SAVED:\n"
+                f"recipient_address: {self.initial_data['recipient_address']}, \n"
+                f"coordinates: {self.initial_data['coordinates']}, \n"
+                f"delivery_cost: {self.validated_data['delivery_cost']}, \n"
+                f"delivery_zone: {self.validated_data['delivery_zone']}, \n"
+                "CHECK_RESULTS:\n"
+                f"recipient_address: {self.validated_data['recipient_address']}, \n"
+                f"coordinates: {self.lat_check}, {self.lon_check}, \n"
+                f"delivery_cost: {delivery_cost_check}, \n"
+                f"delivery_zone: {delivery_zone_check}, \n"
+            )
+
+            process_comment = (
+                f"Ошибка проверки координат!\n"
+                f"Расчет: {self.initial_data['recipient_address']}, "
+                        f"({self.initial_data['coordinates']}), "
+                        f"{self.validated_data['delivery_cost']} RSD, "
+                        f"{self.validated_data['delivery_zone']}\n"
+                f"Проверка: {self.validated_data['recipient_address']}, "
+                            f"({self.lat_check}, {self.lon_check}), "
+                            f"{delivery_cost_check} RSD, "
+                            f"{delivery_zone_check}\n"
+            )
+
+            self.validated_data['process_comment'] = (
+                self.validated_data.get('process_comment', '')
+                + process_comment)
+
 
 class DeliveryConditionsSerializer(serializers.ModelSerializer):
+    dishes = SerializerMethodField()
 
     class Meta:
         fields = ('city', 'min_order_amount',
                   'min_time', 'max_time',
                   'default_delivery_cost',
-                  'discount')
+                  'discount', 'dishes')
         model = Delivery
         read_only_fields = ('city', 'min_order_amount',
                             'min_time', 'max_time',
                             'default_delivery_cost',
-                            'discount')
+                            'discount', 'dishes')
+
+    def get_dishes(self, delivery: Delivery) -> QuerySet[dict]:
+        """Получает список блюд активных в городе.
+
+        Args:
+            delivery (Delivery): Запрошенный объект доставки.
+
+        Returns:
+            QuerySet[dict]: Список блюд в городе.
+        """
+        city = delivery['city']
+        dishes = Dish.objects.filter(citydishlist__city=city)
+        return list(dishes.values_list('article', flat=True))  # Получаем список идентификаторов
 
 
 class BotOrderSerializer(serializers.ModelSerializer):
+    """При сохранении заказа бот н аплатформе сам отправляет сообщения
+    в админский чат."""
     class Meta:
         fields = '__all__'
         model = Order
@@ -1204,12 +1475,17 @@ class BotOrderSerializer(serializers.ModelSerializer):
     def to_internal_value(self, data):
         process_comment = ''
         try:
-            orderdishes, amount, process_comment1 = (
+            context = self.context.get('extra_kwargs')
+            bot = context.get('bot')
+            city = bot.city
+            # ресторан сохранится по дефолту для города
+            orderdishes, amount, items_qty, process_comment1 = (
                 tmbmod.get_orderdishes_tmbot(self, data))
 
             (delivery, delivery_zone, coordinates,
              delivery_cost, address, process_comment2) = (
-                            tmbmod.get_delivery_data_tmbot(self, data, amount))
+                            tmbmod.get_delivery_data_tmbot(self, data,
+                                                           city, amount))
 
             msngr_account, user_telegram_data, process_comment3 = (
                 tmbmod.get_tm_user(self, data))
@@ -1218,7 +1494,16 @@ class BotOrderSerializer(serializers.ModelSerializer):
             delivery_time, time_comment, process_comment4 = (
                 tmbmod.get_time_tmbot(data.get("time")))
 
-            comment = f"{time_comment}. {data.get('comment')}"
+            if (time_comment in ['', None]
+                    and data.get('comment') not in ['', None]):
+                comment = f"{data.get('comment')}"
+
+            elif (data.get('comment') in ['', None]
+                    and time_comment not in ['', None]):
+                comment = f"{time_comment}."
+
+            else:
+                comment = f"{time_comment}. {data.get('comment')}"
 
             process_comment = (process_comment1 + process_comment2
                                + process_comment3 + process_comment4)
@@ -1240,6 +1525,7 @@ class BotOrderSerializer(serializers.ModelSerializer):
                     recipient_name=data.get("recipient"),
                     recipient_phone=data.get("mobile"),
                     recipient_address=address,
+                    city=city,
                     delivery=delivery,
                     delivery_time=delivery_time,
                     delivery_zone=delivery_zone,
@@ -1251,6 +1537,7 @@ class BotOrderSerializer(serializers.ModelSerializer):
                     source='3',
                     comment=comment,
                     process_comment=process_comment,
+                    items_qty=items_qty,                   #!!!!!!!!!!!!!!!!!!!!!!!!!!
                     # оплата?
                 )
                 OrderDish.create_orderdishes_from_cartdishes(
@@ -1259,23 +1546,20 @@ class BotOrderSerializer(serializers.ModelSerializer):
                 if order.user:
                     user_add_new_order_data(order)
 
-                logger.info(f'Bot order #{order.source_id} '
-                            f'saved under #{order.id}')
+                logger.info(f'Bot order #{order.source_id} saved under #{order.id}')
 
                 if order.process_comment:
                     try:
-                        send_error_message_order_saved(data.get('id'))
+                        send_error_message_order_saved(order)
                     except Exception as exep:
                         logger.error(
                             f"Message of error save TM order #{data.get('id')}"
                             f"isn't sent. {exep}.")
 
-
-
         except Exception as e:
             logger.error(f"Bot order #{data.get('id')} isn't saved. {e}.")
             try:
-                send_error_message_order_unsaved(data.get('id'), e)
+                send_error_message_order_unsaved(bot, data.get('id'), e)
             except Exception as exep:
                 logger.error(
                     f"Message of unsave TM order #{data.get('id')} "
