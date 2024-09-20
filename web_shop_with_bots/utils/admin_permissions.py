@@ -1,6 +1,9 @@
 
 
-def has_restaurant_orders_admin_permissions(request, obj=None):
+def has_restaurant_admin_permissions(permission, request, obj=None,):
+    if request.user.is_superuser:
+        return True
+
     if obj is None:
         view = request.GET.get('view', None)
         e = request.GET.get('e', None)
@@ -11,22 +14,25 @@ def has_restaurant_orders_admin_permissions(request, obj=None):
             return True
     else:
         # Разрешаем изменение заказа только если есть соответствующие права
-        restaurant_id = obj.restaurant.id
+        if obj.__class__.__name__ in ['Restaurant']:
+            restaurant_id = obj.id
+
+        else:
+            restaurant_id = obj.restaurant_id
         change_perm = request.user.has_perm(
-            f'delivery_contacts.can_change_orders_rest_{restaurant_id}')
+            f'{permission}_{restaurant_id}')
         return change_perm
 
 
-def has_city_orders_admin_permissions(request, obj=None):
+def has_city_admin_permissions(permission, request, obj=None):
+    if request.user.is_superuser:
+        return True
+
     if obj is None:
         return False
 
     else:
         # Разрешаем изменение заказа только если есть соответствующие права
-        city = obj.city
-        restaurant = request.user.restaurant
-        if city == restaurant.city:
-            change_perm = request.user.has_perm(
-                f'delivery_contacts.can_change_orders_rest_{restaurant.id}')
-            return change_perm
-        return False
+        change_perm = request.user.has_perm(
+            f'{permission}_{obj.city}')
+        return change_perm

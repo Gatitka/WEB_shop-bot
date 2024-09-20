@@ -93,13 +93,15 @@ def get_flag(instance):
 def custom_source(obj):
     # краткое название поля в list
     source_id = f'#{obj.source_id}' if obj.source_id is not None else ''
+    source = obj.get_source_display()
+    if source == "TM_Bot" and obj.orders_bot_id:
+        source = f"{source}{obj.orders_bot_id}"
     if obj.status == 'WCO':
         return format_html(
             '<span style="color:green; font-weight:bold;">{}<br>{}</span>',
-            obj.get_source_display(),
-            source_id)
+            source, source_id)
 
-    return format_html('{}<br>{}', obj.get_source_display(), source_id)
+    return format_html('{}<br>{}', source, source_id)
 
 
 def custom_order_number(obj):

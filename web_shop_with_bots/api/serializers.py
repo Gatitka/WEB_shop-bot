@@ -569,19 +569,19 @@ class DeliverySerializer(TranslatableModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        rep['phone'] = None
+        # rep['phone'] = None
         if rep.get('type') == 'takeaway':
             del rep['image']
 
-        if rep.get('type') == 'delivery':
-            # Получение телефона для ресторана "по умолчанию" в выбранном городе
-            restaurant = Restaurant.objects.filter(
-                city=instance.city,
-                is_default=True).first()
+        # if rep.get('type') == 'delivery':
+        #     # Получение телефона для ресторана "по умолчанию" в выбранном городе
+        #     restaurant = Restaurant.objects.filter(
+        #         city=instance.city,
+        #         is_default=True).first()
 
-            # Добавление поля phone в представление, если ресторан найден
-            if restaurant:
-                rep['phone'] = str(restaurant.phone)
+        #     # Добавление поля phone в представление, если ресторан найден
+        #     if restaurant:
+        #         rep['phone'] = str(restaurant.phone)
 
         return rep
 
@@ -1439,17 +1439,18 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
 
 class DeliveryConditionsSerializer(serializers.ModelSerializer):
     dishes = SerializerMethodField()
+    phone = SerializerMethodField()
 
     class Meta:
         fields = ('city', 'min_order_amount',
                   'min_time', 'max_time',
                   'default_delivery_cost',
-                  'discount', 'dishes')
+                  'discount', 'dishes', 'phone')
         model = Delivery
         read_only_fields = ('city', 'min_order_amount',
                             'min_time', 'max_time',
                             'default_delivery_cost',
-                            'discount', 'dishes')
+                            'discount', 'dishes', 'phone')
 
     def get_dishes(self, delivery: Delivery) -> QuerySet[dict]:
         """Получает список блюд активных в городе.
@@ -1463,6 +1464,17 @@ class DeliveryConditionsSerializer(serializers.ModelSerializer):
         city = delivery['city']
         dishes = Dish.objects.filter(citydishlist__city=city)
         return list(dishes.values_list('article', flat=True))  # Получаем список идентификаторов
+
+    def get_phone(self, delivery):
+        phone = ''  # Получение телефона для ресторана "по умолчанию" в выбранном городе
+        restaurant = Restaurant.objects.filter(
+            city=delivery['city'],
+            is_default=True).first()
+
+        # Добавление поля phone в представление, если ресторан найден
+        if restaurant:
+            phone = str(restaurant.phone)
+        return phone
 
 
 class BotOrderSerializer(serializers.ModelSerializer):
@@ -1537,8 +1549,9 @@ class BotOrderSerializer(serializers.ModelSerializer):
                     source='3',
                     comment=comment,
                     process_comment=process_comment,
-                    items_qty=items_qty,                   #!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    # оплата?
+                    items_qty=items_qty,
+                    orders_bot=bot,
+                    # оплата?     #!!!!!!!!!!!!!!!!!!!!!!!!!!
                 )
                 OrderDish.create_orderdishes_from_cartdishes(
                         order, no_cart_cartdishes=orderdishes)

@@ -27,7 +27,7 @@ class OrdersBotForm(forms.ModelForm):
 
 @admin.register(OrdersBot)
 class OrdersBotAdmin(admin.ModelAdmin):
-    list_display = ('id', 'msngr_type', 'city', 'msngr_id', 'source_id')
+    list_display = ('id', 'msngr_type', 'city', 'source_id')
     form = OrdersBotForm
 
     def get_form(self, request, obj=None, **kwargs):

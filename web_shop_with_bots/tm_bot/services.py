@@ -122,10 +122,14 @@ def get_delivery_data(instance):
         Адрес: Ravanička 29, ap 4 ,sprat 1
         Время: как можно скорее"""
     if instance.delivery.type == 'delivery':
+        city = instance.get_city_short()
+        address_com = get_translate_address_comment(instance.address_comment)
+        if len(address_com) > 100:
+            address_com = address_com[100:] + '...'
         delivery_data = (
             "🚗 Привезти\n"
-            f"Адрес: {instance.recipient_address}, "
-            f"{get_translate_address_comment(instance.address_comment)}\n"
+            f"Адрес: ({city}), {instance.recipient_address}, "
+            f"{address_com}\n"
         )
 
     elif instance.delivery.type == 'takeaway':
@@ -282,8 +286,9 @@ def send_message_telegram(chat_id, message, keyboard=None):
             f"{response}")
 
 
-def send_request_order_status_update(new_status, order_id):
-    token = settings.BOTOBOT_API_KEY
+def send_request_order_status_update(new_status, order_id, bot):
+    # token = settings.BOTOBOT_API_KEY
+    token = bot.api_key
     url = f"https://www.botobot.ru/api/v1/updateOrderStatus/{token}"
 
     if new_status == 'WCO':
@@ -297,8 +302,8 @@ def send_request_order_status_update(new_status, order_id):
     elif new_status == "CND":
         status = 30
 
-    payload = {'id': order_id,
-               'status': status}
+    payload = {"id": order_id,
+               "status": status}
     try:
         # Отправка POST-запроса
         response = requests.post(url, data=payload)

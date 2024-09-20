@@ -13,6 +13,7 @@ from users.models import UserAddress
 from users.validators import validate_first_and_last_name
 from tm_bot.services import send_message_new_order
 import re
+from django.forms.widgets import Select
 
 
 def url_params_from_lookup_dict(lookups):
@@ -33,6 +34,29 @@ def url_params_from_lookup_dict(lookups):
                 v = str(v)
             params[k] = v
     return params
+
+
+class CourierByCityWidget(Select):
+    """
+    Кастомный виджет для поля courier, который фильтрует курьеров по городу заказа.
+    Если пользователь суперпользователь, показываются все курьеры.
+    """
+    def __init__(self, city, is_superuser, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.city = city
+        self.is_superuser = is_superuser
+
+    def get_context(self, name, value, attrs):
+        # Если пользователь суперпользователь, показываем всех курьеров
+        self.choices = [(None, '--------')]  # Опция для None
+        if self.is_superuser:
+            queryset = Courier.objects.all()
+            self.choices += [(courier.id, str(courier)) for courier in queryset]
+        else:
+            # Иначе фильтруем курьеров по городу
+            queryset = Courier.objects.filter(city=self.city)
+            self.choices += [(courier.id, courier.name) for courier in queryset]
+        return super().get_context(name, value, attrs)
 
 
 class OrderAdminForm(forms.ModelForm):
@@ -427,6 +451,24 @@ class OrderAdminForm(forms.ModelForm):
             instance.save()
 
         return instance
+
+
+class OrderChangelistForm(forms.ModelForm):
+    class Meta:
+        model = Order
+        fields = ['status', 'invoice', 'courier']
+
+    def __init__(self, *args, **kwargs):
+        # Получаем объект запроса (request), чтобы проверить, является ли пользователь суперпользователем
+        request = kwargs.pop('request')
+        super().__init__(*args, **kwargs)
+
+        if self.instance and self.instance.pk:
+            city = self.instance.city
+            is_superuser = request.user.is_superuser  # Проверяем, является ли текущий пользователь суперпользователем
+            # Применяем кастомный виджет для поля courier
+            self.fields['courier'].widget = CourierByCityWidget(city=city,
+                                                                is_superuser=is_superuser)
 
 
 class OrderGlovoAdminForm(forms.ModelForm):

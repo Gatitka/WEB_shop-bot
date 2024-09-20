@@ -6,7 +6,8 @@ from django.contrib.gis.geos import GEOSGeometry, MultiPolygon, Polygon
 from django import forms
 from django.contrib.gis import admin
 from django.utils.safestring import mark_safe
-from utils.admin_permissions import has_restaurant_orders_admin_permissions
+from utils.admin_permissions import (has_restaurant_admin_permissions,
+                                     has_city_admin_permissions)
 
 from utils.utils import activ_actions
 
@@ -18,6 +19,11 @@ class CourierAdmin(admin.ModelAdmin):
     list_display = ('id', 'is_active', 'city', 'name')
     actions = [*activ_actions]
     list_filter = ('is_active', 'city')
+
+    def has_change_permission(self, request, obj=None):
+        return has_city_admin_permissions(
+            'delivery_contacts.change_couriers',
+            request, obj)
 
 
 @admin.register(Delivery)
@@ -74,6 +80,11 @@ class DeliveryAdmin(TranslatableAdmin):
         if db_field.db_type == 'text':
             kwargs['widget'] = admin.widgets.AdminTextareaWidget(attrs={'rows': 1, 'cols': 40})
         return super().formfield_for_dbfield(db_field, **kwargs)
+
+    def has_change_permission(self, request, obj=None):
+        return has_city_admin_permissions(
+            'delivery_contacts.change_deliveries',
+            request, obj)
 
 
 class DeliveryZoneAdminForm(forms.ModelForm):
@@ -150,6 +161,11 @@ class DeliveryZoneAdmin(OSMGeoAdmin):
         # Сохраняем объект с обновленными данными
         super().save_model(request, obj, form, change)
 
+    def has_change_permission(self, request, obj=None):
+        return has_city_admin_permissions(
+            'delivery_contacts.change_delivery_zones',
+            request, obj)
+
 
 @admin.register(Restaurant)
 class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
@@ -190,21 +206,12 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
 
     working_hours.short_description = 'Рабочие часы'
 
-    def has_change_permission(self, request, obj=None):
-        if request.user.is_superuser:
-            return super().has_change_permission(request)
-
-        if obj is None:
-            return False
-
-        else:
-            # Разрешаем изменение заказа только если есть соответствующие права
-            restaurant_id = obj.id
-            change_perm = request.user.has_perm(
-                f'delivery_contacts.can_change_restaurant_{restaurant_id}')
-            return change_perm
-
     def get_admin(self, obj):
         """ Возвращаем админа ресторана."""
         return list(obj.admin.all())
     get_admin.short_description = 'Админы'
+
+    def has_change_permission(self, request, obj=None):
+        return has_restaurant_admin_permissions(
+            'catalog.change_restaurant',
+            request, obj)

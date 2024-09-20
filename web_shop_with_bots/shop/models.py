@@ -17,7 +17,7 @@ from shop.utils import get_first_order_true, get_next_item_id_today
 from users.models import BaseProfile, UserAddress
 from users.validators import validate_first_and_last_name
 from django.utils.translation import gettext_lazy as _
-from tm_bot.models import MessengerAccount
+from tm_bot.models import MessengerAccount, OrdersBot
 from django.utils import timezone
 from django.db.models import Max
 from django.urls import reverse
@@ -340,6 +340,13 @@ class Order(models.Model):
         max_length=500,
         blank=True, null=True
     )
+    orders_bot = models.ForeignKey(
+        OrdersBot,
+        on_delete=models.PROTECT,
+        verbose_name='Бот д/заказов',
+        related_name='orders',
+        blank=True, null=True
+    )
 
     class Meta:
         ordering = ['-created']
@@ -525,6 +532,12 @@ class Order(models.Model):
         # Обновляем количество заказов у пользователя
         user.orders_qty = F('orders_qty') + updated_orders_count
         user.save(update_fields=['orders_qty'])
+
+    def get_city_short(self):
+        if self.city == 'Beograd':
+            return 'БГ'
+        elif self.city == 'NoviSad':
+            return 'НС'
 
 
 class OrderWoltProxy(Order):

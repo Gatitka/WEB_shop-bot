@@ -126,7 +126,12 @@ class AuditMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        request_body = request.body.decode('utf-8') if request.body else ''
+        # request_body = request.body.decode('utf-8') if request.body else ''
+        if request.content_type in ('application/json', 'application/x-www-form-urlencoded'):
+            request_body = request.body.decode('utf-8') if request.body else ''
+        else:
+            request_body = None
+
         response = None
         try:
             response = self.process_request(request, request_body)

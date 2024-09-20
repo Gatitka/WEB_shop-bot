@@ -38,8 +38,8 @@ def create_delivery_permissions(sender, instance, created, **kwargs):
 
         # Создаем разрешение на изменение
         change_permission, _ = Permission.objects.get_or_create(
-            codename=f'change_delivery_{instance.city}',
-            name=f'Can change Delivery {instance.city}',
+            codename=f'change_deliveries_{instance.city}',
+            name=f'Can change Deliveries {instance.city}',
             content_type=content_type
         )
 
@@ -50,7 +50,7 @@ def delete_delivery_permissions(sender, instance, **kwargs):
 
     if not Delivery.objects.filter(city=instance.city).exists():
         Permission.objects.filter(
-            codename=f'change_delivery_{instance.city}').delete()
+            codename=f'change_deliveries_{instance.city}').delete()
 
 
 @receiver(post_save, sender=DeliveryZone)
@@ -60,8 +60,8 @@ def create_delivery_zone_permissions(sender, instance, created, **kwargs):
 
         # Создаем разрешение на изменение
         change_permission, _ = Permission.objects.get_or_create(
-            codename=f'change_delivery_zone_{instance.city}',
-            name=f'Can change DeliveryZone {instance.city}',
+            codename=f'change_delivery_zones_{instance.city}',
+            name=f'Can change DeliveryZones {instance.city}',
             content_type=content_type
         )
 
@@ -71,7 +71,7 @@ def delete_delivery_zone_permissions(sender, instance, **kwargs):
     # Удаляем пермишены, связанные с этим объектом
     if not DeliveryZone.objects.filter(city=instance.city).exists():
         Permission.objects.filter(
-            codename=f'change_delivery_zone_{instance.city}').delete()
+            codename=f'change_delivery_zones_{instance.city}').delete()
 
 
 @receiver(post_save, sender=Courier)
@@ -81,8 +81,8 @@ def create_courier_permissions(sender, instance, created, **kwargs):
 
         # Создаем разрешение на изменение
         change_permission = Permission.objects.create(
-            codename=f'change_courier_{instance.city}',
-            name=f'Can change Courier {instance.city}',
+            codename=f'change_couriers_{instance.city}',
+            name=f'Can change Couriers {instance.city}',
             content_type=content_type
         )
 
@@ -91,4 +91,4 @@ def create_courier_permissions(sender, instance, created, **kwargs):
 def delete_courier_permissions(sender, instance, **kwargs):
     # Удаляем пермишены, связанные с этим объектом
     Permission.objects.filter(
-        codename=f'change_courier_{instance.city}').delete()
+        codename=f'change_couriers_{instance.city}').delete()

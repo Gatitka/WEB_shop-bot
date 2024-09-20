@@ -7,7 +7,8 @@ from delivery_contacts.utils import get_google_api_key
 from tm_bot.models import MessengerAccount
 from utils.utils import activ_actions
 from .forms import (OrderAdminForm, OrderGlovoAdminForm,
-                    OrderWoltAdminForm, OrderSmokeAdminForm)
+                    OrderWoltAdminForm, OrderSmokeAdminForm,
+                    OrderChangelistForm)
 from .models import (Dish, Order, OrderDish, Discount,
                      OrderGlovoProxy, OrderWoltProxy, OrderSmokeProxy)
 from tm_bot.services import (send_message_new_order,
@@ -29,7 +30,8 @@ from django.urls import reverse, path
 from django.shortcuts import redirect
 from django.conf import settings
 from users.models import user_add_new_order_data
-from utils.admin_permissions import has_restaurant_orders_admin_permissions
+from utils.admin_permissions import has_restaurant_admin_permissions
+from delivery_contacts.models import Courier
 
 
 @admin.register(Discount)
@@ -206,11 +208,11 @@ class OrderAdmin(admin.ModelAdmin):
     custom_payment_type.short_description = format_html('Опл')
 
     def point(self, obj):
-        restaurant = obj.restaurant.address
-        city = obj.city
-        return format_html('{}<br>{}', restaurant, city)
-
-    point.short_description = format_html('Ресторан')
+        return obj.get_city_short()
+        # restaurant = obj.restaurant.address
+        # city = obj.city
+        # return format_html('{}<br>{}', restaurant, city)
+    point.short_description = format_html('Рест')
 
     list_display = ('warning', 'custom_source',
                     'custom_order_number', 'point', 'custom_created', 'status',
@@ -325,7 +327,8 @@ class OrderAdmin(admin.ModelAdmin):
                 'msngr_account',
                 'courier',
                 'user__messenger_account',
-                'restaurant')
+                'restaurant',
+                'orders_bot')
         if request.user.is_superuser:
             return qs
 
@@ -416,6 +419,31 @@ class OrderAdmin(admin.ModelAdmin):
 
         return formfield
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """
+        Обрабатываем поле ForeignKey для курьера и фильтруем по городу заказа
+        только при редактировании объекта.
+        """
+        if db_field.name == "courier":
+            # Проверяем URL. Если это changelist, не делаем фильтрацию
+            if request.resolver_match.url_name == 'shop_order_changelist':  # Замените на правильное имя URL
+                # Если это changelist, показываем всех курьеров
+                kwargs["queryset"] = Courier.objects.all()
+            else:
+                # Если это редактирование объекта, фильтруем курьеров по городу заказа
+                obj_id = request.resolver_match.kwargs.get('object_id')
+                if obj_id:
+                    # Извлекаем только необходимый объект заказа (один запрос)
+                    order = Order.objects.only('city').get(pk=obj_id)
+                    # Фильтруем курьеров по городу заказа
+                    kwargs["queryset"] = Courier.objects.filter(city=order.city)
+                else:
+                    # Если создаётся новый заказ, можно вернуть пустой список курьеров
+                    kwargs["queryset"] = Courier.objects.all()
+
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
     def save_related(self, request, form, formsets, change):
         """
         Given the ``HttpRequest``, the parent ``ModelForm`` instance, the
@@ -438,9 +466,9 @@ class OrderAdmin(admin.ModelAdmin):
                 old_status = form.initial.get('status')
 
                 if old_status is not None and new_status != old_status:
-                    order_id = int(form.instance.source_id)
-                    send_request_order_status_update(new_status,
-                                                     order_id)
+                    send_request_order_status_update(
+                        new_status, int(form.instance.source_id),
+                        form.instance.orders_bot)
 
     def get_form(self, request, obj=None, **kwargs):
         """
@@ -448,7 +476,29 @@ class OrderAdmin(admin.ModelAdmin):
         """
         form = super().get_form(request, obj, **kwargs)
         form.user = request.user  # Передаем текущего пользователя в форму
+        # Если редактируется конкретный объект
+        if obj and 'courier' in form.base_fields:
+            # Фильтруем курьеров по городу заказа
+            form.base_fields['courier'].queryset = Courier.objects.filter(city=obj.city)
+
         return form
+
+    def get_changelist_form(self, request, **kwargs):
+        """
+        Используем кастомную форму в changelist для динамической фильтрации курьеров,
+        с учётом того, является ли пользователь суперпользователем.
+        """
+        # Передаем request в форму, чтобы учитывать информацию о пользователе
+        kwargs['form'] = OrderChangelistForm
+        form = super().get_changelist_form(request, **kwargs)
+
+        # Нужно передать request в форму вручную
+        class CustomOrderChangelistForm(form):
+            def __new__(cls, *args, **kwargs):
+                kwargs['request'] = request  # Добавляем request в параметры формы
+                return form(*args, **kwargs)
+
+        return CustomOrderChangelistForm
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -514,19 +564,9 @@ class OrderAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return super().has_change_permission(request)
 
-        return has_restaurant_orders_admin_permissions(request,
-                                                       obj)
-
-    # def has_delete_permission(self, request, obj=None):
-    #     if obj is None:
-    #         return super().has_delete_permission(request)
-
-    #     restaurant_id = obj.restaurant.id
-    #     return request.user.has_perm(f'can_delete_order_{restaurant_id}')
-
-    # def has_add_permission(self, request):
-    #     restaurant_id = request.user.restaurant.id
-    #     return request.user.has_perm(f'can_add_order_{restaurant_id}')
+        return has_restaurant_admin_permissions(
+            'delivery_contacts.change_orders_rest',
+            request, obj)
 
 
 class OrderDishGlovoWoltInline(admin.TabularInline):
@@ -626,8 +666,9 @@ class OrderGlovoProxyAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return super().has_change_permission(request)
 
-        return has_restaurant_orders_admin_permissions(request,
-                                                       obj)
+        return has_restaurant_admin_permissions(
+            'delivery_contacts.change_orders_rest',
+            request, obj)
 
     def get_form(self, request, obj=None, **kwargs):
         """
@@ -636,6 +677,7 @@ class OrderGlovoProxyAdmin(admin.ModelAdmin):
         form = super().get_form(request, obj, **kwargs)
         form.user = request.user  # Передаем текущего пользователя в форму
         return form
+
 
 @admin.register(OrderWoltProxy)
 class OrderWoltProxyAdmin(admin.ModelAdmin):
@@ -713,8 +755,9 @@ class OrderWoltProxyAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return super().has_change_permission(request)
 
-        return has_restaurant_orders_admin_permissions(request,
-                                                       obj)
+        return has_restaurant_admin_permissions(
+            'delivery_contacts.change_orders_rest',
+            request, obj)
 
     def get_form(self, request, obj=None, **kwargs):
         """
@@ -801,8 +844,9 @@ class OrderSmokeProxyAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return super().has_change_permission(request)
 
-        return has_restaurant_orders_admin_permissions(request,
-                                                       obj)
+        return has_restaurant_admin_permissions(
+            'delivery_contacts.change_orders_rest',
+            request, obj)
 
     def get_form(self, request, obj=None, **kwargs):
         """

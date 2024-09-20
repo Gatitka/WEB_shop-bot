@@ -28,6 +28,18 @@
                             {% endif %}
                         {% endfor %}
                     </tr>
+
+                    {% if city_totals %}
+                        {% for city_total in city_totals %}
+                            <tr>
+                                <td style="text-align: center;">{{ city_total.ttl_city_am }}</td>
+                                <td style="text-align: center;">{{ city_total.ttl_city_rct }}</td>
+                                {% for courier_name, courier_value in couriers.items %}
+                                    <td style="text-align: center;">{{ city_total.city }}</td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    {% endif %}
                 </tbody>
             </table>
         </div>

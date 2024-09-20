@@ -95,7 +95,8 @@ class OrdersBot(models.Model):
     )
     frontend_link = models.URLField(
         max_length=200,
-        help_text='Сссылка для отображения на сайте. Собирает статистику по клиентам, которые перешли с сайта.'
+        help_text=("Сссылка для отображения на сайте.<br>"
+                   "Собирает статистику по клиентам, которые перешли с сайта.")
     )
     is_active = models.BooleanField(
         verbose_name='активен',
@@ -103,8 +104,9 @@ class OrdersBot(models.Model):
         help_text='Активный чат отображается на сайте.'
     )
     api_key = models.CharField(
-        max_length=50,
-        verbose_name="API ключ д/валидации источника сообщений",
+        max_length=100,
+        verbose_name=("API ключ д/синхронизации информации о заказах<br>"
+                      "изменению статуса заказа через админку)"),
         blank=True, null=True,
     )
 

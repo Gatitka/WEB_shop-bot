@@ -6,6 +6,7 @@ from openpyxl import Workbook
 from django.http import HttpResponse
 from django.db.models import Q
 from django.utils.timezone import make_aware
+from django.db.models import Sum, Count
 
 
 def get_range_period(request):
@@ -264,34 +265,50 @@ def get_changelist_extra_context(request, extra_context, source=None):
         # собираем данные по заказам:
         # если есть сорс, то определнный тип заказа во всех ресторанах
         # если нет сорса, то все типы заказов во всех ресторанах
-        today_orders = Order.objects.filter(
-                **filters
-            ).select_related(
-                'delivery',
-                'delivery_zone')
         title = "Заказы всех ресторанов"
 
     else:
         # собираем данные по ресторану
         restaurant = request.user.restaurant
         filters['restaurant'] = restaurant
+        title = f"Заказы ресторана: {restaurant.city}/{restaurant.address}"
 
-        today_orders = Order.objects.filter(
+    today_orders = Order.objects.filter(
                 **filters
             ).select_related(
                 'delivery',
-                'delivery_zone')
-        title = f"Заказы ресторана: {restaurant.city}/{restaurant.address}"
+                'delivery_zone',
+                'courier')
 
     # Calculate the total discounted amount and total receipts
     total_amount = sum(order.final_amount_with_shipping for order in today_orders)
     total_qty = today_orders.count()
     total_receipts = sum(order.invoice for order in today_orders)
+    if request.user.is_superuser or view == 'all_orders' or e == '1':
+        city_totals = (
+            today_orders
+            .values('city')
+            .annotate(
+                ttl_city_am=Sum('final_amount_with_shipping'),
+                ttl_city_qty=Count('id'),
+                ttl_city_rct=Count('invoice')
+            )
+        )
+        # Преобразуем QuerySet в список словарей
+        extra_context['city_totals'] = [
+            {
+                "city": city['city'],
+                "ttl_city_am":
+                    f"{city['ttl_city_am']:.2f} ({city['ttl_city_qty']} зак.)",
+                "ttl_city_rct": city['ttl_city_rct'],
+            }
+            for city in city_totals
+        ]
 
     # Prepare couriers data
     couriers = {}
     for order in today_orders.filter(delivery__type='delivery'):
-        courier_name = order.courier.name if order.courier else 'Unknown'
+        courier_name = order.courier if order.courier else 'Unknown'
         unclarified = False
 
         if order.delivery_zone.delivery_cost != float(0):

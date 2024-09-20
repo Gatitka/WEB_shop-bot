@@ -65,29 +65,41 @@ class Delivery(TranslatableModel):
     min_time = models.TimeField(
         verbose_name='MIN время выдачи',
         default=time(11, 00),
-        null=True,
-        blank=True
-        )
+        null=True, blank=True,
+        help_text=(
+            "Самое ранне время выдачи заказа.<br>"
+            "прим, для Доставки - 11:30,<br>"
+            "для Самовывоза - 00:00, т.к. время берется из аналогичных данных ресторана.",
+        ))
     max_time = models.TimeField(
         verbose_name='MAX время выдачи',
         default=time(22, 00),
-        null=True,
-        blank=True
-        )
+        null=True, blank=True,
+        help_text=(
+            "Самое позднее время выдачи заказа.<br>"
+            "прим, для Доставки - 22:00,<br>"
+            "для Самовывоза - 00:00, т.к. время берется из аналогичных данных ресторана.",
+        ))
     min_acc_time = models.TimeField(
         verbose_name="Время открытия 'Сегодня/Как можно быстрее'",
         default=time(11, 00),
-        help_text='MIN время приема заказов на сегодня',
-        null=True,
-        blank=True
-        )
+        null=True, blank=True,
+        help_text=(
+            'MIN время приема заказов на Сегодня/Как можно быстрее.<br>'
+            "прим, для Доставки - 11:00,<br>"
+            "для Самовывоза - 00:00, "
+            "т.к. время берется из аналогичных данных ресторана.",
+        ))
     max_acc_time = models.TimeField(
         verbose_name="Время закрытия 'Сегодня/Как можно быстрее'",
         default=time(21, 50),
-        help_text='MAX время приема заказов на сегодня',
-        null=True,
-        blank=True
-        )
+        null=True, blank=True,
+        help_text=(
+            'MAX время приема заказов на сегодня.<br>',
+            "прим, для Доставки - 21:50,<br>"
+            "для Самовывоза - 00:00, "
+            "т.к. время берется из аналогичных данных ресторана.",
+        ))
     discount = models.DecimalField(
         verbose_name='Скидка на самовывоз, %',
         help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
@@ -196,13 +208,23 @@ class DeliveryZone(models.Model):
 
     is_promo = models.BooleanField(
         verbose_name='PROMO',
-        default=False
-    )
+        default=False,
+        help_text=(
+            "Наличие промо-предложения по бесплатной доставке, "
+            "если заказ выше пороговой суммы.<br>"
+            "Если PROMO не выбран, "
+            "то заполненная мин сумма заказа не будет действовать."
+        ))
     promo_min_order_amount = models.DecimalField(
         verbose_name='PROMO мин сумма заказа, DIN',
         max_digits=10, decimal_places=2,
         null=True, blank=True,
-    )
+        help_text=(
+            "Если выбран PROMO, то заказы выше пороговой суммы "
+            "будут иметь бесплатную доставку.<br>"
+            "Сумма заказа = сумма выбранных блюд.<br>"
+            "(если у блюда есть скидка, то она учитывается).<br>"
+        ))
     delivery_cost = models.DecimalField(
         verbose_name='стоимость доставки, DIN',
         default=0.00,
@@ -217,6 +239,7 @@ class DeliveryZone(models.Model):
     class Meta:
         verbose_name = 'зона доставки'
         verbose_name_plural = 'зоны доставки'
+        ordering = ('id',)
 
     def __str__(self):
         if self.name in ['уточнить', 'по запросу']:
@@ -376,4 +399,8 @@ class Courier(models.Model):
     )
 
     def __str__(self):
-        return self.name
+        if self.city == 'Beograd':
+            city = "БГ"
+        elif self.city == 'NoviSad':
+            city = 'НС'
+        return f'{self.name}({city})'

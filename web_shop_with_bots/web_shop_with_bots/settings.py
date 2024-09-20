@@ -473,7 +473,7 @@ CACHES = {
 
 PARLER_ENABLE_CACHING = False
 
-CACHE_TIME = os.getenv('CACHE_TIME', 0)
+CACHE_TIME = int(os.getenv('CACHE_TIME', 0))
 
 # -------------------------------- DATETIME + OTHER ------------------------------------------
 
@@ -492,13 +492,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.WEBAccount'
 
+# -------------------------------- STATIC + MEDIA ------------------------------------------
 
-STATIC_URL = 'static/'
+if ENVIRONMENT != 'development':
+    STATIC_URL = f'{PROTOCOL}://{DOMAIN}/static/'
+    MEDIA_URL = f'{PROTOCOL}://{DOMAIN}/media/'
+else:
+    STATIC_URL = '/static/'
+    MEDIA_URL = '/media/'
+
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'my_static/'),]
 STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
 
-MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
+
 
 
 # -------------------------------- LANGUAGES ------------------------------------------
@@ -601,6 +608,19 @@ if TEST_SERVER or SERVER:
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
 
 REST_USE_JWT = True
+
+# -------------------------------- SECURITY --------------------------------------------
+
+# Базовые настройки безопасности
+if ENVIRONMENT != 'development':
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+else:
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
 
 # -------------------------------- DEBUG TOOL BAR --------------------------------------------
 

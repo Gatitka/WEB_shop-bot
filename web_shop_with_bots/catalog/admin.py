@@ -5,8 +5,8 @@ from .models import (UOM, Category, Dish, DishCategory,
                      RestaurantDishList, CityDishList)
 from django.contrib.admin.views.decorators import staff_member_required
 from utils.admin_permissions import (
-    has_restaurant_orders_admin_permissions,
-    has_city_orders_admin_permissions)
+    has_restaurant_admin_permissions,
+    has_city_admin_permissions)
 from django.db.models import Prefetch
 
 
@@ -180,11 +180,9 @@ class RestaurantDishAdmin(admin.ModelAdmin):
     #     return queryset
 
     def has_change_permission(self, request, obj=None):
-        if request.user.is_superuser:
-            return super().has_change_permission(request)
-
-        return has_restaurant_orders_admin_permissions(request,
-                                                       obj)
+        return has_restaurant_admin_permissions(
+            'catalog.change_restdishlist',
+            request, obj)
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "dish":
@@ -198,8 +196,6 @@ class CityDishListAdmin(admin.ModelAdmin):
     filter_horizontal = ('dish',)    # Виджет для удобного управления ManyToMany связью
 
     def has_change_permission(self, request, obj=None):
-        if request.user.is_superuser:
-            return super().has_change_permission(request)
-
-        return has_city_orders_admin_permissions(request,
-                                                 obj)
+        return has_city_admin_permissions(
+            'catalog.change_citydishlist',
+            request, obj)
