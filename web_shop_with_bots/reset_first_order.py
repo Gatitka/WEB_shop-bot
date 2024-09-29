@@ -31,6 +31,22 @@ def reset_first_order():
     print("Successfully updated users")
 
 
+def add_messenger_orders_to_base_account():
+    """Проверить, есть ли заказы, привязанные к мессенджерам и привязать к base_account"""
+    users = User.objects.all().select_related('base_profile')
+    for user in users:
+        if user.base_profile.messenger_account:
+            messenger = user.base_profile.messenger_account
+            if hasattr(messenger, 'orders') and messenger.orders.exists():
+                order = messenger.orders.first()
+                order.transit_all_msngr_orders_to_base_profile(
+                    user.base_profile)
+            messenger.registered = True
+            messenger.save(update_fields=['registered'])
+    print("Successfully updated users")
+
+
+
 def audit_base_profile_add():
     auditlogs = AuditLog.objects.all()
     for log in auditlogs:

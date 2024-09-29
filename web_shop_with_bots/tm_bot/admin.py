@@ -6,6 +6,8 @@ from shop.models import Order
 from shop.utils import custom_source, custom_order_number
 from django_admin_inline_paginator.admin import TabularInlinePaginated
 from django import forms
+from utils.admin_permissions import (has_restaurant_admin_permissions,
+                                     has_city_admin_permissions)
 
 # @admin.register(Message)
 # class MessageAdmin(admin.ModelAdmin):
@@ -14,31 +16,48 @@ from django import forms
 #     list_filter = ('profile',)
 
 
-class OrdersBotForm(forms.ModelForm):
-    class Meta:
-        model = OrdersBot
-        fields = '__all__'
+# class OrdersBotForm(forms.ModelForm):
+#     api_key = forms.CharField(
+#         widget=forms.PasswordInput(render_value=True),  # Можно задать виджет прямо в поле
+#         required=False
+#     )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if not self.current_user.is_superuser:
-            self.fields['api_key'].widget = forms.PasswordInput(render_value=True)  # Маскирует символы
+#     class Meta:
+#         model = OrdersBot
+#         fields = '__all__'
+
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         if not self.current_user.is_superuser:
+#             if 'api_key' in self.fields:
+#                 self.fields['api_key'].widget = forms.PasswordInput(render_value=True)  # Маскирует символы
 
 
 @admin.register(OrdersBot)
 class OrdersBotAdmin(admin.ModelAdmin):
     list_display = ('id', 'msngr_type', 'city', 'source_id')
-    form = OrdersBotForm
+    # form = OrdersBotForm
 
-    def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
-        form.current_user = request.user  # Передаем текущего пользователя в форму
-        return form
+    # def get_form(self, request, obj=None, **kwargs):
+    # НУЖНО ДЛЯ МАСКИРОВКИ ПОЛЯ С АПИ КЛЮЧЕМ, НЕДОДЕЛАНО
+    #     form = super().get_form(request, obj, **kwargs)
+    #     form.current_user = request.user  # Передаем текущего пользователя в форму
+    #     return form
+
+    def has_change_permission(self, request, obj=None):
+        return has_city_admin_permissions(
+            'tm_bot.change_ordersbot',
+            request, obj)
 
 
 @admin.register(AdminChatTM)
 class AdminChatTMAdmin(admin.ModelAdmin):
     list_display = ('id', 'city', 'restaurant', 'chat_id')
+
+    def has_change_permission(self, request, obj=None):
+        return has_restaurant_admin_permissions(
+            'tm_bot.change_adminchat',
+            request, obj)
 
 
 class OrderInline(TabularInlinePaginated):
@@ -59,15 +78,6 @@ class OrderInline(TabularInlinePaginated):
     def custom_order_number(self, obj):
         return custom_order_number(obj)
     custom_order_number.short_description = '№'
-
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(MessengerAccount)

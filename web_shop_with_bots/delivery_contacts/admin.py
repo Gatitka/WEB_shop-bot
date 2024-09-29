@@ -213,5 +213,5 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return has_restaurant_admin_permissions(
-            'catalog.change_restaurant',
+            'delivery_contacts.change_restaurant',
             request, obj)

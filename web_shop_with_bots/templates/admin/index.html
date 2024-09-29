@@ -3,7 +3,7 @@
 
 {% block content %}
     {{ block.super }}
-    <h2>Sales Data</h2>
+    <h2>Sales Data: {{ restaurant }}</h2>
     <canvas id="salesChart" width="800" height="400"></canvas>
     <button id="toggleDisplay">Кол-во заказов/Сумма заказов</button>
 {% endblock %}

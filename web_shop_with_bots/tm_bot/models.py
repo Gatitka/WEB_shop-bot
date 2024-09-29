@@ -14,6 +14,7 @@ from delivery_contacts.services import (
     google_validate_address_and_get_coordinates,
     get_delivery_cost_zone
 )
+from django import forms
 from decimal import Decimal
 from django.db.models import Sum
 
@@ -107,7 +108,7 @@ class OrdersBot(models.Model):
         max_length=100,
         verbose_name=("API ключ д/синхронизации информации о заказах<br>"
                       "изменению статуса заказа через админку)"),
-        blank=True, null=True,
+        blank=True, null=True
     )
 
     class Meta:

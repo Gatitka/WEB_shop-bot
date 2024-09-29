@@ -11,8 +11,8 @@ def create_admin_chat_permissions(sender, instance, created, **kwargs):
 
         # Создаем разрешение на изменение
         change_permission = Permission.objects.create(
-            codename=f'change_adminchat_{instance.pk}',
-            name=f'Can change AdminChat {instance.pk}',
+            codename=f'change_adminchat_{instance.restaurant_pk}',
+            name=f'Can change AdminChat {instance.restaurant_pk}',
             content_type=content_type
         )
 
@@ -21,7 +21,7 @@ def create_admin_chat_permissions(sender, instance, created, **kwargs):
 def delete_admin_chat_permissions(sender, instance, **kwargs):
     # Удаляем пермишены, связанные с этим объектом
     Permission.objects.filter(
-        codename=f'change_adminchat_{instance.pk}').delete()
+        codename=f'change_adminchat_{instance.restaurant_pk}').delete()
 
 
 @receiver(post_save, sender=OrdersBot)
@@ -31,8 +31,8 @@ def create_orders_bot_permissions(sender, instance, created, **kwargs):
 
         # Создаем разрешение на изменение
         change_permission = Permission.objects.create(
-            codename=f'change_ordersbot_{instance.pk}',
-            name=f'Can change OrdersBot {instance.pk}',
+            codename=f'change_ordersbot_{instance.city}',
+            name=f'Can change OrdersBot {instance.city}',
             content_type=content_type
         )
 
@@ -41,4 +41,4 @@ def create_orders_bot_permissions(sender, instance, created, **kwargs):
 def delete_orders_bot_permissions(sender, instance, **kwargs):
     # Удаляем пермишены, связанные с этим объектом
     Permission.objects.filter(
-        codename=f'change_ordersbot_{instance.pk}').delete()
+        codename=f'change_ordersbot_{instance.city}').delete()

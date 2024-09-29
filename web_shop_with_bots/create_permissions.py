@@ -101,8 +101,8 @@ def create_adminchat_permissions():
     for ac in acs:
         # Создаем разрешение на изменение
         change_permission, _ = Permission.objects.get_or_create(
-            codename=f'change_adminchat_{ac.city}',
-            name=f'Can change AdminChat {ac.city}',
+            codename=f'change_adminchat_{ac.restaurant_id}',
+            name=f'Can change AdminChat {ac.restaurant_id}',
             content_type=content_type
         )
     print("Successfully created adminchats permissions")
@@ -114,8 +114,8 @@ def create_orderbot_permissions():
     for ob in orderbots:
         # Создаем разрешение на изменение
         change_permission, _ = Permission.objects.get_or_create(
-            codename=f'change_ordersbot_{ob.pk}',
-            name=f'Can change OrdersBot {ob.pk}',
+            codename=f'change_ordersbot_{ob.city}',
+            name=f'Can change OrdersBot {ob.city}',
             content_type=content_type
         )
     print("Successfully created orderbots permissions")

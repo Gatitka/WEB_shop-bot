@@ -610,6 +610,5 @@ def validate_phone_unique(value, user):
 
 def user_add_new_order_data(order):
     order.user.orders_qty += 1
-    if order.is_first_order:
-        order.user.first_web_order = True
+    order.user.first_web_order = True
     order.user.save(update_fields=['orders_qty', 'first_web_order'])

@@ -24,10 +24,21 @@ def sales_data(request):
         filled_data = [{'day': day, 'total_orders': data_dict.get(day, 0)} for day in date_range]
         return filled_data
 
-    base_filter = Q(created__gte=timezone.make_aware(
+    restaurant_title = None
+    if not request.user.is_superuser:
+        base_filter_ = Q(created__gte=timezone.make_aware(
                             datetime.datetime.combine(
                                 last_30_days,
                                 datetime.datetime.min.time())))
+        restaurant = request.user.restaurant
+        restaurant_title = str(restaurant)
+        rest_filter = Q(restaurant=restaurant.id)
+        base_filter = base_filter_ & rest_filter
+    else:
+        base_filter = Q(created__gte=timezone.make_aware(
+                                datetime.datetime.combine(
+                                    last_30_days,
+                                    datetime.datetime.min.time())))
     web_filter = Q(source='4')
     bot_filter = Q(source='3')
 
@@ -36,12 +47,6 @@ def sales_data(request):
     base_bot_filter_q = base_filter & bot_filter
 
     user = request.user
-
-    if user.restaurant:
-        restaurant_filter = Q(restaurant=user.restaurant)
-        base_filter_q &= restaurant_filter
-        base_web_filter_q &= restaurant_filter
-        base_bot_filter_q &= restaurant_filter
 
     # Запросы для подсчета общих продаж по дням
     total_sales_qs = Order.objects.filter(
@@ -105,5 +110,5 @@ def sales_data(request):
             item['day'] = datetime.datetime.combine(
                 item['day'],
                 datetime.datetime.min.time())
-
+    data['restaurant'] = restaurant_title
     return JsonResponse(data)
