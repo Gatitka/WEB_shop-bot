@@ -25,10 +25,10 @@ class Command(BaseCommand):
 
         shop2, created = Restaurant.objects.get_or_create(
             short_name='Н1',
-            address='Hajduk Veljkova 11',
+            address='Војводе Бојовића 23',
             open_time="11:00",
             close_time="22:00",
-            phone="+381 61 271 4798",
+            phone="+381 61 481 3011",
             city='Novi Sad',
             is_active=True,
             is_default=True,

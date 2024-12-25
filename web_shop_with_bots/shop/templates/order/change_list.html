@@ -54,9 +54,10 @@
                 <a href="/admin/shop/order/?view=all_orders" class="button" style="width: auto; white-space: nowrap; text-align: center;">{% trans 'Все заказы' %}</a>
             {% endif %}
         </div>
+
     </div>
 
-    {{ block.super }}
+{{ block.super }}
 {% endblock %}
 
 {% block extrahead %}
@@ -78,5 +79,66 @@
     .related-widget-wrapper-link.delete-related {
         display: none !important;
     }
+
+    /* Стили для select в зависимости от выбранного значения */
+    td.field-status select[data-selected="WCO"] {
+        background-color: #ffcdd2;  /* красный */
+        color: #b71c1c;
+    }
+
+    td.field-status select[data-selected="CFD"] {
+        background-color: #ffe0b2;  /* оранжевый */
+        color: #e65100;
+    }
+
+    td.field-status select[data-selected="OND"] {
+        background-color: #fff9c4;  /* желтый */
+        color: #f57f17;
+    }
+
+    td.field-status select[data-selected="DLD"] {
+        background-color: #c8e6c9;  /* зеленый */
+        color: #1b5e20;
+    }
+
+    td.field-status select[data-selected="CND"] {
+        background-color: #eeeeee;  /* серый */
+        color: #424242;
+    }
+
+    /* Стили для options */
+    td.field-status select option[value="WCO"] {
+        background-color: #ffcdd2;
+        color: #b71c1c;
+    }
+
+    td.field-status select option[value="CFD"] {
+        background-color: #ffe0b2;
+        color: #e65100;
+    }
+
+    td.field-status select option[value="OND"] {
+        background-color: #fff9c4;
+        color: #f57f17;
+    }
+
+    td.field-status select option[value="DLD"] {
+        background-color: #c8e6c9;
+        color: #1b5e20;
+    }
+
+    td.field-status select option[value="CND"] {
+        background-color: #eeeeee;
+        color: #424242;
+    }
+
+    /* Общие стили для select */
+    td.field-status select {
+        padding: 2px 5px;
+        border-radius: 3px;
+        width: auto;
+        min-width: 150px;
+    }
 </style>
+
 {% endblock %}

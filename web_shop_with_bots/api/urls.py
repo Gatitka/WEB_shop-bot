@@ -7,6 +7,7 @@ from .views import (ContactsDeliveryViewSet, DeliveryOrderViewSet,
                     MyOrdersViewSet, MyPromocodesViewSet, MyUserViewSet,
                     PromoNewsViewSet, ShoppingCartViewSet,
                     TakeawayOrderViewSet, UserDataAPIView, GetDiscountsAPIView,
+                    DeliveryZonesViewSet,
                     calculate_delivery, get_dish_price, save_bot_order)
 
 app_name = 'api'
@@ -29,6 +30,8 @@ cart_router.register(r'shopping_cart', ShoppingCartViewSet,
 contacts_router = router_type
 contacts_router.register(r'contacts', ContactsDeliveryViewSet,
                          basename='contacts')
+contacts_router.register(r'delivery_zones', DeliveryZonesViewSet,
+                         basename='delivery_zones')
 
 profile_router = router_type
 profile_router.register(r'me/my_addresses', MyAddressViewSet,

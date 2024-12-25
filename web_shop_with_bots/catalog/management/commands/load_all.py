@@ -11,4 +11,3 @@ class Command(BaseCommand):
         call_command('load_promo')
         call_command('load_discounts')
         call_command('load_users')
-        call_command('load_settings')

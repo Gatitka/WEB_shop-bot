@@ -52,7 +52,7 @@ class DishAdmin(TranslatableAdmin):
         if obj.spicy_icon is False:
             return '-'
         return '+'
-    custom_spicy_icon.short_description = format_html('остр<br>икн')
+    custom_spicy_icon.short_description = format_html('веган<br>икн')
 
     readonly_fields = ('id', 'final_price', 'admin_photo', 'created')
     list_display = ('id', 'article', 'is_active', 'priority', 'short_name',

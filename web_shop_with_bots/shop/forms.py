@@ -6,7 +6,7 @@ from delivery_contacts.models import Delivery, Courier, Restaurant
 from delivery_contacts.services import get_delivery_zone
 from delivery_contacts.utils import parce_coordinates
 from shop.models import (Order, OrderGlovoProxy, OrderWoltProxy,
-                         OrderSmokeProxy)
+                         OrderSmokeProxy, DeliveryZone, Delivery)
 from shop.validators import (validate_delivery_time)
 from phonenumber_field.validators import validate_international_phonenumber
 from users.models import UserAddress
@@ -14,6 +14,7 @@ from users.validators import validate_first_and_last_name
 from tm_bot.services import send_message_new_order
 import re
 from django.forms.widgets import Select
+from django.db.models import Q
 
 
 def url_params_from_lookup_dict(lookups):
@@ -57,6 +58,30 @@ class CourierByCityWidget(Select):
             queryset = Courier.objects.filter(city=self.city)
             self.choices += [(courier.id, courier.name) for courier in queryset]
         return super().get_context(name, value, attrs)
+
+
+def get_filtered_delivery_zones(user):
+    # Базовый запрос для всех пользователей
+    base_query = Q(name__in=['уточнить', 'по запросу'])
+
+    if user.is_superuser:
+        return DeliveryZone.objects.all()
+    else:
+        # Получаем города, к которым у пользователя есть доступ
+        user_cities = user.restaurant.city
+        user_query = base_query | Q(city=user_cities)
+        return DeliveryZone.objects.filter(user_query).distinct()
+
+
+def get_filtered_delivery(user):
+    # Базовый запрос для всех пользователей
+    if user.is_superuser:
+        return Delivery.objects.all()
+    else:
+        # Получаем города, к которым у пользователя есть доступ
+        user_cities = user.restaurant.city
+        user_query = Q(city=user_cities)
+        return Delivery.objects.filter(user_query).distinct()
 
 
 class OrderAdminForm(forms.ModelForm):
@@ -174,6 +199,12 @@ class OrderAdminForm(forms.ModelForm):
         # отображение process_comment
         if self.instance is None or self.instance.process_comment is None:
             self.fields['process_comment'].widget = forms.HiddenInput()
+
+        if self.instance.pk and not user.is_superuser:
+            self.fields['delivery_zone'].queryset = get_filtered_delivery_zones(user)
+            self.fields['delivery'].queryset = get_filtered_delivery(user)
+            self.fields['courier'].widget = CourierByCityWidget(city=self.instance.city,
+                                                                is_superuser=user.is_superuser)
 
         # отображение способов платежа для заказа
         if 'payment_type' in self.fields:
@@ -436,7 +467,7 @@ class OrderAdminForm(forms.ModelForm):
         if 'my_delivery_address' in self._errors:
             del self._errors['my_delivery_address']
             cleaned_data['my_delivery_address'] = self.my_delivery_address
-        if not self.user.is_superuser and cleaned_data['restaurant'] not in self.user.restaurants.all():
+        if not self.user.is_superuser and cleaned_data['restaurant'] != self.user.restaurant:
             raise forms.ValidationError("You cannot edit orders from other restaurants.")
         return cleaned_data
 
@@ -454,9 +485,15 @@ class OrderAdminForm(forms.ModelForm):
 
 
 class OrderChangelistForm(forms.ModelForm):
+    payment_type = forms.ChoiceField(
+        choices=settings.PAYMENT_METHODS,  # Ваши варианты оплаты
+        widget=forms.Select(),    # Выпадающий список
+        required=False
+    )
+
     class Meta:
         model = Order
-        fields = ['status', 'invoice', 'courier']
+        fields = ['status', 'invoice', 'courier', 'payment_type']
 
     def __init__(self, *args, **kwargs):
         # Получаем объект запроса (request), чтобы проверить, является ли пользователь суперпользователем
@@ -469,6 +506,10 @@ class OrderChangelistForm(forms.ModelForm):
             # Применяем кастомный виджет для поля courier
             self.fields['courier'].widget = CourierByCityWidget(city=city,
                                                                 is_superuser=is_superuser)
+
+        # Отключаем поле payment_type, если источник - Glovo
+        if self.instance and self.instance.source == 'P1-1':
+            self.fields['payment_type'].widget.attrs['disabled'] = 'disabled'
 
 
 class OrderGlovoAdminForm(forms.ModelForm):
@@ -488,6 +529,12 @@ class OrderGlovoAdminForm(forms.ModelForm):
                                             type='takeaway')
         self.instance.payment_type = 'partner'
         self.instance.created_by = 2
+        self.instance.restaurant = self.user.restaurant
+        try:
+            if self.user.restaurant.city:
+                self.instance.city = self.user.restaurant.city
+        except Restaurant.DoesNotExist:
+            self.instance.city = self.user.city
 
         return cleaned_data
 
@@ -559,12 +606,4 @@ class OrderSmokeAdminForm(forms.ModelForm):
 
 
 def set_admin_data(self, user):
-    try:
-        restaurant = user.restaurant
-        self.fields['restaurant'].initial = restaurant
-        if restaurant.city:
-            self.fields['city'].initial = restaurant.city
-        else:
-            self.fields['city'].initial = user.city
-    except Restaurant.DoesNotExist:
-        self.fields['city'].initial = user.city
+    pass

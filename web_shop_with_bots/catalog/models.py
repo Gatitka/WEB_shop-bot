@@ -51,7 +51,7 @@ class Category(TranslatableModel):
     )
 
     def clean(self) -> None:
-        self.name = self.name.strip().lower()
+        # self.name = self.name.strip().lower()
         # self.name_srb = self.name_srb.strip().lower()
         # self.name_en = self.name_en.strip().lower()
 
@@ -247,7 +247,7 @@ class Dish(TranslatableModel):
 
             if not self.priority:
                 max_position = Dish.objects.filter(
-                        category=self.category
+                        category=self.category.first()
                     ).all().order_by('-priority').values('priority').first()
                 self.priority = max_position['priority'] + 1
 

@@ -16,7 +16,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from catalog.validators import validator_dish_exists_active
 from api.exceptions import CustomHttp400
 from catalog.models import Dish
-from delivery_contacts.models import Delivery, Restaurant
+from delivery_contacts.models import Delivery, Restaurant, DeliveryZone
 from delivery_contacts.services import (get_delivery,
                                         get_delivery_cost_zone_by_address,
                                         get_delivery_cost_zone,
@@ -104,6 +104,38 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
         contacts_delivery_data.append(cash_discount_data)
 
         return Response(contacts_delivery_data, status=status.HTTP_200_OK)
+
+
+class DeliveryZonesViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Вьюсет модели DeliveryZones доступен только для чтения.
+    Отбираются только зоны is_active=True.
+    """
+    queryset = DeliveryZone.objects.all()
+    serializer_class = srlz.DeliveryZonesSerializer
+    permission_classes = [AllowAny,]
+
+    @method_decorator(cache_page(settings.CACHE_TIME))
+    def list(self, request, *args, **kwargs):
+        delivery_zones = DeliveryZone.objects.exclude(city__isnull=True)
+        cities = set(delivery_zones.values_list('city', flat=True))
+        city_delivery_zones = {}
+
+        # Группировка по городам
+        for city in cities:
+            city_del_zones = delivery_zones.filter(city=city)
+            city_data = {}
+
+            # Группировка по зонам внутри города
+            for zone in city_del_zones:
+                serializer = self.get_serializer(zone)
+                zone_data = serializer.data.get(city)
+                if zone_data:
+                    city_data.update(zone_data)
+
+            city_delivery_zones[city] = city_data
+
+        return Response(city_delivery_zones, status=status.HTTP_200_OK)
 
 
 class MyAddressViewSet(mixins.ListModelMixin,

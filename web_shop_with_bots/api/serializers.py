@@ -11,7 +11,7 @@ from rest_framework import serializers
 from rest_framework.serializers import SerializerMethodField
 from catalog.models import UOM, Category, Dish
 from catalog.validators import get_dish_validate_exists_active
-from delivery_contacts.models import Delivery, Restaurant
+from delivery_contacts.models import Delivery, Restaurant, DeliveryZone
 from delivery_contacts.services import get_delivery_cost_zone
 from delivery_contacts.utils import (
     google_validate_address_and_get_coordinates,
@@ -37,9 +37,10 @@ from decimal import Decimal
 from tm_bot.services import (send_message_new_order,
                              send_error_message_order_unsaved,
                              send_error_message_order_saved)
-from djoser.serializers import UserCreateSerializer
+from djoser.serializers import UserCreateSerializer, PasswordResetConfirmSerializer
 from django.utils.translation import get_language
 import logging
+from django.contrib.auth.password_validation import validate_password
 
 
 logger = logging.getLogger(__name__)
@@ -416,6 +417,21 @@ class UserPromocodeSerializer(serializers.ModelSerializer):
         model = PrivatPromocode
 
 
+from django.core.exceptions import ValidationError
+
+
+class CustomPasswordResetConfirmSerializer(PasswordResetConfirmSerializer):
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        password = attrs.get('new_password')
+        try:
+            # This will apply all validators defined in AUTH_PASSWORD_VALIDATORS
+            validate_password(password, self.user)
+        except ValidationError as e:
+            raise serializers.ValidationError({"new_password": list(e.messages)})
+        return attrs
+
+
 # ---------------- МЕНЮ: БЛЮДА и КАТЕГОРИИ --------------------
 
 class UOMSerializer(TranslatableModelSerializer):
@@ -584,6 +600,56 @@ class DeliverySerializer(TranslatableModelSerializer):
         #         rep['phone'] = str(restaurant.phone)
 
         return rep
+
+
+class DeliveryZonesSerializer(TranslatableModelSerializer):
+    """
+    Базовый сериализатор для модели DeliveryZone, только чтение!
+    """
+
+    class Meta:
+        fields = ('city', 'name', 'polygon', 'delivery_cost',
+                  'promo_min_order_amount', 'is_promo')
+        model = DeliveryZone
+        read_only_fields = ('city', 'name', 'polygon',
+                            'delivery_cost',
+                            'promo_min_order_amount', 'is_promo')
+
+    def to_representation(self, instance):
+        # Округление полей до целого числа
+        delivery_cost = round(instance.delivery_cost) if instance.delivery_cost else 0
+        promo_min_order_amount = round(instance.promo_min_order_amount) if instance.promo_min_order_amount else None
+
+        all_coordinates = []
+        # Преобразование координат из вложенного списка в строку
+        if instance.polygon and instance.polygon.coords:
+            # Берем первый полигон (если их несколько)
+            for polygon in instance.polygon.coords:
+                coordinates_list = polygon[0] if isinstance(polygon[0], (list, tuple)) else polygon
+                all_coordinates.extend(coordinates_list)
+
+        # Преобразуем все координаты в одну строку
+        coordinates = ', '.join([f'{lon} {lat}' for lon, lat in all_coordinates]) if all_coordinates else None
+        #         # Проверка на вложенность
+        #         if len(coordinates_list) == 1 and isinstance(coordinates_list[0], (list, tuple)):
+        #             coordinates_list = coordinates_list[0]  # Извлекаем первый элемент, если это вложенный список или кортеж
+
+        #         # Преобразование координат в строку
+        #         coordinates = ', '.join([f'{lon} {lat}' for lon, lat in coordinates_list])
+        # else:
+        #     coordinates = None
+
+        # Формирование ответа
+        return {
+            instance.city: {
+                instance.name: {
+                    "coordinates": coordinates,
+                    "delivery_cost": delivery_cost,
+                    "promo_min_order_amount": promo_min_order_amount,
+                    "is_promo": instance.is_promo
+                }
+            }
+        }
 
 
 class ContactsDeliverySerializer(serializers.Serializer):

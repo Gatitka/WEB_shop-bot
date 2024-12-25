@@ -64,6 +64,9 @@ msgstr "This password is too common."
 msgid "Your password can’t be a commonly used password."
 msgstr "Your password can’t be a commonly used password."
 
+msgid "The password is too similar to the name."
+msgstr "The password is too similar to the name."
+
 msgid "The password is too similar to the first_name."
 msgstr "The password is too similar to the first_name."
 

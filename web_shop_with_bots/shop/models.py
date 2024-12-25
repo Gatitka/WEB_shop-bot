@@ -412,7 +412,8 @@ class Order(models.Model):
                          self.source,
                          self.amount_with_shipping,
                          self.language,
-                         self.discount))
+                         self.discount,
+                         self.is_first_order))
 
         self.select_promocode_vs_discount(self.promocode_disc_amount,
                                           max_discount, max_discount_amount)

@@ -437,7 +437,9 @@ DJOSER = {
 
     'SERIALIZERS': {
         'current_user': 'api.serializers.MyUserSerializer',
-        'user_create': 'api.serializers.MyUserCreateSerializer'
+        'user_create': 'api.serializers.MyUserCreateSerializer',
+        'password_reset_confirm': 'api.serializers.CustomPasswordResetConfirmSerializer',
+        # проверка нового пароля при ресете по всем валидаторам пароля
     },
     'EMAIL': {
         'activation': 'api.utils.email.MyActivationEmail',
@@ -698,16 +700,16 @@ MESSENGERS = [
 # List of order statuses
 WAITING_CONFIRMATION = "WCO"
 CONFIRMED = "CFD"
-ON_DELIVERY = "OND"
+#ON_DELIVERY = "OND"
 DELIVERED = "DLD"
 CANCELED = "CND"
 
 ORDER_STATUS_CHOICES = (
     (WAITING_CONFIRMATION, "ожидает подтверждения"),
     (CONFIRMED, "подтвержден"),
-    (ON_DELIVERY, "передан в доставку"),
-    (CANCELED, "отменен"),
-    (DELIVERED, "выдан")
+    #(ON_DELIVERY, "передан в доставку"),
+    (DELIVERED, "выдан"),
+    (CANCELED, "отменен")
 )
 
 ORDER_STATUS_TRANSLATIONS = {
@@ -721,11 +723,11 @@ ORDER_STATUS_TRANSLATIONS = {
         'en': 'confirmed',
         'sr-latn': 'potvrđen'
     },
-    'OND': {
-        'ru': 'передан в доставку',
-        'en': 'on delivery',
-        'sr-latn': 'na isporuci'
-    },
+    # 'OND': {
+    #     'ru': 'передан в доставку',
+    #     'en': 'on delivery',
+    #     'sr-latn': 'na isporuci'
+    # },
     'DLD': {
         'ru': 'доставлен',
         'en': 'delivered',
@@ -749,6 +751,7 @@ SOURCE_TYPES = [
     ('P1-1', 'Glovo'),
     ('P1-2', 'Wolt'),
     ('P2-1', 'Smoke'),
+    ('P2-2', 'Не та дверь'),
     ('1', 'телефон'),
     ('2', 'ресторан'),
     ('3', 'TM_Bot'),
