@@ -7,6 +7,8 @@ from django.http import HttpResponse
 from django.db.models import Q
 from django.utils.timezone import make_aware
 from django.db.models import Sum, Count
+from django.conf import settings
+from decimal import Decimal
 
 
 def get_range_period(request):
@@ -280,34 +282,65 @@ def get_changelist_extra_context(request, extra_context, source=None):
                 'delivery_zone',
                 'courier')
 
+    #Разбираем заказы по типам для дальнейшего анализа
+    delivery_orders = []
+    takeaway_orders = []
+    for order in today_orders:
+        if order.delivery.type == 'delivery':
+            delivery_orders.append(order)
+        else:
+            takeaway_orders.append(order)
+    partners_orders = today_orders.filter(source__in=settings.PARTNERS_LIST)
+
     # Calculate the total discounted amount and total receipts
     total_amount = sum(order.final_amount_with_shipping for order in today_orders)
     total_qty = today_orders.count()
     total_receipts = sum(order.invoice for order in today_orders)
-    if request.user.is_superuser or view == 'all_orders' or e == '1':
-        city_totals = (
-            today_orders
-            .values('city')
-            .annotate(
-                ttl_city_am=Sum('final_amount_with_shipping'),
-                ttl_city_qty=Count('id'),
-                ttl_city_rct=Count('invoice')
-            )
-        )
-        # Преобразуем QuerySet в список словарей
-        extra_context['city_totals'] = [
-            {
-                "city": city['city'],
-                "ttl_city_am":
-                    f"{city['ttl_city_am']:.2f} ({city['ttl_city_qty']} зак.)",
-                "ttl_city_rct": city['ttl_city_rct'],
-            }
-            for city in city_totals
-        ]
+
+    # Calculate total takeaways
+    total_nocash = (sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type == 'cash' and order.invoice is False)
+                    + sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-2'))    # не та дверь платит налом без чека
+    total_gotovina = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type == 'cash' and order.invoice is True)
+    total_card = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type in ['card', 'card_on_delivery'])
+
+    total_smoke = sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-1')  #('P2-1', 'Smoke'),
+    total_curiers = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash')
+    total_terminal = total_amount - total_nocash - total_smoke - total_curiers
+
+    # if request.user.is_superuser or view == 'all_orders' or e == '1':
+    #     city_totals = (
+    #         today_orders
+    #         .values('city')
+    #         .annotate(
+    #             ttl_city_am=Sum('final_amount_with_shipping'),
+    #             ttl_city_qty=Count('id'),
+    #             ttl_city_rct=Count('invoice')
+    #         )
+    #     )
+    #     # Преобразуем QuerySet в список словарей
+    #     extra_context['city_totals'] = [
+    #         {
+    #             "city": city['city'],
+    #             "ttl_city_am":
+    #                 f"{city['ttl_city_am']:.2f} ({city['ttl_city_qty']} зак.)",
+    #             "ttl_city_rct": city['ttl_city_rct'],
+    #         }
+    #         for city in city_totals
+    #     ]
+
+    # Prepare partners data
+    SOURCE_DICT = dict(settings.SOURCE_TYPES)
+    partners = {}
+    for order in partners_orders:
+        partner_name = SOURCE_DICT[order.source]
+        if partner_name in partners:
+            partners[partner_name] += order.final_amount_with_shipping
+        else:
+            partners[partner_name] = order.final_amount_with_shipping
 
     # Prepare couriers data
     couriers = {}
-    for order in today_orders.filter(delivery__type='delivery'):
+    for order in delivery_orders:
         courier_name = order.courier if order.courier else 'Unknown'
         unclarified = False
 
@@ -322,15 +355,34 @@ def get_changelist_extra_context(request, extra_context, source=None):
         if courier_name in couriers:
             couriers[courier_name][0] += delivery_cost
         else:
-            couriers[courier_name] = [float(0), False]
+            couriers[courier_name] = [Decimal('0'), False,
+                                      Decimal('0'), Decimal('0'),
+                                      Decimal('0')]
+            if order.courier:
+                couriers[courier_name][4] = order.courier.min_payout
+
             couriers[courier_name][0] = delivery_cost
         couriers[courier_name][1] = unclarified
 
+        if order.payment_type == 'cash':
+            couriers[courier_name][2] += order.final_amount_with_shipping
+        if order.payment_type in ['card', 'card_on_delivery']:
+            couriers[courier_name][3] += order.final_amount_with_shipping
+
+    for courier in couriers:
+        couriers[courier][0] += couriers[courier][4]
+
+    extra_context['title'] = title
     total_amount_str = f"{total_amount:.2f} ({total_qty} зак.)"
     extra_context['total_amount'] = total_amount_str
     extra_context['total_receipts'] = total_receipts
+    extra_context['total_nocash'] = float(total_nocash)
+    extra_context['total_gotovina'] = float(total_gotovina)
+    extra_context['total_card'] = total_card
+    extra_context['total_curiers'] = total_curiers
+    extra_context['total_terminal'] = total_terminal
+    extra_context['partners'] = partners
     extra_context['couriers'] = couriers
-    extra_context['title'] = title
     return extra_context
 
 

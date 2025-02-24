@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class Order(models.Model):
     """ Модель для заказов."""
+    objects = models.Manager()
     order_number = models.IntegerField(
         verbose_name='Номер заказа',
         help_text="Проставится автоматически.",
@@ -133,7 +134,7 @@ class Order(models.Model):
         blank=True, null=True,
         )
     delivery_time = models.DateTimeField(
-        verbose_name='время доставки',
+        verbose_name='время выдачи',
         blank=True, null=True,
     )
 
@@ -178,6 +179,7 @@ class Order(models.Model):
         help_text="рассчитывается автоматически.",
         default=0,
         null=True,
+        blank=True,
         max_digits=8, decimal_places=2
     )
     discount = models.ForeignKey(
@@ -190,6 +192,7 @@ class Order(models.Model):
         verbose_name='размер скидки, DIN',
         help_text="рассчитывается автоматически.",
         default=0, null=True,
+        blank=True,
         max_digits=8, decimal_places=2
     )
     # auth_fst_ord_disc = models.BooleanField(
@@ -252,7 +255,6 @@ class Order(models.Model):
         verbose_name="способ оплаты *",
         choices=settings.PAYMENT_METHODS,
         null=True, blank=True
-        #default='card_on_delivery'
     )
     is_paid = models.BooleanField(
         verbose_name='оплачен',
@@ -369,9 +371,10 @@ class Order(models.Model):
 
     def __str__(self):
         created = self.created.strftime('%H:%M  %Y.%m.%d')
+        order_info = f"Заказ №  {self.order_number}/{self.id} от {created}, {self.city}, {self.restaurant}"
         if self.is_first_order:
-            return f"Заказ №  {self.order_number}/{self.id} от {created} /       ПЕРВЫЙ ЗАКАЗ"
-        return f"Заказ №  {self.order_number}/{self.id} от {created}"
+            return order_info + " /       ПЕРВЫЙ ЗАКАЗ"
+        return order_info
 
     def select_promocode_vs_discount(self, promocode_disc_am,
                                      max_discount, max_discount_amount):
@@ -514,12 +517,14 @@ class Order(models.Model):
                 self.restaurant = restaurant
 
     def get_admin_url(self):
-        if self.source == 'P1-1':  # Предположим, у вас есть метод для определения типа заказа
+        if self.source == 'P1-1':
             return reverse('admin:shop_orderglovoproxy_change', args=[self.pk])
-        elif self.source == 'P1-2':  # Предположим, у вас есть метод для определения типа заказа
+        elif self.source == 'P1-2':
             return reverse('admin:shop_orderwoltproxy_change', args=[self.pk])
-        elif self.source == 'P2-1':  # Предположим, у вас есть метод для определения типа заказа
+        elif self.source == 'P2-1':
             return reverse('admin:shop_ordersmokeproxy_change', args=[self.pk])
+        elif self.source == 'P2-2':
+            return reverse('admin:shop_ordernetadverproxy_change', args=[self.pk])
         return reverse('admin:shop_order_change', args=[self.pk])
 
     def transit_all_msngr_orders_to_base_profile(self, user):
@@ -539,6 +544,10 @@ class Order(models.Model):
             return 'БГ'
         elif self.city == 'NoviSad':
             return 'НС'
+
+    def get_source_display(self):
+        SOURCE_DICT = dict(settings.SOURCE_TYPES)
+        return SOURCE_DICT[self.source]
 
 
 class OrderWoltProxy(Order):
@@ -566,6 +575,24 @@ class OrderSmokeProxy(Order):
         proxy = True
         verbose_name = 'заказ Smoke'
         verbose_name_plural = 'заказы Smoke'
+
+
+class OrderNeTaDverProxy(Order):
+    objects = models.Manager()
+
+    class Meta:
+        proxy = True
+        verbose_name = 'заказ Не та дверь'
+        verbose_name_plural = 'заказы Не та дверь'
+
+
+class OrderSealTeaProxy(Order):
+    objects = models.Manager()
+
+    class Meta:
+        proxy = True
+        verbose_name = 'заказ Seal Tea'
+        verbose_name_plural = 'заказы Seal Tea'
 
 
 class OrderDish(models.Model):
@@ -625,13 +652,10 @@ class OrderDish(models.Model):
     def save(self, *args, **kwargs):
         self.dish_article = self.dish.pk
         self.order_number = self.order.pk
-        if self.order.source in ['P1-1']:
+        if self.order.source in ['P1-1', 'P1-2']:
             self.unit_amount = self.dish.final_price_p1 * self.quantity
             self.unit_price = self.dish.final_price_p1
-        elif self.order.source in ['P1-2']:
-            self.unit_amount = self.dish.final_price_p1 * self.quantity
-            self.unit_price = self.dish.final_price_p1
-        elif self.order.source in ['P2-1']:
+        elif self.order.source in ['P2-1', 'P2-2']:
             self.unit_amount = self.dish.final_price_p2 * self.quantity
             self.unit_price = self.dish.final_price_p2
         else:

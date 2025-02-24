@@ -325,3 +325,12 @@ def send_request_order_status_update(new_status, order_id, bot):
         # Логирование ошибки запроса
         logger.error(f"Sending request failed for order {order_id} "
                      f"with status {new_status} (status: {str(e)}")
+
+
+def get_bot_id_by_city(city):
+    bot = OrdersBot.objects.get(city=city)
+    # if bot:
+    #     if bot.api_key is not None and not api_key_is_valid(bot, data):
+    #         return ValidationError("API key isn't correct")
+
+    return [bot, bot.id]

@@ -1140,7 +1140,8 @@ class GetDiscountsAPIView(APIView):
             discounts.update({discount.pk: {
                                 'is_active': discount.is_active,
                                 'discount_am': discount.discount_am,
-                                'discount_perc': discount.discount_perc
+                                'discount_perc': discount.discount_perc,
+                                'title': discount.title_rus
                                 }
                               })
 
@@ -1161,8 +1162,13 @@ def get_dish_price(request):
                     dish = Dish.objects.get(article=dish_id,
                                             is_active=True)
                     unit_price = dish.final_price
+                    final_price_p1 = dish.final_price_p1
+                    final_price_p2 = dish.final_price_p2
                     # Получаем актуальную цену блюда
-                    return JsonResponse({'price': unit_price})
+                    return JsonResponse({'price': unit_price,
+                                         'price_p1': final_price_p1,
+                                         'price_p2': final_price_p2
+                                         })
                 except Dish.DoesNotExist:
                     return JsonResponse({'error': 'Dish not found'},
                                         status=404)

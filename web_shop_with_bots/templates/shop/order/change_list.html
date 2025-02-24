@@ -1,0 +1,205 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block content %}
+    {% if not user.is_superuser %}
+    <div class="changelist-form-container">
+        <h2>{{ title }}</h2>
+        <div style="display: flex; gap: 20px; position: relative;">
+            <!-- Левая колонка с основной таблицей -->
+            <div style="flex: 0 0 auto; min-width: 400px;">
+                <table id="today_results" class="model-table main-table">
+                    <thead>
+                        <tr>
+                            <th style="background: linear-gradient(rgba(255, 182, 198, 0.3), rgba(255, 182, 198, 0.3));">ИТОГО</th>
+                            <th colspan="2" style="background: linear-gradient(rgba(152, 251, 152, 0.3), rgba(152, 251, 152, 0.3));">{{ total_amount }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="background-color:rgba(255, 250, 205, 0.30);" rowspan="3">самовывоз</td>
+                            <td>безнал</td>
+                            <td>{{ total_nocash }}</td>
+                        </tr>
+                        <tr>
+                            <td>Gotovina</td>
+                            <td>{{ total_gotovina }}</td>
+                        </tr>
+                        <tr>
+                            <td>КАРТА</td>
+                            <td>{{ total_card }}</td>
+                        </tr>
+                        <tr>
+                            <td>курьеры</td>
+                            <td colspan="2">{{ total_curiers }}</td>
+                        </tr>
+                        <tr>
+                            <td>po terminalu</td>
+                            <td colspan="2">{{ total_terminal }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Правая колонка с таблицами партнеров и курьеров -->
+            <div style="flex: 1;">
+                <!-- Таблица партнеров -->
+                {% if partners %}
+                <div style="margin-bottom: 10px;">
+                    <table class="model-table secondary-table">
+                        <thead>
+                            <tr>
+                                {% for partner_name in partners.keys %}
+                                    <th style="background: linear-gradient(rgba(232, 245, 233, 0.3), rgba(255, 205, 210, 0.3))">{{ partner_name }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                {% for amount in partners.values %}
+                                    <td>{{ amount }}</td>
+                                {% endfor %}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- Таблица курьеров -->
+                {% if couriers %}
+                <div style="margin-bottom: 50px;">
+                    <table class="model-table secondary-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px; background-color: transparent;"></th>
+                                {% for courier_name in couriers.keys %}
+                                    <th style="background: linear-gradient(rgba(232, 245, 233, 0.3), rgba(255, 205, 210, 0.3))">
+                                        {% if courier_name == 'Unknown' or courier_name == 'UNKNOWN' %}
+                                            <span style="color: #dc3545;">{{ courier_name }}</span>
+                                        {% else %}
+                                            {{ courier_name }}
+                                        {% endif %}
+                                    </th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="text-align: right; font-weight: bold;">карта</td>
+                                {% for courier_data in couriers.values %}
+                                    <td>{{ courier_data.3 }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td style="text-align: right; font-weight: bold;">наличка</td>
+                                {% for courier_data in couriers.values %}
+                                    <td>{{ courier_data.2 }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td style="text-align: right; font-weight: bold;">ЗП</td>
+                                {% for courier_data in couriers.values %}
+                                    <td>
+                                        {{ courier_data.0 }}
+                                        {% if courier_data.1 %}
+                                            <br><span style="color: #dc3545; font-size: 11px;">+ уточнить</span>
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Кнопки в правом верхнем углу -->
+            <div style="position: absolute; right: 0; top: -40px;">
+                {% if not user.is_superuser %}
+                    <a href="{% url 'admin:shop_order_changelist' %}" class="button" style="margin-right: 10px;">{% trans 'Мои заказы' %}</a>
+                    <a href="/admin/shop/order/?view=all_orders" class="button">{% trans 'Все заказы' %}</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {{ block.super }}
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="{% static 'my_admin/js/shop/change_list.js' %}"></script>
+<script src="{% static 'my_admin/js/shop/receipt_printing.js' %}"></script>
+<style>
+    .field-get_delivery_type, .column-get_delivery_type {
+        display: none;
+    }
+
+    .related-widget-wrapper-link.add-related,
+    .related-widget-wrapper-link.change-related,
+    .related-widget-wrapper-link.delete-related {
+        display: none !important;
+    }
+
+    /* Status select styling */
+    td.field-status select[data-selected="WCO"] {
+        background-color: #ffcdd2;
+        color: #b71c1c;
+    }
+
+    td.field-status select[data-selected="CFD"] {
+        background-color: #ffe0b2;
+        color: #e65100;
+    }
+
+    td.field-status select[data-selected="OND"] {
+        background-color: #fff9c4;
+        color: #f57f17;
+    }
+
+    td.field-status select[data-selected="DLD"] {
+        background-color: #c8e6c9;
+        color: #1b5e20;
+    }
+
+    td.field-status select[data-selected="CND"] {
+        background-color: #eeeeee;
+        color: #424242;
+    }
+
+    /* Table styling */
+    .model-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .model-table th,
+    .model-table td {
+        border: 1px solid #ddd;
+        text-align: center;
+    }
+
+    /* Основная таблица */
+    .main-table th,
+    .main-table td {
+        padding: 8px;
+        font-size: 12px;
+    }
+
+    /* Вспомогательные таблицы */
+    .secondary-table {
+        font-size: 10px;
+    }
+
+    .secondary-table th,
+    .secondary-table td {
+        padding: 4px;
+    }
+
+    .model-table th {
+        font-weight: bold;
+    }
+</style>
+{% endblock %}

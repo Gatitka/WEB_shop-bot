@@ -7,11 +7,7 @@
 {% block admin_change_form_document_ready %}
     {{ block.super }}
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-    <script src="{% static 'my_admin/js/shop/address_autocomplete.js' %}"></script>
-    <script src="{% static 'my_admin/js/shop/calculate_delivery.js' %}"></script>
-{% endblock %}
-
-{% block form_top %}
-    {{ block.super }}
-    {% csrf_token %}
+    <script src="{% static 'my_admin/js/shop/calculate_add_order_fields.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/toggle_order_fields.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/calculate_discounts_add_order.js' %}"></script>
 {% endblock %}

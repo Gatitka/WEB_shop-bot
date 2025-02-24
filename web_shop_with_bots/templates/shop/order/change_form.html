@@ -9,7 +9,12 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="{% static 'my_admin/js/shop/address_autocomplete.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/calculate_delivery.js' %}"></script>
-    <script src="{% static 'my_admin/js/shop/dish_unit_price.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/user_data.js' %}"></script>
-    <script src="{% static 'my_admin/js/shop/calculate_new_order_fields.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/calculate_change_order_fields.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/receipt_printing.js' %}"></script>
+{% endblock %}
+
+{% block form_top %}
+    {{ block.super }}
+    {% csrf_token %}
 {% endblock %}

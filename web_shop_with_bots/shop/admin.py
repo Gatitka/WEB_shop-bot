@@ -6,11 +6,15 @@ from django.utils.html import format_html
 from delivery_contacts.utils import get_google_api_key
 from tm_bot.models import MessengerAccount
 from utils.utils import activ_actions
-from .forms import (OrderAdminForm, OrderGlovoAdminForm,
+from .forms import (OrderAddForm, OrderChangeForm,
+                    OrderGlovoAdminForm,
                     OrderWoltAdminForm, OrderSmokeAdminForm,
-                    OrderChangelistForm)
+                    OrderNeTaDverAdminForm,
+                    OrderChangelistForm, OrderSealTeaAdminForm)
 from .models import (Dish, Order, OrderDish, Discount,
-                     OrderGlovoProxy, OrderWoltProxy, OrderSmokeProxy)
+                     OrderGlovoProxy, OrderWoltProxy,
+                     OrderSmokeProxy, OrderNeTaDverProxy,
+                     OrderSealTeaProxy)
 from tm_bot.services import (send_message_new_order,
                              send_request_order_status_update)
 from django import forms
@@ -76,6 +80,10 @@ class CustomChangeList(ChangeList):
             model_name = 'orderwoltproxy'
         elif result.source == 'P2-1':
             model_name = 'ordersmokeproxy'
+        elif result.source == 'P2-2':
+            model_name = 'ordernetadverproxy'
+        elif result.source == 'P3-1':
+            model_name = 'ordersealteaproxy'
         else:
             model_name = 'order'
 
@@ -126,7 +134,7 @@ class OrderAdmin(admin.ModelAdmin):
             if obj.delivery.type == 'delivery':
                 address = obj.recipient_address
 
-                if address == '':
+                if address in ['', None]:
                     return '❓нет адреса доставки'
 
                 if obj.delivery_zone.name == 'уточнить':
@@ -149,7 +157,7 @@ class OrderAdmin(admin.ModelAdmin):
     custom_total.short_description = format_html('Сумма<br>заказа, DIN')
 
     def note(self, obj):
-        if obj.source in ['3', 'P1-1', 'P1-2', 'P2-1', 'P2-2']:
+        if obj.source in ['3'] + settings.PARTNERS_LIST:
             source = obj.get_source_display()
             source_id = f'{obj.source_id}' if obj.source_id is not None else ''
             if obj.source_id:
@@ -161,7 +169,7 @@ class OrderAdmin(admin.ModelAdmin):
 
                 return source_id
             else:
-                return 'N/A'
+                return '❓нет ID'
         return ''
     note.short_description = 'Примечание'
 
@@ -198,52 +206,15 @@ class OrderAdmin(admin.ModelAdmin):
     get_contacts.allow_tags = True
     get_contacts.short_description = 'Контакты'
 
-    # def custom_created(self, obj):
-    #     """Доп описание даты и времени создания заказа."""
-    #     # Преобразование поля datetime в строку с помощью strftime()
-
-    #     local_time = obj.created.astimezone(timezone.get_current_timezone())
-    #     if obj.status == 'WCO':
-    #         formatted_time = local_time.strftime('<span style="color:green;font-weight:bold;">%H:%M</span><br>%d.%m')
-    #     else:
-    #         formatted_time = local_time.strftime('%H:%M<br>%d.%m')
-    #     return format_html(formatted_time)
-    # custom_created.short_description = 'создан'
-
-    # def custom_payment_type(self, obj):
-    #     # краткое название поля в list
-    #     if obj.source in ['1', '3', '4']:
-    #         if obj.payment_type == 'card_on_delivery':
-    #             return '💳🛵'
-    #         elif obj.payment_type == 'card':
-    #             return '💳'
-    #         elif obj.payment_type == 'cash':
-    #             return '💵'
-    #         else:
-    #             return '❓'
-    # custom_payment_type.short_description = format_html('Опл')
-
-       # def custom_source(self, obj):
-    #     return custom_source(obj)
-    # custom_source.short_description = 'Источник'
-
-    # def custom_recipient_address(self, obj):
-    #     # краткое название поля в list
-    #     if obj.delivery.type == 'delivery':
-    #         address = obj.recipient_address
-
-    #         if address == '':
-    #             return '❓'
-
-    #         if obj.delivery_zone.name == 'уточнить':
-    #             address = format_html('<span style="color:red;">{}</span>',
-    #                                   address)
-    #         return address
-
-    #     elif obj.delivery.type == 'takeaway':
-    #         return 'самовывоз'
-    #     return ''
-    # custom_recipient_address.short_description = format_html('Адрес')
+    def print_button(self, obj):
+        """Adds print button to each row"""
+        return format_html(
+            '<button type="button" class="print-button" data-id="{}">'
+            '🖨️</button>',
+            obj.id
+        )
+    print_button.short_description = 'Печать'
+    print_button.allow_tags = True
 
     list_display = ('custom_order_number', 'warning',
                     'info',
@@ -252,8 +223,8 @@ class OrderAdmin(admin.ModelAdmin):
                     'payment_type', 'invoice', 'custom_delivery_cost',
                     'status', 'courier',
                     'get_contacts',
-                    'get_delivery_type')
-                    # 'custom_payment_type')
+                    'get_delivery_type',
+                    'print_button')  # Добавляем кнопку печати в список
     list_editable = ['status', 'invoice', 'courier', 'payment_type']
     # list_display_links = ('custom_order_number',)
     readonly_fields = [
@@ -284,62 +255,99 @@ class OrderAdmin(admin.ModelAdmin):
                     "delivery": admin.HORIZONTAL,
                     "discount": admin.VERTICAL}
 
-    fieldsets = (
-        ('Данные заказа', {
-            'fields': (
-                ('process_comment'),
-                ('status', 'language'),
-                ('source', 'source_id'),
-                ('city', 'restaurant'),
-                ('recipient_name', 'recipient_phone', 'get_msngr_link'),
-                ('user', 'msngr_account', 'get_user_data'),
-                ('delivery_time', 'persons_qty',),
-                ('delivery', 'payment_type', 'invoice'),
-                # ('orderdishes_inline'),
-            )
-        }),
-        ('Доставка', {
-            "description": (
-                "После набора блюд в корзину, заполните поле 'адрес' "
-                "и нажмите 'РАССЧИТАТЬ' для определения зоны доставки "
-                "и стоимости."
-            ),
-            "classes": ["collapse"],
-            'fields': (
-                ('recipient_address', 'coordinates', 'address_comment'),
-                ('my_delivery_address', 'my_address_coordinates',
-                    'my_address_comments'),
-                ('calculate_delivery_button', 'auto_delivery_zone',
-                    'auto_delivery_cost', 'error_message'),
-                ('delivery_zone'),
-                ('delivery_cost'),
-                ('courier'),
-            )
-        }),
-        ('Расчет суммы заказа', {
-            'fields': (
-                ('amount', 'get_delivery_cost'),
-                ('discount', 'discount_amount'),
-                ('promocode', 'promocode_disc_amount',),
-                ('manual_discount'),
-                ('discounted_amount'),
-            )
-        }),
-        ('ИТОГО', {
-            'fields': (
-                ('final_amount_with_shipping'),
-                ('items_qty'),
-            )
-        }),
-        ('Комментарий', {
-            'fields': ('comment',),
-        })
-    )
+    add_form_template = 'shop/order/add_form.html'
+    change_form_template = 'shop/order/change_form.html'
+    change_list_template = 'shop/order/change_list.html'
 
-    form = OrderAdminForm
-    add_form_template = 'order/add_form.html'
-    change_form_template = 'order/change_form.html'
-    change_list_template = 'order/change_list.html'
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:  # Если это форма создания нового заказа
+            return [
+                ('Данные заказа', {
+                    'fields': (
+                        ('source', 'source_id', 'invoice'),
+                        ('delivery', 'discount', 'payment_type'),
+                    )
+                }),
+                ('Сумма заказа', {
+                    'fields': (
+                        ('amount', 'final_amount_with_shipping', 'items_qty'),
+                    )
+                })
+            ]
+
+        # Если это форма редактирования существующего заказа, возвращаем полный набор полей
+        delivery_classes = ["collapse"]
+        if obj and obj.delivery.type == 'delivery':
+            delivery_classes = []
+        return [
+            ('Общие данные заказа', {
+                "classes": ["collapse"],
+                'fields': (
+                    ('process_comment'),
+                    ('status', 'language'),
+                    ('source', 'source_id'),
+                    ('city', 'restaurant'),
+                    ('delivery', 'payment_type', 'invoice'),
+                )
+            }),
+            ('Контактная информация', {
+                'fields': (
+                    ('recipient_name', 'recipient_phone', 'get_msngr_link'),
+                    ('user', 'msngr_account', 'get_user_data'),
+                    ('delivery_time', 'persons_qty',),
+                )
+            }),
+
+            ('Доставка', {
+                "description": (
+                    "После набора блюд в корзину, заполните поле 'адрес' "
+                    "и нажмите 'РАССЧИТАТЬ' для определения зоны доставки "
+                    "и стоимости."
+                ),
+                "classes": delivery_classes,
+                'fields': (
+                    ('recipient_address', 'coordinates', 'address_comment'),
+                    ('my_delivery_address', 'my_address_coordinates',
+                        'my_address_comments'),
+                    ('calculate_delivery_button', 'auto_delivery_zone',
+                        'auto_delivery_cost', 'error_message'),
+                    ('delivery_zone'),
+                    ('delivery_cost'),
+                    ('courier'),
+                )
+            }),
+            ('Расчет суммы заказа', {
+                'fields': (
+                    ('amount', 'get_delivery_cost'),
+                    ('discount', 'discount_amount'),
+                    ('promocode', 'promocode_disc_amount',),
+                    ('manual_discount'),
+                    ('discounted_amount'),
+                )
+            }),
+            ('ИТОГО', {
+                'fields': (
+                    ('final_amount_with_shipping'),
+                    ('items_qty'),
+                )
+            }),
+            ('Комментарий', {
+                'fields': ('comment',),
+            })
+        ]
+
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        Выбираем форму в зависимости от действия (создание или редактирование).
+        """
+        if obj is None:  # Если создается новый заказ
+            kwargs['form'] = OrderAddForm
+        else:  # Если объект редактируется
+            kwargs['form'] = OrderChangeForm
+
+        form = super().get_form(request, obj, **kwargs)
+        form.user = request.user  # Передаем текущего пользователя в форму
+        return form
 
     def get_delivery_type(self, obj):
         return obj.delivery.type
@@ -352,9 +360,19 @@ class OrderAdmin(admin.ModelAdmin):
     get_delivery_cost.admin_order_field = 'get_delivery_cost'
 
     def get_queryset(self, request):
-        qs = super().get_queryset(
-            request
-            ).select_related(
+        qs = super().get_queryset(request)
+        # from django.db import connection
+        # from django.db.models.query import QuerySet
+
+        # # Получаем все ID заказов напрямую из БД
+        # with connection.cursor() as cursor:
+        #     cursor.execute("SELECT id FROM shop_order ORDER BY created DESC")
+        #     ids = [row[0] for row in cursor.fetchall()]
+
+        # # Создаем QuerySet с этими ID
+        # qs = Order.objects.filter(id__in=ids)
+        # qs = Order._base_manager.all()
+        qs = qs.select_related(
                 'user',
                 'delivery',
                 'delivery_zone',
@@ -363,6 +381,9 @@ class OrderAdmin(admin.ModelAdmin):
                 'user__messenger_account',
                 'restaurant',
                 'orders_bot')
+        # Проверяем наличие конкретного заказа
+        print("Checking order 8887:", qs.filter(id=8887).exists())
+
         if request.user.is_superuser:
             return qs
 
@@ -374,6 +395,7 @@ class OrderAdmin(admin.ModelAdmin):
         restaurant = request.user.restaurant
         if restaurant:
             qs = qs.filter(restaurant=restaurant)
+            print("Checking order 8887:", qs.filter(id=8887).exists())
             return qs
 
         user_id = request.GET.get('user_id')
@@ -386,6 +408,7 @@ class OrderAdmin(admin.ModelAdmin):
                         'msngr_account',
                         'courier',
                         'user__messenger_account')
+        print("Checking order 8887:", qs.filter(id=8887).exists())
         return qs
 
     def get_object(self, request, object_id, from_field=None):
@@ -489,7 +512,8 @@ class OrderAdmin(admin.ModelAdmin):
         for formset in formsets:
             self.save_formset(request, form, formset, change=change)
         if not change:
-            send_message_new_order(form.instance)
+            if form.instance.source not in settings.PARTNERS_LIST:
+                send_message_new_order(form.instance)
             if form.instance.user:
                 user_add_new_order_data(form.instance)
 
@@ -502,14 +526,6 @@ class OrderAdmin(admin.ModelAdmin):
                     send_request_order_status_update(
                         new_status, int(form.instance.source_id),
                         form.instance.orders_bot)
-
-    def get_form(self, request, obj=None, **kwargs):
-        """
-        Переопределяем метод get_form для передачи пользователя в форму.
-        """
-        form = super().get_form(request, obj, **kwargs)
-        form.user = request.user  # Передаем текущего пользователя в форму
-        return form
 
     def get_changelist_form(self, request, **kwargs):
         """
@@ -586,7 +602,7 @@ class OrderAdmin(admin.ModelAdmin):
     get_user_data.allow_tags = True
     get_user_data.short_description = 'Инфо'
 
-    # ------ ПЕРПИШЕНЫ -----
+    # ------ ПЕРМИШЕНЫ -----
 
     def has_change_permission(self, request, obj=None):
         if request.user.is_superuser:
@@ -618,25 +634,20 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
     list_editable = ['status']
     list_display_links = ('order_number',)
     readonly_fields = ['items_qty', 'amount', 'created', 'order_number', 'final_amount_with_shipping']
-    list_filter = (('created', DateRangeFilterBuilder()), 'status')
+    list_filter = (('created', DateRangeQuickSelectListFilter), 'status')
     search_fields = ('order_number', 'source_id')
     inlines = (OrderDishPartnerInline,)
     actions_selection_counter = False
     actions_on_top = True
     actions = [export_orders_to_excel, export_full_orders_to_excel]
     list_per_page = 10
-    change_list_template = 'order/change_list_partner.html'
-
-    fieldsets = (
-        ('Данные заказа', {
-            "fields": (
-                ('status', 'source_id'),
-                ('final_amount_with_shipping', 'items_qty'),
-            ),
-        }),
-    )
-
+    change_list_template = 'shop/order/change_list_partner.html'
     source_code = None  # должен быть переопределен в дочерних классах
+
+    class Media:
+        js = (
+            'my_admin/js/shop/calculate_add_order_fields.js',
+        )
 
     # def custom_order_number(self, obj):
     #     return f"{obj.order_number}/{obj.id}"
@@ -656,12 +667,12 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
     custom_total.short_description = format_html('Сумма<br>заказа, DIN')
 
     def note(self, obj):
-        if obj.source in ['P1-1', 'P1-2', 'P2-1', 'P2-2']:
+        if obj.source in settings.PARTNERS_LIST:
             if obj.source_id:
                 source_id = f'{obj.source_id}' if obj.source_id is not None else ''
                 return source_id
             else:
-                return 'N/A'
+                return '❓нет ID'
     note.short_description = 'Примечание'
 
     def get_queryset(self, request):
@@ -698,6 +709,32 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
         form.user = request.user
         return form
 
+    def get_changeform_initial_data(self, request):
+        return {'source': self.source_code}
+
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:  # Если это форма создания нового заказа
+            return [
+                ('Данные заказа', {
+                    'fields': (
+                        ('source_id', 'source'),
+                        ('final_amount_with_shipping', 'items_qty')
+                    )
+                }),
+            ]
+        # Если это форма редактирования существующего заказа, возвращаем полный набор полей
+        return [
+            ('Данные заказа', {
+                    'fields': (
+                        ('status'),
+                        ('source_id', 'source'),
+                        ('final_amount_with_shipping', 'items_qty')
+                    )
+                }),
+        ]
+
+
+
 @admin.register(OrderGlovoProxy)
 class OrderGlovoProxyAdmin(BaseOrderProxyAdmin):
     form = OrderGlovoAdminForm
@@ -713,6 +750,15 @@ class OrderSmokeProxyAdmin(BaseOrderProxyAdmin):
     form = OrderSmokeAdminForm
     source_code = 'P2-1'
 
+@admin.register(OrderNeTaDverProxy)
+class OrderNeTaDverProxyAdmin(BaseOrderProxyAdmin):
+    form = OrderNeTaDverAdminForm
+    source_code = 'P2-2'
+
+@admin.register(OrderSealTeaProxy)
+class OrderSealTeaProxyAdmin(BaseOrderProxyAdmin):
+    form = OrderSealTeaAdminForm
+    source_code = 'P3-1'
 
 # @admin.register(OrderGlovoProxy)
 # class OrderGlovoProxyAdmin(admin.ModelAdmin):

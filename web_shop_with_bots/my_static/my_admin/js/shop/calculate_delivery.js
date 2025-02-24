@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var recipientAddressElement = document.getElementById('id_recipient_address');
         var myDeliveryAddressElement = document.getElementById('id_my_delivery_address');
         var amountField = document.querySelector('.field-amount .readonly'); // Изменено поле на '.field-amount .readonly'
-        var deliveryElement = document.querySelector('input[name="delivery"]:checked');
+        var deliveryElement = document.querySelector('select[name="delivery"]');
         var coordinatesElement = document.getElementById('id_coordinates'); // Добавлено поле coordinates
 
         // Получаем элементы для отображения сообщения об ошибке и обновления других полей формы

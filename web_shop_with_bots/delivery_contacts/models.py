@@ -397,6 +397,12 @@ class Courier(models.Model):
         default=False,
         verbose_name='активен'
     )
+    min_payout = models.DecimalField(
+        verbose_name='Мин оплата за выход, DIN',
+        default=0.00,
+        blank=True,
+        max_digits=10, decimal_places=2
+    )
 
     def __str__(self):
         if self.city == 'Beograd':
@@ -404,3 +410,7 @@ class Courier(models.Model):
         elif self.city == 'NoviSad':
             city = 'НС'
         return f'{self.name}({city})'
+
+    class Meta:
+        verbose_name = 'курьер'
+        verbose_name_plural = 'курьеры'

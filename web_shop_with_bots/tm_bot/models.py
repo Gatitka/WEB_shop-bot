@@ -463,7 +463,8 @@ def get_status_tmbot(tmbot_status):
     elif tmbot_status == 'подтвержден':
         status = "CFD"
     elif tmbot_status == 'отправлен получателю':
-        status = "OND"
+        # status = "OND"
+        status = "CFD"
     elif tmbot_status in ['доставлен', 'выдан']:
         status = "DLD"
     elif tmbot_status in ['отменен', 'недозвон']:

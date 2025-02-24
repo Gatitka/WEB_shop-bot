@@ -1,7 +1,21 @@
+// Создает кэши для цен (fetchedPrices) и скидок (fetchedDiscounts)
+// Загружает скидки через API при загрузке страницы
+// При выборе товара запрашивает цену через API, кэширует полученную цену в fetchedPrices
+// Пересчитывает суммы строки и общую сумму заказа.
+// Использует MutationObserver для полей суммы и скидок, автоматически пересчитывает итоговые значения при изменениях
+// Суммирует стоимость всех товаров, вычитает все применимые скидки, обновляет поле финальной суммы
+// Должна учитывать только скидку по самовывозу и скидку за наличку
+
 ///////////////////////////////////////////////   ПОЛУЧЕНИЕ ЦЕН
 document.addEventListener('DOMContentLoaded', function() {
 
     var fetchedDiscounts = {}; // Объект для хранения полученных скидок
+
+    // Функция для получения текущего домена
+    function getCurrentDomain() {
+        return window.location.hostname;
+    }
+
     const currentDomain = getCurrentDomain();
 
     // Функция для выполнения запроса к эндпоинту и сохранения данных о скидке
@@ -47,6 +61,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Вызываем функцию при загрузке страницы
     fetchPricesForSelectedDishes();
 
+    // Обработчик изменения source для пересчета цен
+    document.getElementById('id_source').addEventListener('change', function() {
+        document.querySelectorAll('.field-dish select').forEach(function(select) {
+            if (select.value) {
+                var unitPriceField = select.closest('tr').querySelector('.field-unit_price p');
+                fetchAndUpdatePrice(select.value, unitPriceField);
+            }
+        });
+    });
 
     // Обработчик события изменения значения выпадающего списка блюда
     document.addEventListener('change', function(event) {
@@ -123,12 +146,25 @@ document.addEventListener('DOMContentLoaded', function() {
             totalAmount += parseFloat(field.textContent);
         });
 
-        var amountField = document.querySelector('.field-amount .readonly');
+        var amountField = document.querySelector('.field-final_amount_with_shipping .readonly');
         amountField.textContent = totalAmount.toFixed(2);
+    }
+
+    // Функция выбора цены в зависимости от источника заказа
+    function getSourcePrice(response, source) {
+        if (['P1-1', 'P1-2'].includes(source)) {
+            return response.price_p1;
+        }
+        if (['P2-1', 'P2-2'].includes(source)) {
+            return response.price_p2;
+        }
+        return response.price;
     }
 
     // Функция для выполнения AJAX-запроса и обновления цены блюда
     function fetchAndUpdatePrice(dishId, unitPriceField) {
+        const source = document.getElementById('id_source').value;
+
         // Формируем URL в зависимости от текущего домена
         var currentDomain = window.location.hostname;
         var fetchPriceUrl;
@@ -141,7 +177,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Проверяем, была ли уже получена цена для данного блюда
         if (fetchedPrices[dishId]) {
             // Если цена уже получена, обновляем только поле с ценой
-            unitPriceField.innerHTML = fetchedPrices[dishId];
+            const price = getSourcePrice(fetchedPrices[dishId], source)
+
+            unitPriceField.innerHTML = price;
             calculateAmount(unitPriceField);
         } else {
             var xhr = new XMLHttpRequest();
@@ -152,8 +190,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
                     var response = JSON.parse(xhr.responseText);
                     // Сохраняем полученную цену
-                    fetchedPrices[dishId] = response.price;
-                    unitPriceField.innerHTML = response.price;
+                    fetchedPrices[dishId] = response;
+                    const price = getSourcePrice(response, source);
+                    unitPriceField.innerHTML = price;
                     calculateAmount(unitPriceField);
                 }
             };

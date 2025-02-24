@@ -37,6 +37,8 @@ def trigger_error(request):
 
 urlpatterns = [
     path('admin/sales-data/', admin_views.sales_data, name='sales_data'),
+    path('admin/receipt/formatted/<int:order_id>/',
+         admin_views.get_formatted_receipt, name='formatted-receipt'),
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
     path('sentry-debug/', trigger_error),

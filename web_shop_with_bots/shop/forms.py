@@ -6,12 +6,13 @@ from delivery_contacts.models import Delivery, Courier, Restaurant
 from delivery_contacts.services import get_delivery_zone
 from delivery_contacts.utils import parce_coordinates
 from shop.models import (Order, OrderGlovoProxy, OrderWoltProxy,
-                         OrderSmokeProxy, DeliveryZone, Delivery)
+                         OrderSmokeProxy, OrderNeTaDverProxy, OrderSealTeaProxy,
+                         DeliveryZone, Delivery, Discount)
 from shop.validators import (validate_delivery_time)
 from phonenumber_field.validators import validate_international_phonenumber
 from users.models import UserAddress
 from users.validators import validate_first_and_last_name
-from tm_bot.services import send_message_new_order
+from tm_bot.services import get_bot_id_by_city
 import re
 from django.forms.widgets import Select
 from django.db.models import Q
@@ -37,26 +38,26 @@ def url_params_from_lookup_dict(lookups):
     return params
 
 
-class CourierByCityWidget(Select):
+class FilteredByUserAndCityWidget(Select):
     """
-    Кастомный виджет для поля courier, который фильтрует курьеров по городу заказа.
-    Если пользователь суперпользователь, показываются все курьеры.
+    Кастомный виджет для фильтрации объектов по городу и уровню доступа пользователя.
     """
-    def __init__(self, city, is_superuser, *args, **kwargs):
+    def __init__(self, city, is_superuser, model_class, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.city = city
         self.is_superuser = is_superuser
+        self.model_class = model_class
 
     def get_context(self, name, value, attrs):
-        # Если пользователь суперпользователь, показываем всех курьеров
-        self.choices = [(None, '--------')]  # Опция для None
+        self.choices = [(None, '--------')] if self.model_class == Courier else []
+
         if self.is_superuser:
-            queryset = Courier.objects.all()
-            self.choices += [(courier.id, str(courier)) for courier in queryset]
+            queryset = self.model_class.objects.all()
         else:
-            # Иначе фильтруем курьеров по городу
-            queryset = Courier.objects.filter(city=self.city)
-            self.choices += [(courier.id, courier.name) for courier in queryset]
+            queryset = self.model_class.objects.filter(city=self.city)
+
+        self.choices += [(obj.id, str(obj) if self.model_class in [Courier, Delivery] else obj.name)
+                        for obj in queryset]
         return super().get_context(name, value, attrs)
 
 
@@ -73,18 +74,130 @@ def get_filtered_delivery_zones(user):
         return DeliveryZone.objects.filter(user_query).distinct()
 
 
-def get_filtered_delivery(user):
-    # Базовый запрос для всех пользователей
-    if user.is_superuser:
-        return Delivery.objects.all()
-    else:
-        # Получаем города, к которым у пользователя есть доступ
-        user_cities = user.restaurant.city
-        user_query = Q(city=user_cities)
-        return Delivery.objects.filter(user_query).distinct()
+class OrderAddForm(forms.ModelForm):
+    invoice = forms.ChoiceField(
+        choices=((True, 'Да'), (False, 'Нет')),
+        widget=forms.RadioSelect,
+        label='Чек',
+        initial=True  # Устанавливаем дефолтное значение как 'Да'
+    )
+
+    delivery = forms.ChoiceField(
+        choices=((True, 'Да'), (False, 'Нет')),
+        widget=forms.RadioSelect,
+        label='Доставка',
+        initial=False  # Устанавливаем дефолтное значение как 'Да'
+    )
 
 
-class OrderAdminForm(forms.ModelForm):
+    class Meta:
+        model = Order
+        fields = ['source', 'source_id', 'amount', 'final_amount_with_shipping',
+                  'delivery', 'invoice', 'items_qty', 'discount', 'payment_type']  # Только необходимые поля
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        user = self.user
+
+        # Устанавливаем значение по умолчанию для города и ресторана
+        if self.instance.pk is None and not user.is_superuser:
+            set_admin_data(self, user)
+
+        super().__init__(*args, **kwargs)
+        user = self.user
+        # Устанавливаем значение по умолчанию для города и ресторана
+        if self.instance.pk is None and not user.is_superuser:
+            set_admin_data(self, user)
+
+        # Убираем вариант оплаты 'partner' из payment_type
+        # Нет варианта пустого значения в поле
+        if 'payment_type' in self.fields:
+            excluded_methods = ['partner']
+            filtered_payment_methods = [
+                method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
+            self.fields['payment_type'].choices = filtered_payment_methods
+
+        # Исключаем скидки на 1й заказ (1) и на оплату наличными при доставке (3)
+        if 'discount' in self.fields:
+            filtered_discounts = [(None, '---------')] + [
+                (discount.id, str(discount))
+                for discount in Discount.objects.all()
+                if discount.id not in [1, 3]
+            ]
+            self.fields['discount'].choices = filtered_discounts
+
+    def clean_delivery(self):
+        delivery_flag = True if self.data.get('delivery').lower() == 'true' else False
+        city = self.user.city
+        if delivery_flag:
+            delivery = Delivery.objects.get(
+                            city=city,
+                            type='delivery')
+
+            clarify_delivery_zone = DeliveryZone.objects.get(
+                            name='уточнить')
+            self.cleaned_data['delivery_zone'] = clarify_delivery_zone
+            self.instance.delivery_zone = clarify_delivery_zone
+
+        else:
+            delivery = Delivery.objects.get(
+                            city=city,
+                            type='takeaway')
+
+        self.cleaned_data['delivery'] = delivery
+
+        return delivery
+
+    def clean_source_id(self):
+        '''Поле source_id обязательно для заказов,
+        оформленных через партнеров и бота'''
+        source = self.data.get('source')
+        source_id = self.data.get('source_id')
+        if source in (settings.PARTNERS_LIST + ['3']):
+            if source_id in ['', None]:
+                raise forms.ValidationError(
+                    "Внесите номер заказа в источнике.")
+
+        return source_id
+
+    def clean_payment_type(self):
+        '''Поле payment_type обязательно для заказов,
+        оформленных НЕ через партнеров.'''
+        source = self.data.get('source')
+        if source in settings.PARTNERS_LIST:
+            return 'partner'
+
+        payment_type = self.data.get('payment_type')
+        if payment_type in ['', None]:
+            raise forms.ValidationError(
+                "Выберите способ оплаты.")
+
+        return payment_type
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cleaned_data['city'] = self.user.city
+        cleaned_data['restaurant'] = self.user.restaurant
+        cleaned_data['created_by'] = 2
+        cleaned_data['status'] = 'CFD'
+        self.instance.city = self.user.city
+        self.instance.restaurant = self.user.restaurant
+        self.instance.created_by = 2
+        self.instance.status = 'CFD'
+
+        if cleaned_data['source'] == '3':
+            cleaned_data['orders_bot'] = get_bot_id_by_city(self.user.city)[1]
+            self.instance.orders_bot = get_bot_id_by_city(self.user.city)[0]
+
+        if cleaned_data['source'] == 'P2-2':
+            # не та дверь платит без чека
+            cleaned_data['invoice'] = False
+            self.instance.invoice = False
+
+        return cleaned_data
+
+
+class OrderChangeForm(forms.ModelForm):
     process_comment = forms.CharField(
                 label='Ошибки при сохранении',
                 required=False,
@@ -192,6 +305,14 @@ class OrderAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         user = self.user
+
+        model_fields = {f.name: f for f in Order._meta.fields}
+        for field_name, field in model_fields.items():
+            if field_name not in self.fields:
+                formfield = field.formfield()
+                if formfield:
+                    self.fields[field_name] = formfield
+
         # Устанавливаем значение по умолчанию для города и ресторана
         if self.instance.pk is None and not user.is_superuser:
             set_admin_data(self, user)
@@ -200,18 +321,28 @@ class OrderAdminForm(forms.ModelForm):
         if self.instance is None or self.instance.process_comment is None:
             self.fields['process_comment'].widget = forms.HiddenInput()
 
-        if self.instance.pk and not user.is_superuser:
-            self.fields['delivery_zone'].queryset = get_filtered_delivery_zones(user)
-            self.fields['delivery'].queryset = get_filtered_delivery(user)
-            self.fields['courier'].widget = CourierByCityWidget(city=self.instance.city,
-                                                                is_superuser=user.is_superuser)
+        if not user.is_superuser:
 
-        # отображение способов платежа для заказа
+            self.fields['delivery'].widget = FilteredByUserAndCityWidget(
+                is_superuser=user.is_superuser,
+                city=self.instance.city,
+                model_class=Delivery,
+            )
+            self.fields['courier'].widget = FilteredByUserAndCityWidget(
+                                                city=self.instance.city,
+                                                is_superuser=user.is_superuser,
+                                                model_class=Courier)
+            self.fields['delivery_zone'].queryset = get_filtered_delivery_zones(user)
+
+        # Убираем вариант оплаты 'partner' из payment_type
+        # Есть опция None, т.к. с бота приходят заказы без выбора оплаты и при редакции нужно показывать актуальное значение
         if 'payment_type' in self.fields:
             excluded_methods = ['partner']  # Список методов, которые исключить
             filtered_payment_methods = [
-                method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
-            filtered_payment_methods.insert(0, (None, '---------'))
+                    method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
+            if self.instance.payment_type is None:
+                filtered_payment_methods.insert(0, (None, '---------'))
+
             self.fields['payment_type'].choices = filtered_payment_methods
 
         # выбор курьера только для доставки
@@ -471,7 +602,6 @@ class OrderAdminForm(forms.ModelForm):
             raise forms.ValidationError("You cannot edit orders from other restaurants.")
         return cleaned_data
 
-        return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -501,109 +631,122 @@ class OrderChangelistForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         if self.instance and self.instance.pk:
-            city = self.instance.city
-            is_superuser = request.user.is_superuser  # Проверяем, является ли текущий пользователь суперпользователем
-            # Применяем кастомный виджет для поля courier
-            self.fields['courier'].widget = CourierByCityWidget(city=city,
-                                                                is_superuser=is_superuser)
+            # Отключаем/фильтруем поле courier.
+            # Если самовывоз, то отключаем совсем.
+            # Если доставка, то выбираем курьеров по городу или все курьеры, если суперпользователь
+            if self.instance.delivery.type == 'takeaway':
+                self.fields['courier'].widget = forms.HiddenInput()
+            else:
+                city = self.instance.city
+                  # Проверяем, является ли текущий пользователь суперпользователем
+                is_superuser = request.user.is_superuser
+                # Применяем кастомный виджет для поля courier
+                self.fields['courier'].widget = FilteredByUserAndCityWidget(
+                                                    city=city,
+                                                    is_superuser=is_superuser,
+                                                    model_class=Courier)
 
-        # Отключаем поле payment_type, если источник - Glovo
-        if self.instance and self.instance.source == 'P1-1':
-            self.fields['payment_type'].widget.attrs['disabled'] = 'disabled'
+            # Отключаем поле payment_type, если источник партнер
+            if self.instance.source in settings.PARTNERS_LIST:
+                self.fields['payment_type'].widget = forms.HiddenInput()
+                self.fields['invoice'].widget = forms.HiddenInput()
 
+            # Убираем вариант оплаты 'partner' из payment_type
+            # Есть опция None, т.к. с бота приходят заказы без выбора оплаты и при редакции нужно показывать актуальное значение
+            if 'payment_type' in self.fields:
+                excluded_methods = ['partner']  # Список методов, которые исключить
+                filtered_payment_methods = [
+                        method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
+                if self.instance.payment_type is None:
+                    filtered_payment_methods.insert(0, (None, '---------'))
 
-class OrderGlovoAdminForm(forms.ModelForm):
-    class Meta:
-        model = OrderGlovoProxy
-        fields = '__all__'
-
-    def clean(self):
-        cleaned_data = super().clean()
-        cleaned_data['source'] = 'P1-1'
-        cleaned_data['delivery'] = None
-        cleaned_data['payment_type'] = 'partner'
-        cleaned_data['created_by'] = 2
-        self.instance.source = 'P1-1'
-        self.instance.delivery = Delivery.objects.get(
-                                            city=settings.DEFAULT_CITY,
-                                            type='takeaway')
-        self.instance.payment_type = 'partner'
-        self.instance.created_by = 2
-        self.instance.restaurant = self.user.restaurant
-        try:
-            if self.user.restaurant.city:
-                self.instance.city = self.user.restaurant.city
-        except Restaurant.DoesNotExist:
-            self.instance.city = self.user.city
-
-        return cleaned_data
-
-    def __init__(self, *args, **kwargs):
-        user = self.user
-        super().__init__(*args, **kwargs)
-
-        # Устанавливаем значение по умолчанию для города и ресторана
-        if self.instance.pk is None and not user.is_superuser:
-            set_admin_data(self, user)
-
-
-class OrderWoltAdminForm(forms.ModelForm):
-    class Meta:
-        model = OrderWoltProxy
-        fields = '__all__'
-
-    def clean(self):
-        cleaned_data = super().clean()
-        cleaned_data['source'] = 'P1-2'
-        cleaned_data['delivery'] = None
-        cleaned_data['payment_type'] = 'partner'
-        cleaned_data['created_by'] = 2
-        self.instance.source = 'P1-2'
-        self.instance.delivery = Delivery.objects.get(
-                                            city=settings.DEFAULT_CITY,
-                                            type='takeaway')
-        self.instance.payment_type = 'partner'
-        self.instance.created_by = 2
-
-        return cleaned_data
-
-    def __init__(self, *args, **kwargs):
-        user = self.user
-        super().__init__(*args, **kwargs)
-
-        # Устанавливаем значение по умолчанию для города и ресторана
-        if self.instance.pk is None and not user.is_superuser:
-            set_admin_data(self, user)
-
-
-class OrderSmokeAdminForm(forms.ModelForm):
-    class Meta:
-        model = OrderSmokeProxy
-        fields = '__all__'
-
-    def clean(self):
-        cleaned_data = super().clean()
-        cleaned_data['source'] = 'P2-1'
-        cleaned_data['delivery'] = None
-        cleaned_data['payment_type'] = 'partner'
-        cleaned_data['created_by'] = 2
-        self.instance.source = 'P2-1'
-        self.instance.delivery = Delivery.objects.get(
-                                            city=settings.DEFAULT_CITY,
-                                            type='takeaway')
-        self.instance.payment_type = 'partner'
-        self.instance.created_by = 2
-
-        return cleaned_data
-
-    def __init__(self, *args, **kwargs):
-        user = self.user
-        super().__init__(*args, **kwargs)
-
-        # Устанавливаем значение по умолчанию для города и ресторана
-        if self.instance.pk is None and not user.is_superuser:
-            set_admin_data(self, user)
+                self.fields['payment_type'].choices = filtered_payment_methods
 
 
 def set_admin_data(self, user):
     pass
+
+
+class BasePartnerOrderForm(forms.ModelForm):
+    source_id = forms.CharField(
+        label='ID источника',
+        required=True)
+    # поле сделано обязательным
+
+    class Meta:
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['source'].widget = forms.HiddenInput()
+        if self.instance.pk is None and not self.user.is_superuser:
+            set_admin_data(self, self.user)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        source = self.get_source_code()
+        delivery = Delivery.objects.get(
+            city=self.user.city,
+            type='takeaway'
+        )
+        cleaned_data.update({
+            'source': source,
+            'delivery': None,
+            'payment_type': 'partner',
+            'created_by': 2,
+            'status': 'CFD'
+        })
+
+        self.instance.source = source
+        self.instance.payment_type = 'partner'
+        self.instance.created_by = 2
+        self.instance.delivery = delivery
+        self.instance.restaurant = self.user.restaurant
+        self.instance.city = self.user.city
+        self.instance.status = 'CFD'
+
+        return cleaned_data
+
+    def get_source_code(self):
+        """Должен быть переопределен в дочерних классах"""
+        raise NotImplementedError
+
+
+class OrderGlovoAdminForm(BasePartnerOrderForm):
+    class Meta(BasePartnerOrderForm.Meta):
+        model = OrderGlovoProxy
+
+    def get_source_code(self):
+        return 'P1-1'
+
+
+class OrderWoltAdminForm(BasePartnerOrderForm):
+    class Meta(BasePartnerOrderForm.Meta):
+        model = OrderWoltProxy
+
+    def get_source_code(self):
+        return 'P1-2'
+
+
+class OrderSmokeAdminForm(BasePartnerOrderForm):
+    class Meta(BasePartnerOrderForm.Meta):
+        model = OrderSmokeProxy
+
+    def get_source_code(self):
+        return 'P2-1'
+
+
+class OrderNeTaDverAdminForm(BasePartnerOrderForm):
+    class Meta(BasePartnerOrderForm.Meta):
+        model = OrderNeTaDverProxy
+
+    def get_source_code(self):
+        return 'P2-2'
+
+
+class OrderSealTeaAdminForm(BasePartnerOrderForm):
+    class Meta(BasePartnerOrderForm.Meta):
+        model = OrderSealTeaProxy
+
+    def get_source_code(self):
+        return 'P3-1'
