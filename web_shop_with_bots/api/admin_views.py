@@ -14,6 +14,9 @@ from django.conf import settings
 from django.db.models import Prefetch
 
 
+STANDARD_HEIGHT_ITEMS = 6  # Standard height is based on 6 items
+
+
 @staff_member_required
 def sales_data(request):
     """Отчет по продажам за последний месяц на начальной странице.
@@ -173,26 +176,35 @@ def get_source_display(order):
 
 class PrinterCommands:
     """ESC/POS printer commands"""
-    INIT = '\x1B\x40'  # Initialize printer
-    LF = '\x0A'        # Line feed
-    CR = '\x0D'        # Carriage return
-    CRLF = '\x0D\x0A'  # Комбинируем CR и LF в одну команду
+    INIT = b'\x1B\x40'  # Initialize printer
+    LF = b'\x0A'        # Line feed
+    CR = b'\x0D'        # Carriage return
+    CRLF = b'\x0D\x0A'  # Комбинируем CR и LF в одну команду
+
+    # Кодовые страницы для кириллицы
+    CODEPAGE_CP866 = b'\x1B\x74\x11'     # ESC t 17 - DOS кириллица
 
     # Alignment
-    ALIGN_LEFT = '\x1B\x61\x00'
-    ALIGN_CENTER = '\x1B\x61\x01'
-    ALIGN_RIGHT = '\x1B\x61\x02'
+    ALIGN_LEFT = b'\x1B\x61\x00'
+    ALIGN_CENTER = b'\x1B\x61\x01'
+    ALIGN_RIGHT = b'\x1B\x61\x02'
 
     # Text format
-    BOLD_ON = '\x1B\x45\x01'
-    BOLD_OFF = '\x1B\x45\x00'
-    DOUBLE_WIDTH_ON = '\x1B\x0E'
-    DOUBLE_WIDTH_OFF = '\x1B\x14'
-    DOUBLE_HEIGHT_ON = '\x1B\x21\x10'
-    DOUBLE_HEIGHT_OFF = '\x1B\x21\x00'
+    BOLD_ON = b'\x1B\x45\x01'
+    BOLD_OFF = b'\x1B\x45\x00'
+    DOUBLE_WIDTH_ON = b'\x1B\x0E'
+    DOUBLE_WIDTH_OFF = b'\x1B\x14'
+    DOUBLE_HEIGHT_ON = b'\x1B\x21\x10'
+    DOUBLE_HEIGHT_OFF = b'\x1B\x21\x00'
+
+    # Более точные команды для размера шрифта
+    DOUBLE_HEIGHT = b'\x1B\x21\x10'  # Double height text
+    DOUBLE_WIDTH = b'\x1B\x21\x20'   # Double width text
+    DOUBLE_BOTH = b'\x1B\x21\x30'    # Double height and width
+    NORMAL_SIZE = b'\x1B\x21\x00'    # Normal size text
 
     # Paper cut
-    PARTIAL_CUT = '\x1B\x6D'
+    PARTIAL_CUT = b'\x1D\x56\x01'   # GS V 1 - Стандартная команда обрезки
 
     @classmethod
     def set_size(cls, width=1, height=1):
@@ -200,36 +212,44 @@ class PrinterCommands:
         if not (1 <= width <= 8 and 1 <= height <= 8):
             raise ValueError("Width and height must be between 1 and 8")
         size = (width - 1) | ((height - 1) << 4)
-        return f'\x1D\x21{chr(size)}'
+        return b'\x1D\x21' + bytes([size])
 
 
-def format_receipt(receipt_data):
+def format_receipt(receipt_data, codepage='CP866'):
     """Format receipt text with printer control codes for 72mm paper"""
     cmd = PrinterCommands
-    receipt = []
+    receipt = bytearray()  # Используем bytearray вместо списка строк
     LINE_WIDTH = 48  # Maximum characters per line for 72mm paper
 
     # Initialize printer and reset formatting
-    receipt.append(cmd.INIT)
-    receipt.append(cmd.set_size(1, 1))
-    receipt.append(cmd.ALIGN_LEFT)
-    receipt.append(cmd.BOLD_OFF)
+    receipt.extend(cmd.INIT)
+    receipt.extend(cmd.CODEPAGE_CP866)  # Используем CP866 как самый надежный вариант
+    receipt.extend(cmd.NORMAL_SIZE)
+    receipt.extend(cmd.ALIGN_LEFT)
+    receipt.extend(cmd.BOLD_OFF)
+
+     # Calculate how many items we have and add extra space at the top if needed
+    items_count = len(receipt_data['items'])
+
+    # If we have fewer than the standard number of items, add extra line feeds at the top
+    if items_count < STANDARD_HEIGHT_ITEMS:
+        extra_lines_needed = (STANDARD_HEIGHT_ITEMS - items_count) * 2  # Each item takes approximately 2 lines
+        for _ in range(extra_lines_needed):
+            receipt.extend(cmd.LF)
 
     # Order number - centered, large and bold
-    receipt.append(cmd.ALIGN_CENTER)
-    # Name in bold
-    receipt.append(cmd.BOLD_ON) # Добавляем жирный шрифт для номера
-    receipt.append(cmd.set_size(3, 3))  # Самый большой размер для номера
-    receipt.append(receipt_data['order_number'])
-    receipt.append(cmd.set_size(1, 1))  # Сброс размера
-    receipt.append(cmd.BOLD_OFF) # Отключаем жирный после номера
-    receipt.append(cmd.LF)  # Достаточно только LF
-    receipt.append(cmd.LF)  # Второй LF для дополнительного отступа
+    receipt.extend(cmd.ALIGN_LEFT)
+    receipt.extend(cmd.BOLD_ON)
+    receipt.extend(cmd.DOUBLE_BOTH)  # Увеличенные номера заказа
+    receipt.extend(str(receipt_data['order_number']).encode('cp866'))
+    receipt.extend(cmd.NORMAL_SIZE)
+    receipt.extend(cmd.BOLD_OFF)
+    receipt.extend(cmd.LF)
+    receipt.extend(cmd.LF)
 
     # Menu items - left aligned
-    # А вот для выровненного по левому/правому краю текста нужен CR+LF
-    receipt.append(cmd.ALIGN_LEFT)
-    receipt.append(cmd.set_size(1, 2))  # Средний размер для блюд
+    receipt.extend(cmd.ALIGN_LEFT)
+    receipt.extend(cmd.DOUBLE_HEIGHT)  # Средний размер для блюд
     for item in receipt_data['items']:
         name = item['name'].upper()
         qty = str(item['quantity'])
@@ -238,41 +258,43 @@ def format_receipt(receipt_data):
         available_space = LINE_WIDTH - len(name) - len(qty)
         dots = '.' * available_space if available_space > 0 else ' '
 
-        receipt.append(name)
-        receipt.append(dots)
-        receipt.append(qty)
-        receipt.append(cmd.CRLF)
+        line = name + dots + qty
+        receipt.extend(line.encode('cp866'))
+        receipt.extend(cmd.CRLF)
 
-    receipt.append(cmd.set_size(1, 1))  # Сброс размера
-    receipt.append(cmd.LF)
+    receipt.extend(cmd.NORMAL_SIZE)
+    receipt.extend(cmd.LF)
 
     # Service info - left aligned
-    receipt.append(cmd.ALIGN_LEFT)
-    receipt.append(f"приборы - {receipt_data['persons_qty']} шт.")
-    receipt.append(cmd.CRLF)
+    receipt.extend(cmd.ALIGN_LEFT)
+    service_text = f"приборы - {receipt_data['persons_qty']} шт."
+    receipt.extend(service_text.encode('cp866'))
+    receipt.extend(cmd.CRLF)
 
     # Address
-    receipt.append(receipt_data['customer']['address'])
-    receipt.append(cmd.CRLF)
+    address_text = receipt_data['customer']['address']
+    receipt.extend(address_text.encode('cp866'))
+    receipt.extend(cmd.CRLF)
 
     # Partner info if exists - right aligned
     if receipt_data['source_data']:
-        receipt.append(cmd.ALIGN_RIGHT)
-        receipt.append(cmd.set_size(2, 2))  # Увеличенный размер для источника
-        receipt.append(cmd.BOLD_ON)     # Добавляем жирный шрифт для номера
+        receipt.extend(cmd.ALIGN_RIGHT)
+        receipt.extend(cmd.DOUBLE_WIDTH)  # Увеличенный размер для источника
+        receipt.extend(cmd.BOLD_ON)
         source_text = receipt_data['source_data']
         if len(source_text) > LINE_WIDTH:
             source_text = source_text[-LINE_WIDTH:]
-        receipt.append(source_text)
-        receipt.append(cmd.set_size(1, 1))  # Сброс размера
-        receipt.append(cmd.BOLD_OFF)    # Отключаем жирный после номера
-        receipt.append(cmd.CRLF)
+        receipt.extend(source_text.encode('cp866'))
+        receipt.extend(cmd.NORMAL_SIZE)
+        receipt.extend(cmd.BOLD_OFF)
+        receipt.extend(cmd.CRLF)
 
     # Feed and cut
-    receipt.append(cmd.LF * 5)     # Extra feed for clean cut
-    receipt.append(cmd.PARTIAL_CUT)
+    for _ in range(5):
+        receipt.extend(cmd.LF)  # Extra feed for clean cut
+    receipt.extend(cmd.PARTIAL_CUT)
 
-    return ''.join(receipt)
+    return receipt
 
 
 @api_view(['GET'])
@@ -281,21 +303,30 @@ def format_receipt(receipt_data):
 def get_formatted_receipt(request, order_id):
     """Get fully formatted receipt ready for printing"""
     try:
+        # Всегда используем CP866 для надежности
+        codepage = 'CP866'
+
         # Получаем данные чека
         receipt_response = get_receipt_data(order_id)
         if isinstance(receipt_response, Response) and receipt_response.status_code != 200:
             return receipt_response
 
         receipt_data = receipt_response.data
-        formatted_receipt = format_receipt(receipt_data)
+        formatted_receipt = format_receipt(receipt_data, codepage)
+
+        # Преобразуем бинарные данные в строку для передачи через API
+        # Используем base64 для кодирования бинарных данных
+        import base64
+        encoded_receipt = base64.b64encode(formatted_receipt).decode('ascii')
 
         return Response({
-            'receipt_text': formatted_receipt,
+            'receipt_text': encoded_receipt,
+            'is_binary': True,  # Флаг, указывающий, что данные закодированы в base64
             'printer_settings': {
-                'codepage': 'CP866',    # Кодировка для кириллицы
-                'chars_per_line': 48,   # Ширина чека в символах
-                'paper_width': 72,      # Ширина бумаги в мм
-                'cut_paper': True       # Обрезка чека
+                'codepage': 'CP866',
+                'chars_per_line': 48,
+                'paper_width': 72,
+                'cut_paper': True
             }
         })
 

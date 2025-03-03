@@ -97,7 +97,23 @@ class OrderAdmin(admin.ModelAdmin):
 
     def custom_order_number(self, obj):
         # return custom_order_number(obj)
-        return obj.order_number
+        # return obj.order_number
+        # Формируем номер заказа
+        order_number = obj.order_number
+
+        # Добавляем кнопку печати под номером
+        print_button = format_html(
+            '<button type="button" class="print-button" data-id="{}" style="margin-top:5px;">'
+            '🖨️</button>',
+            obj.id
+        )
+
+        # Объединяем номер и кнопку с переносом строки между ними
+        return format_html(
+            '{}<br>{}',
+            order_number,
+            print_button
+        )
     custom_order_number.short_description = '№'
 
     def warning(self, obj):
@@ -111,7 +127,7 @@ class OrderAdmin(admin.ModelAdmin):
                     and obj.courier is None):
             help_text.append("Не назначен курьер.\n")
 
-        if obj.payment_type is None:
+        if obj.source not in settings.PARTNERS_LIST and obj.payment_type is None:
             help_text.append("Тип оплаты не определен.\n")
 
         if obj.process_comment:
@@ -154,7 +170,7 @@ class OrderAdmin(admin.ModelAdmin):
                 '<span style="color:red;" title="{}">!!!</span>',
                 obj.final_amount_with_shipping)
         return obj.final_amount_with_shipping
-    custom_total.short_description = format_html('Сумма<br>заказа, DIN')
+    custom_total.short_description = format_html('Сумма<br>заказа,<br>DIN')
 
     def note(self, obj):
         if obj.source in ['3'] + settings.PARTNERS_LIST:
@@ -171,7 +187,7 @@ class OrderAdmin(admin.ModelAdmin):
             else:
                 return '❓нет ID'
         return ''
-    note.short_description = 'Примечание'
+    note.short_description = 'Примеч'
 
     def custom_delivery_cost(self, obj):
         #return obj.delivery_cost if obj.delivery_cost != 0 else ''
@@ -206,16 +222,6 @@ class OrderAdmin(admin.ModelAdmin):
     get_contacts.allow_tags = True
     get_contacts.short_description = 'Контакты'
 
-    def print_button(self, obj):
-        """Adds print button to each row"""
-        return format_html(
-            '<button type="button" class="print-button" data-id="{}">'
-            '🖨️</button>',
-            obj.id
-        )
-    print_button.short_description = 'Печать'
-    print_button.allow_tags = True
-
     list_display = ('custom_order_number', 'warning',
                     'info',
                     'custom_total',
@@ -223,8 +229,7 @@ class OrderAdmin(admin.ModelAdmin):
                     'payment_type', 'invoice', 'custom_delivery_cost',
                     'status', 'courier',
                     'get_contacts',
-                    'get_delivery_type',
-                    'print_button')  # Добавляем кнопку печати в список
+                    'get_delivery_type')  # Добавляем кнопку печати в список
     list_editable = ['status', 'invoice', 'courier', 'payment_type']
     # list_display_links = ('custom_order_number',)
     readonly_fields = [
@@ -613,6 +618,8 @@ class OrderAdmin(admin.ModelAdmin):
             request, obj)
 
 
+
+
 class OrderDishPartnerInline(admin.TabularInline):
     model = OrderDish
     min_num = 1
@@ -630,8 +637,8 @@ class OrderDishPartnerInline(admin.TabularInline):
 
 
 class BaseOrderProxyAdmin(admin.ModelAdmin):
-    list_display = ('order_number', 'status', 'custom_total', 'note')
-    list_editable = ['status']
+    list_display = ('order_number', 'status', 'custom_total', 'note', 'invoice')
+    list_editable = ['status', 'invoice']
     list_display_links = ('order_number',)
     readonly_fields = ['items_qty', 'amount', 'created', 'order_number', 'final_amount_with_shipping']
     list_filter = (('created', DateRangeQuickSelectListFilter), 'status')
@@ -646,7 +653,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
 
     class Media:
         js = (
-            'my_admin/js/shop/calculate_add_order_fields.js',
+            'my_admin/js/shop/orderdishes_management.js',
         )
 
     # def custom_order_number(self, obj):
@@ -717,7 +724,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
             return [
                 ('Данные заказа', {
                     'fields': (
-                        ('source_id', 'source'),
+                        ('source_id', 'source', 'invoice'),
                         ('final_amount_with_shipping', 'items_qty')
                     )
                 }),
@@ -754,6 +761,12 @@ class OrderSmokeProxyAdmin(BaseOrderProxyAdmin):
 class OrderNeTaDverProxyAdmin(BaseOrderProxyAdmin):
     form = OrderNeTaDverAdminForm
     source_code = 'P2-2'
+
+    def get_changeform_initial_data(self, request):
+        initial_data = super().get_changeform_initial_data(request)
+        initial_data['invoice'] = False  # Set default value for invoice field
+        return initial_data
+
 
 @admin.register(OrderSealTeaProxy)
 class OrderSealTeaProxyAdmin(BaseOrderProxyAdmin):

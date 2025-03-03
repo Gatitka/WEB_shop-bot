@@ -9,8 +9,6 @@
 ///////////////////////////////////////////////   ПОЛУЧЕНИЕ ЦЕН
 document.addEventListener('DOMContentLoaded', function() {
 
-    var fetchedDiscounts = {}; // Объект для хранения полученных скидок
-
     // Функция для получения текущего домена
     function getCurrentDomain() {
         return window.location.hostname;
@@ -18,14 +16,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const currentDomain = getCurrentDomain();
 
+    var fetchedDiscounts = {}; // Объект для хранения полученных скидок
+
     // Функция для выполнения запроса к эндпоинту и сохранения данных о скидке
     function fetchDiscounts() {
         let discountsApiUrl; // URL вашего API эндпоинта
         if (currentDomain === '127.0.0.1') {
-            discountsApiUrl = `http://${currentDomain}:8000/api/v1/get_discounts/`;
-        } else {
-            discountsApiUrl = `https://${currentDomain}/api/v1/get_discounts/`;
-        }
+                discountsApiUrl = `http://${currentDomain}:8000/api/v1/get_discounts/`;
+            } else {
+                discountsApiUrl = `https://${currentDomain}/api/v1/get_discounts/`;
+            }
 
         fetch(discountsApiUrl)
             .then(response => response.json())
@@ -118,36 +118,105 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var orderdishesTable = document.querySelector('.module table tbody');
 
-    orderdishesTable.addEventListener('click', function(event) {
-        if (event.target.classList.contains('inline-deletelink')) {
-            console.log('Delete link clicked.');
-            var row = event.target.closest('.form-row.dynamic-orderdishes'); // Находим родительскую строку
-            console.log('Row to delete:', row);
-            var unitAmount = parseFloat(row.querySelector('.field-unit_amount p').textContent); // Получаем стоимость товара
-            console.log('Unit amount:', unitAmount);
-            var amountField = document.querySelector('.field-amount .readonly'); // Получаем поле для общей суммы заказа
-            console.log('Amount field:', amountField);
-            var currentTotalAmount = parseFloat(amountField.textContent); // Получаем текущую общую сумму заказа
-            console.log('Current total amount:', currentTotalAmount);
-            var newTotalAmount = currentTotalAmount - unitAmount; // Вычитаем стоимость товара из общей суммы заказа
-            console.log('New total amount:', newTotalAmount);
-            amountField.textContent = newTotalAmount.toFixed(2); // Обновляем общую сумму
-            row.remove(); // Удаляем строку из таблицы
-            console.log('Row removed.');
+    document.addEventListener('click', function(event) {
+        // Проверяем, был ли клик по ссылке удаления
+        if (event.target.classList.contains('inline-deletelink') ||
+            (event.target.parentElement && event.target.parentElement.classList.contains('inline-deletelink'))) {
+
+            console.log('Delete link clicked (delegated).');
+
+            // Нам нужна небольшая задержка, чтобы дать Django Admin обработать удаление
+            setTimeout(function() {
+                console.log('Running updateOrderAmount after delete');
+                updateOrderAmount();
+            }, 100);
         }
     });
 
+    // Также добавляем MutationObserver для отслеживания изменений в таблице
+    var orderdishesGroup = document.getElementById('orderdishes-group');
+    if (orderdishesGroup) {
+        var observer = new MutationObserver(function(mutations) {
+            for (var mutation of mutations) {
+                if (mutation.type === 'childList') {
+                    console.log('DOM mutation detected', mutation);
+                    // Проверяем, было ли удаление элементов
+                    if (mutation.removedNodes.length > 0) {
+                        console.log('Nodes were removed', mutation.removedNodes);
+
+                        // Проверяем, был ли удален элемент с классом dynamic-orderdishes
+                        var wasOrderDishRemoved = false;
+                        mutation.removedNodes.forEach(function(node) {
+                            if (node.nodeType === 1 && node.classList && node.classList.contains('dynamic-orderdishes')) {
+                                wasOrderDishRemoved = true;
+                            }
+                        });
+
+                        if (wasOrderDishRemoved) {
+                            console.log('OrderDish was removed, updating amounts');
+                            updateOrderAmount();
+                        }
+                    }
+                }
+            }
+        });
+
+        // Наблюдаем за изменениями в таблице
+        var tableBody = orderdishesGroup.querySelector('table tbody');
+        if (tableBody) {
+            observer.observe(tableBody, {
+                childList: true,
+                subtree: true
+            });
+            console.log('MutationObserver attached to', tableBody);
+        }
+    }
 
     // Функция для обновления суммы заказа
     function updateOrderAmount() {
         var unitAmountFields = document.querySelectorAll('.field-unit_amount p');
         var totalAmount = 0;
+        var itemsCount = 0;
+
         unitAmountFields.forEach(function(field) {
-            totalAmount += parseFloat(field.textContent);
+            var fieldValue = parseFloat(field.textContent);
+            if (!isNaN(fieldValue)) {
+                totalAmount += fieldValue;
+
+                // Подсчет количества позиций
+                var quantityInput = field.closest('tr').querySelector('.field-quantity input');
+                if (quantityInput) {
+                    var qty = parseInt(quantityInput.value, 10);
+                    if (!isNaN(qty) && qty > 0) {
+                        itemsCount += qty;
+                    }
+                }
+            }
         });
 
-        var amountField = document.querySelector('.field-amount .readonly');
-        amountField.textContent = totalAmount.toFixed(2);
+        // Обновляем все поля корректно по их конкретным селекторам
+
+        // 1. Поле суммы заказа до скидки или итоговой суммы с учетом скидок и доставки
+        // Получаем значение source для определения, какое поле обновлять
+
+        // Обновляем соответствующее поле в зависимости от источника
+        var amountField = document.querySelector('.fieldBox.field-amount .readonly');
+
+        if (amountField) {
+            amountField.textContent = totalAmount.toFixed(2);
+        }
+
+        // 2. Поле количества позиций
+        var itemsQtyField = document.querySelector('.fieldBox.field-items_qty .readonly');
+        if (itemsQtyField) {
+            itemsQtyField.textContent = itemsCount;
+        }
+
+        // Генерируем событие об изменении суммы
+        const event = new CustomEvent('amountChanged', {
+            detail: { amount: totalAmount }
+        });
+        document.dispatchEvent(event);
     }
 
     // Функция выбора цены в зависимости от источника заказа
@@ -204,10 +273,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Создаем экземпляр MutationObserver для отслеживания изменений в элементе '.field-amount .readonly'
     // Элемент '.field-amount .readonly', за которым нужно следить
-    var amountField = document.querySelector('.field-amount .readonly');
+    var amountField = document.querySelector('.fieldBox.field-amount .readonly');
     var amountObserver = new MutationObserver(function(mutationsList) {
         for (var mutation of mutationsList) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
+                calculateDiscountAmount();
                 calculateDiscountedAmount();
             }
         }
@@ -217,8 +287,14 @@ document.addEventListener('DOMContentLoaded', function() {
         amountObserver.observe(amountField, { attributes: false, childList: true, subtree: true });
     }
 
-    // Создаем экземпляр MutationObserver для отслеживания изменений в элементе '.field-amount .readonly'
-    // Элемент '.field-amount .readonly', за которым нужно следить
+    // Слушаем изменения в поле суммы заказа
+    document.addEventListener('amountChanged', function() {
+        calculateDiscountAmount();
+        calculateDiscountedAmount();
+    });
+
+
+    // Создаем экземпляр MutationObserver для отслеживания изменений в элементе '.field-discount_amount .readonly'
     var discountField = document.querySelector('.field-discount_amount .readonly');
     var discountObserver = new MutationObserver(function(mutationsList) {
         for (var mutation of mutationsList) {
@@ -228,8 +304,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     if (discountField) {
-        discountObserver.observe(amountField, { attributes: false, childList: true, subtree: true });
+        discountObserver.observe(discountField, { attributes: false, childList: true, subtree: true }); // Исправлено - наблюдаем за discountField
     }
+
 
     // .field-promocode_disc_amount .readonly'
 
@@ -250,8 +327,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Функция для расчета и отображения скидки
     function calculateDiscountAmount() {
-        var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent);
-        var discountField = document.querySelector('.field-discount_amount .readonly');
+        // Если это первоначальный расчет (поле уже имеет значение) и скидки еще не загружены,
+        // то не пересчитываем и используем установленное значение
+        if (Object.keys(fetchedDiscounts).length === 0 && discountField.textContent.trim() !== '') {
+            console.log('Using existing discount value:', discountField.textContent);
+            return parseFloat(discountField.textContent) || 0;
+        }
+
+        var amountField = parseFloat(document.querySelector('.fieldBox.field-amount .readonly').textContent);
+        var discountField = document.querySelector('.fieldBox.field-discount_amount .readonly');
         var discountRadioButtons = document.querySelectorAll('input[name="discount"]');
         var discountAmount = 0;
 
@@ -274,15 +358,30 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Discount Amount:', discountAmount);
 
             discountField.textContent = discountAmount.toFixed(2);
+            return discountAmount;
         });
     }
 
     // Функция для расчета суммы с учетом скидок
     function calculateDiscountedAmount() {
-        var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent) || 0;
-        var discountAmount = parseFloat(document.querySelector('.field-discount_amount .readonly').textContent) || 0;
-        var manualDisc = parseFloat(document.getElementById('id_manual_discount').value) || 0;
-        var discAmount = amountField - discountAmount - manualDisc;   // - promocodeDisc
+        // Получаем элементы с проверкой на существование
+        const amountFieldElement = document.querySelector('.field-amount .readonly');
+        const discountFieldElement = document.querySelector('.field-discount_amount .readonly');
+        const manualDiscountElement = document.getElementById('id_manual_discount');
+        const discountedAmountElement = document.querySelector('.field-discounted_amount .readonly');
+
+        // Если нужные элементы не найдены, выходим из функции
+        if (!amountFieldElement || !discountedAmountElement) {
+            console.log('Необходимые DOM-элементы не найдены для расчета скидки');
+            return;
+        }
+
+        // Получаем значения с проверкой на существование элементов
+        const amountField = parseFloat(amountFieldElement.textContent) || 0;
+        const discountAmount = discountFieldElement ? parseFloat(discountFieldElement.textContent) || 0 : 0;
+        const manualDisc = manualDiscountElement ? parseFloat(manualDiscountElement.value) || 0 : 0;
+
+        const discAmount = amountField - discountAmount - manualDisc;
 
         console.log('Amount:', amountField);
         console.log('Discount Amount:', discountAmount);

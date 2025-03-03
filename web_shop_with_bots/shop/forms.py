@@ -109,14 +109,6 @@ class OrderAddForm(forms.ModelForm):
         if self.instance.pk is None and not user.is_superuser:
             set_admin_data(self, user)
 
-        # Убираем вариант оплаты 'partner' из payment_type
-        # Нет варианта пустого значения в поле
-        if 'payment_type' in self.fields:
-            excluded_methods = ['partner']
-            filtered_payment_methods = [
-                method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
-            self.fields['payment_type'].choices = filtered_payment_methods
-
         # Исключаем скидки на 1й заказ (1) и на оплату наличными при доставке (3)
         if 'discount' in self.fields:
             filtered_discounts = [(None, '---------')] + [
@@ -165,7 +157,10 @@ class OrderAddForm(forms.ModelForm):
         оформленных НЕ через партнеров.'''
         source = self.data.get('source')
         if source in settings.PARTNERS_LIST:
-            return 'partner'
+            if source == 'P2-2':
+                return 'cash'
+            else:
+                return None
 
         payment_type = self.data.get('payment_type')
         if payment_type in ['', None]:
@@ -189,15 +184,11 @@ class OrderAddForm(forms.ModelForm):
             cleaned_data['orders_bot'] = get_bot_id_by_city(self.user.city)[1]
             self.instance.orders_bot = get_bot_id_by_city(self.user.city)[0]
 
-        if cleaned_data['source'] == 'P2-2':
-            # не та дверь платит без чека
-            cleaned_data['invoice'] = False
-            self.instance.invoice = False
-
         return cleaned_data
 
 
 class OrderChangeForm(forms.ModelForm):
+
     process_comment = forms.CharField(
                 label='Ошибки при сохранении',
                 required=False,
@@ -333,17 +324,6 @@ class OrderChangeForm(forms.ModelForm):
                                                 is_superuser=user.is_superuser,
                                                 model_class=Courier)
             self.fields['delivery_zone'].queryset = get_filtered_delivery_zones(user)
-
-        # Убираем вариант оплаты 'partner' из payment_type
-        # Есть опция None, т.к. с бота приходят заказы без выбора оплаты и при редакции нужно показывать актуальное значение
-        if 'payment_type' in self.fields:
-            excluded_methods = ['partner']  # Список методов, которые исключить
-            filtered_payment_methods = [
-                    method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
-            if self.instance.payment_type is None:
-                filtered_payment_methods.insert(0, (None, '---------'))
-
-            self.fields['payment_type'].choices = filtered_payment_methods
 
         # выбор курьера только для доставки
         # if self.instance and self.instance.delivery.type == 'takeaway':
@@ -621,6 +601,17 @@ class OrderChangelistForm(forms.ModelForm):
         required=False
     )
 
+    status = forms.ChoiceField(
+        choices=[
+            ('WCO', 'Ожид подтв'),    # Ожидает подтверждения
+            ('CFD', 'Подтв'),         # Подтвержден
+            ('DLD', 'Доставл'),       # Доставляется
+            ('CND', 'Отмен'),         # Отменен
+        ],
+        widget=forms.Select(),
+        required=False
+    )
+
     class Meta:
         model = Order
         fields = ['status', 'invoice', 'courier', 'payment_type']
@@ -648,19 +639,12 @@ class OrderChangelistForm(forms.ModelForm):
 
             # Отключаем поле payment_type, если источник партнер
             if self.instance.source in settings.PARTNERS_LIST:
-                self.fields['payment_type'].widget = forms.HiddenInput()
-                self.fields['invoice'].widget = forms.HiddenInput()
-
-            # Убираем вариант оплаты 'partner' из payment_type
-            # Есть опция None, т.к. с бота приходят заказы без выбора оплаты и при редакции нужно показывать актуальное значение
-            if 'payment_type' in self.fields:
-                excluded_methods = ['partner']  # Список методов, которые исключить
-                filtered_payment_methods = [
-                        method for method in settings.PAYMENT_METHODS if method[0] not in excluded_methods]
-                if self.instance.payment_type is None:
-                    filtered_payment_methods.insert(0, (None, '---------'))
-
-                self.fields['payment_type'].choices = filtered_payment_methods
+                if self.instance.source != 'P2-2':
+                    self.fields['payment_type'].widget = forms.HiddenInput()
+                    # Не та дверь идет без чека, поэтому оставим для визуальной проверки
+                    self.fields['invoice'].widget = forms.HiddenInput()
+                else:
+                    self.fields['payment_type'].widget.attrs['disabled'] = 'disabled'
 
 
 def set_admin_data(self, user):
@@ -692,13 +676,11 @@ class BasePartnerOrderForm(forms.ModelForm):
         cleaned_data.update({
             'source': source,
             'delivery': None,
-            'payment_type': 'partner',
             'created_by': 2,
             'status': 'CFD'
         })
 
         self.instance.source = source
-        self.instance.payment_type = 'partner'
         self.instance.created_by = 2
         self.instance.delivery = delivery
         self.instance.restaurant = self.user.restaurant

@@ -741,10 +741,10 @@ ORDER_STATUS_TRANSLATIONS = {
 }
 
 PAYMENT_METHODS = [
+    (None, '-------'),
     ('cash', 'cash'),
     ('card_on_delivery', 'card_on_delivery'),
-    ('card', 'card'),
-    ('partner', 'partner')
+    ('card', 'card')
 ]
 
 SOURCE_TYPES = [
