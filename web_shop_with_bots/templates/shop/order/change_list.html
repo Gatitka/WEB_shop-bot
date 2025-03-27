@@ -18,7 +18,7 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td style="background-color:rgba(255, 250, 205, 0.30);" rowspan="3">самовывоз</td>
+                            <td style="background-color:rgba(255, 250, 205, 0.30);" rowspan="3">Самовывоз</td>
                             <td>безнал</td>
                             <td>{{ takeaway_nocash }}</td>
                         </tr>
@@ -31,63 +31,32 @@
                             <td>{{ takeaway_card }}</td>
                         </tr>
                         <tr>
-                            <td>курьеры (бн + н)</td>
+                            <td>Курьеры (бн + н)</td>
                             <td colspan="2">{{ total_curiers }}</td>
                         </tr>
                         <tr>
-                            <td>po terminalu</td>
+                            <td>Po terminalu</td>
                             <td colspan="2">{{ total_terminal }}</td>
                         </tr>
-                        <!-- Total row - using the custom filter -->
-                        <tr class="total-cashless-sum-row">
+                        <tr>
                             <td>Drugo bezgotovinsko:</td>
-                            <td class="numeric">{{ drugo_bezgotovinsko|floatformat:2 }}</td>
+                            <td colspan="2" class="numeric">{{ drugo_bezgotovinsko|floatformat:2 }}</td>
                         </tr>
-                        <!-- SMOKE partner row if exists -->
-                        <tr class="smoke-row">
-                            <td>SMOKE</td>
-                            <td class="numeric">
-                                <input type="number" id="smoke-value" class="smoke-input" value="0" step="0.01" min="0">
-                            </td>
-                        </tr>
-
                         <!-- Total row - using the custom filter -->
-                        <tr class="total-sum-row">
+                        <tr>
                             <td>Итого Н:</td>
-                            <td class="numeric">{{ total_cash|floatformat:2 }}</td>
+                            <td colspan="2" class="numeric">{{ total_cash|floatformat:2 }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
             <!-- Правая колонка с таблицами партнеров и курьеров -->
-            <div style="flex: 1;">
-                <!-- Таблица партнеров -->
-                {% if partners %}
-                <div style="margin-bottom: 10px;">
-                    <table class="model-table secondary-table">
-                        <thead>
-                            <tr>
-                                {% for partner_name in partners.keys %}
-                                    <th style="background: linear-gradient(rgba(232, 245, 233, 0.3), rgba(255, 205, 210, 0.3))">{{ partner_name }}</th>
-                                {% endfor %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                {% for amount in partners.values %}
-                                    <td>{{ amount }}</td>
-                                {% endfor %}
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                {% endif %}
-
-                <!-- Таблица курьеров -->
+            <div style="flex: 1; display: flex; flex-direction: column;">
+                <!-- Таблица курьеров (на всю ширину) -->
                 {% if couriers %}
-                <div style="margin-bottom: 50px;">
-                    <table class="model-table secondary-table">
+                <div style="margin-bottom: 20px; width: 100%;">
+                    <table id="couriers-table" class="model-table secondary-table">
                         <thead>
                             <tr>
                                 <th style="width: 60px; background-color: transparent;"></th>
@@ -146,6 +115,47 @@
                     </table>
                 </div>
                 {% endif %}
+
+                <!-- Таблица партнеров (фиксированная ширина) -->
+                {% if partners %}
+                <div style="margin-bottom: 15px; max-width: 400px;">
+                    <table id="partners-table" class="model-table secondary-table">
+                        <thead>
+                            <tr>
+                                {% for partner_name in partners.keys %}
+                                    <th style="background: linear-gradient(rgba(232, 245, 233, 0.3), rgba(255, 205, 210, 0.3))">{{ partner_name }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                {% for amount in partners.values %}
+                                    <td>{{ amount }}</td>
+                                {% endfor %}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- Таблица Smoke, РАСХОДЫ (фиксированная ширина) -->
+                <div style="max-width: 400px;">
+                    <table id="calculations-table" class="model-table summary-table">
+                        <tbody>
+                            <tr>
+                                <td style="width: 80px; font-weight: bold; vertical-align: middle; text-align: right;">SMOKE:</td>
+                                <td style="width: 80px;">
+                                    <input type="number" id="smoke-value" class="smoke-input" value="0" step="0.01" min="0" style="width: 80px;">
+                                </td>
+
+                                <td style="width: 80px; font-weight: bold; vertical-align: middle; text-align: right;">РАСХОДЫ:</td>
+                                <td style="width: 150px;">
+                                    <input type="number" id="expenses-value" class="smoke-input" value="0" step="0.01" min="0" style="width: 80px;">
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- Кнопки в правом верхнем углу -->

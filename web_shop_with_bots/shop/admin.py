@@ -16,7 +16,7 @@ from .admin_utils import (
     get_addchange_extra_context,
     my_get_object,
     my_get_queryset,
-    DeliveryTypeFilter, InvoiceFilter)
+    DeliveryTypeFilter, InvoiceFilter, CourierFilter)
 from django.core.exceptions import ValidationError
 from .utils import get_flag, custom_source, custom_order_number
 from rangefilter.filters import (
@@ -260,8 +260,8 @@ class OrderAdmin(admin.ModelAdmin):
                        'get_delivery_cost'
                        ]
     list_filter = (('created', DateRangeQuickSelectListFilter),
-                   DeliveryTypeFilter, InvoiceFilter,
-                   'status', 'source', 'city', 'courier', 'payment_type')
+                   DeliveryTypeFilter, InvoiceFilter, CourierFilter,
+                   'status', 'source', 'city', 'payment_type')
     search_fields = ('recipient_phone', 'msngr_account__msngr_username',
                      'recipient_name', 'source_id', 'id')
     inlines = (OrderDishInline,)

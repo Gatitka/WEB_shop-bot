@@ -1,5 +1,5 @@
 from .models import Order
-from delivery_contacts.models import Restaurant, DeliveryZone
+from delivery_contacts.models import Restaurant, DeliveryZone, Courier
 from delivery_contacts.utils import get_google_api_key
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -351,7 +351,9 @@ def get_report_data(orders_list):
     total_curiers_show = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash')
     total_curiers = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash' and order.invoice is True)
     total_terminal = total_amount - total_nocash - total_smoke - total_curiers
+
     curiers = get_couriers_data(delivery_orders)
+
     total_cash = get_cash_report_total(curiers, takeaway_nocash, _takeaway_gotovina)
     drugo_bezgotovinsko = get_bezgotovinsko_report_total(curiers, partners)
 
@@ -387,6 +389,9 @@ def get_couriers_data(delivery_orders):
         'total_bezgotovinsko': Dec,
         }
     """
+
+    if not delivery_orders:
+        return {'Нет курьеров': [0, False, 0, 0, 0, 0, 0]}
 
     couriers = {}
 
@@ -445,7 +450,8 @@ def get_cash_report_total(curiers, takeaway_nocash, takeaway_gotovina):
     total_cash = Decimal('0')
 
     # суммируем курьеров
-    total_cash += curiers['total_cash']
+    if 'total_cash' in curiers:
+        total_cash += curiers['total_cash']
     # прибавляем безнал, gotovina
     total_cash += takeaway_nocash
     total_cash += takeaway_gotovina
@@ -457,7 +463,8 @@ def get_bezgotovinsko_report_total(curiers, partners):
     drugo_bezgotovinsko = Decimal('0')
 
     # суммируем курьеров
-    drugo_bezgotovinsko += curiers['total_bezgotovinsko']
+    if 'total_bezgotovinsko' in curiers:
+        drugo_bezgotovinsko += curiers['total_bezgotovinsko']
     # прибавляем партнеров
     for partner, total_value in partners.items():
         if partner in ['Glovo', 'Wolt']:
@@ -670,3 +677,23 @@ class InvoiceFilter(admin.SimpleListFilter):
         if self.value():
             return queryset.filter(invoice=self.value())
         return queryset
+
+
+class CourierFilter(admin.SimpleListFilter):
+    title = 'Курьер'
+    parameter_name = 'courier'
+
+    def lookups(self, request, model_admin):
+        couriers = Courier.objects.all()
+        choices = [(c.id, str(c)) for c in couriers]
+        # Добавляем "нет" вместо "-" для случая None
+        choices.append((None, '-------'))
+        return choices
+
+    def queryset(self, request, queryset):
+        if self.value() is None:
+            return queryset
+        elif self.value() == 'None':  # Для случая "нет курьера"
+            return queryset.filter(courier__isnull=True)
+        else:
+            return queryset.filter(courier=self.value())
