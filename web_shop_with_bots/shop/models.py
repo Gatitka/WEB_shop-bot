@@ -51,9 +51,16 @@ class Order(models.Model):
         blank=True, null=True
     )
     created = models.DateTimeField(
-        'Дата добавления',
+        'Дата создания',
         auto_now_add=True
+        # default=timezone.now,
+        # editable=True  # Explicitly make it editable
     )
+    # execution_date = models.DateField(
+    #     'Дата выполнения',
+    #     null=True,
+    #     blank=True
+    # )
     status = models.CharField(
         max_length=3,
         verbose_name="Статус",
@@ -69,12 +76,12 @@ class Order(models.Model):
 
     recipient_name = models.CharField(
         max_length=400,
-        verbose_name='имя получателя *',
+        verbose_name='имя получателя',
         # validators=[validate_first_and_last_name,], из-за бота
         blank=True, null=True
     )
     recipient_phone = models.CharField(
-        verbose_name='телефон получателя *',
+        verbose_name='телефон получателя',
         max_length=128,
         help_text="Внесите телефон, прим. '+38212345678'.",
         blank=True, null=True
@@ -89,7 +96,7 @@ class Order(models.Model):
         Delivery,
         on_delete=models.PROTECT,
         related_name='orders',
-        verbose_name='доставка *',
+        verbose_name='доставка',
         default=1
     )
     delivery_db = models.CharField(
@@ -110,7 +117,6 @@ class Order(models.Model):
     )
     delivery_cost = models.DecimalField(
         verbose_name='стоимость доставки',
-        help_text="Посчитается автоматически. Для доставки будет +, для самовывоза -.",
         default=0,
         max_digits=7, decimal_places=2,
         blank=True, null=True,
@@ -229,8 +235,8 @@ class Order(models.Model):
     #     max_digits=8, decimal_places=2
     # )
     manual_discount = models.DecimalField(
-        verbose_name='Доп скидка, DIN',
-        help_text="Опциональная доп скидка вводится вручную в формате '0000.00'.<br>Добавится к скидке/промокоду.",
+        verbose_name='Доп скидка, %',
+        help_text="Доп скидка вводится вручную прим.'10.00'.<br>",
         default=0,
         null=True,
         max_digits=8, decimal_places=2
@@ -315,7 +321,7 @@ class Order(models.Model):
     source_id = models.CharField(
         'ID источника',
         max_length=20,
-        help_text="ID заказа в системе-источнике (Bot/Wolt/Glovo/Smoke).",
+        help_text="ID заказа в системе-источнике<br>(TmBot/Wolt/Glovo/Smoke/NeTa/SealTea).",
         null=True, blank=True,
     )
     msngr_account = models.ForeignKey(
@@ -393,7 +399,7 @@ class Order(models.Model):
             self.discount_amount = Decimal(0)
             self.total_discount_amount = promocode_disc_am
 
-    def calculate_discontinued_amount(self):
+    def calculate_discontinued_amount(self, is_admin_mode=False):
         """
         Рассчитывает final_amount с учетом спец скидок от промокода.
         """
@@ -403,7 +409,7 @@ class Order(models.Model):
             get_promocode_results(self.amount_with_shipping, self.promocode)
         )
 
-        if self.source not in ['1', '3', '4']:
+        if self.source in settings.PARTNERS_LIST:
             self.discounted_amount = self.amount
             self.amount_with_shipping = self.amount
             return False, False
@@ -416,12 +422,22 @@ class Order(models.Model):
                          self.amount_with_shipping,
                          self.language,
                          self.discount,
-                         self.is_first_order))
+                         self.is_first_order,
+                         is_admin_mode))
 
         self.select_promocode_vs_discount(self.promocode_disc_amount,
                                           max_discount, max_discount_amount)
+
         if self.manual_discount:
-            self.total_discount_amount += self.manual_discount
+            # если задана ручная скидка, то это скорее всего админ сохраняет
+            # и обычная скидка стирается, а ручная скидка становится основной
+            if self.manual_discount > 0:
+                self.discount_amount = Decimal(
+                                        self.amount_with_shipping
+                                        * self.manual_discount / 100
+                                    ).quantize(Decimal('0.01'))
+                self.discount = None
+                self.total_discount_amount = self.discount_amount
 
         self.discounted_amount = Decimal(
                                     self.amount_with_shipping
@@ -466,6 +482,8 @@ class Order(models.Model):
                             self.delivery.type,
                             self.recipient_address)
 
+        is_admin_mode = kwargs.pop('is_admin_mode', False)
+
         if self.pk is None:  # Если объект новый
 
             self.order_number = get_next_item_id_today(Order, 'order_number',
@@ -485,7 +503,7 @@ class Order(models.Model):
         self.calculate_amount_with_shipping()
 
         free_delivery, fo_status = (
-            self.calculate_discontinued_amount())
+            self.calculate_discontinued_amount(is_admin_mode))
 
         self.final_amount_with_shipping = self.discounted_amount
 
@@ -615,6 +633,7 @@ class OrderDish(models.Model):
     )
     quantity = models.PositiveSmallIntegerField(
         verbose_name='Кол-во',
+        default=1,
         validators=[MinValueValidator(1)],
         help_text=(
             'Перед удалением поставьте кол-во 0 для обнуления ИТОГО.'),
@@ -715,8 +734,7 @@ class OrderDish(models.Model):
 
 class Discount(models.Model):
     """ Модель для скидок."""
-    type = models.CharField(
-        max_length=20,
+    type = models.IntegerField(
         verbose_name="тип скидки",
         unique=True,
         choices=settings.DISCOUNT_TYPES
@@ -906,19 +924,29 @@ def current_cash_disc_status():
 
 
 def get_discount(user, payment, delivery, source, amount, language, discount,
-                 is_first_order=False):
+                 is_first_order=False, is_admin_mode=False):
 
-    order_details = get_order_details(user,
-                                      payment, delivery, source, language,
-                                      is_first_order)
-    if discount is None or discount.id not in [4, 5]:
+    order_details = get_order_details(user, payment, delivery,
+                                      source, language, is_first_order)
+
+    if is_admin_mode is False:
+        #    and (discount is None or discount.type not in [4, 5, 6])):
+        # при автоматическом сохранении заказа из сайта, необходимо выбрать
+        # из подходящих скидок ту, что с большим %.
+        # Прим. 1й заказ 5% (type 1) и самовывоз 10% (type 2) - нужно выбрать 10%
+        # Была еще скидка type 3 за оплату кэшом, отменена, поэтому 1 / 2 / 3 перепроверяются
+        # во всех остальных случаях скидка остается той же, что и задана
         order_details['amount'] = amount
         discounts = Discount.objects.filter(is_active=True)
         max_discount, max_discount_am = select_discount_api(discounts,
                                                             order_details)
-    else:
+    elif is_admin_mode is True:
+        # сохраняем ту скидку, что указана без перевыбора
         max_discount = discount
-        max_discount_am = discount.calculate_discount(amount)
+        if discount is not None:
+            max_discount_am = discount.calculate_discount(amount)
+        else:
+            max_discount_am = Decimal(0)
     return max_discount, max_discount_am, order_details['auth_first_order']
 
 
@@ -951,14 +979,14 @@ def check_auth_first_order(base_profile=None,
 
 
 def check_takeaway(source, delivery):
-    if source in ['1', '3', '4']:
+    if source in ['1', '2', '3', '4']:
         if delivery.type == 'takeaway' and delivery.discount:
             return True
     return False
 
 
 def check_payment(source, delivery, payment, language):
-    if (source in ['1', '3', '4']
+    if (source in ['1', '2', '3', '4']
         and delivery.type == 'delivery'
             and payment == 'cash'
             and language == 'ru'):
@@ -972,13 +1000,13 @@ def select_discount_api(discounts, order_details):
     for discount in discounts:
         discount_am = Decimal(0)
 
-        if discount.type == '1' and order_details['auth_first_order']:
+        if discount.type == 1 and order_details['auth_first_order']:
             discount_am = discount.calculate_discount(amount)
 
-        elif discount.type == '2' and order_details['takeaway']:
+        elif discount.type == 2 and order_details['takeaway']:
             discount_am = discount.calculate_discount(amount)
 
-        elif discount.type == '3' and order_details['cash_payment']:
+        elif discount.type == 3 and order_details['cash_payment']:
             discount_am = discount.calculate_discount(amount)
 
         if discount_am and discount_am > max_discount[1]:

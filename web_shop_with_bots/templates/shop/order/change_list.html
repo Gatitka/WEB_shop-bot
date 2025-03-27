@@ -2,10 +2,10 @@
 {% load static %}
 {% load i18n admin_urls static admin_modify %}
 
+
 {% block content %}
     {% if not user.is_superuser %}
     <div class="changelist-form-container">
-        <h2>{{ title }}</h2>
         <div style="display: flex; gap: 20px; position: relative;">
             <!-- Левая колонка с основной таблицей -->
             <div style="flex: 0 0 auto; min-width: 400px;">
@@ -20,23 +20,41 @@
                         <tr>
                             <td style="background-color:rgba(255, 250, 205, 0.30);" rowspan="3">самовывоз</td>
                             <td>безнал</td>
-                            <td>{{ total_nocash }}</td>
+                            <td>{{ takeaway_nocash }}</td>
                         </tr>
                         <tr>
-                            <td>Gotovina</td>
-                            <td>{{ total_gotovina }}</td>
+                            <td>Gotovina (самов + дост)</td>
+                            <td>{{ takeaway_gotovina }}</td>
                         </tr>
                         <tr>
                             <td>КАРТА</td>
-                            <td>{{ total_card }}</td>
+                            <td>{{ takeaway_card }}</td>
                         </tr>
                         <tr>
-                            <td>курьеры</td>
+                            <td>курьеры (бн + н)</td>
                             <td colspan="2">{{ total_curiers }}</td>
                         </tr>
                         <tr>
                             <td>po terminalu</td>
                             <td colspan="2">{{ total_terminal }}</td>
+                        </tr>
+                        <!-- Total row - using the custom filter -->
+                        <tr class="total-cashless-sum-row">
+                            <td>Drugo bezgotovinsko:</td>
+                            <td class="numeric">{{ drugo_bezgotovinsko|floatformat:2 }}</td>
+                        </tr>
+                        <!-- SMOKE partner row if exists -->
+                        <tr class="smoke-row">
+                            <td>SMOKE</td>
+                            <td class="numeric">
+                                <input type="number" id="smoke-value" class="smoke-input" value="0" step="0.01" min="0">
+                            </td>
+                        </tr>
+
+                        <!-- Total row - using the custom filter -->
+                        <tr class="total-sum-row">
+                            <td>Итого Н:</td>
+                            <td class="numeric">{{ total_cash|floatformat:2 }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -74,38 +92,54 @@
                             <tr>
                                 <th style="width: 60px; background-color: transparent;"></th>
                                 {% for courier_name in couriers.keys %}
-                                    <th style="background: linear-gradient(rgba(232, 245, 233, 0.3), rgba(255, 205, 210, 0.3))">
-                                        {% if courier_name == 'Unknown' or courier_name == 'UNKNOWN' %}
-                                            <span style="color: #dc3545;">{{ courier_name }}</span>
-                                        {% else %}
-                                            {{ courier_name }}
-                                        {% endif %}
-                                    </th>
+                                    {% if courier_name != 'total_cash' and courier_name != 'total_bezgotovinsko' %}
+                                        <th style="background: linear-gradient(rgba(232, 245, 233, 0.3), rgba(255, 205, 210, 0.3))">
+                                            {% if courier_name == 'Unknown' or courier_name == 'UNKNOWN' %}
+                                                <span style="color: #dc3545;">{{ courier_name }}</span>
+                                            {% else %}
+                                                {{ courier_name }}
+                                            {% endif %}
+                                        </th>
+                                    {% endif %}
                                 {% endfor %}
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td style="text-align: right; font-weight: bold;">карта</td>
-                                {% for courier_data in couriers.values %}
-                                    <td>{{ courier_data.3 }}</td>
+                                <td style="text-align: right; font-weight: bold;">безнал</td>
+                                {% for courier_name, courier_data in couriers.items %}
+                                    {% if courier_name != 'total_cash' and courier_name != 'total_bezgotovinsko' %}
+                                        <td>{{ courier_data.2 }}</td>
+                                    {% endif %}
                                 {% endfor %}
                             </tr>
                             <tr>
                                 <td style="text-align: right; font-weight: bold;">наличка</td>
-                                {% for courier_data in couriers.values %}
-                                    <td>{{ courier_data.2 }}</td>
+                                {% for courier_name, courier_data in couriers.items %}
+                                    {% if courier_name != 'total_cash' and courier_name != 'total_bezgotovinsko' %}
+                                        <td>{{ courier_data.3 }}</td>
+                                    {% endif %}
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td style="text-align: right; font-weight: bold;">карта</td>
+                                {% for courier_name, courier_data in couriers.items %}
+                                    {% if courier_name != 'total_cash' and courier_name != 'total_bezgotovinsko' %}
+                                        <td>{{ courier_data.5 }}</td>
+                                    {% endif %}
                                 {% endfor %}
                             </tr>
                             <tr>
                                 <td style="text-align: right; font-weight: bold;">ЗП</td>
-                                {% for courier_data in couriers.values %}
-                                    <td>
-                                        {{ courier_data.0 }}
-                                        {% if courier_data.1 %}
-                                            <br><span style="color: #dc3545; font-size: 11px;">+ уточнить</span>
-                                        {% endif %}
-                                    </td>
+                                {% for courier_name, courier_data in couriers.items %}
+                                    {% if courier_name != 'total_cash' and courier_name != 'total_bezgotovinsko' %}
+                                        <td>
+                                            {{ courier_data.0 }}
+                                            {% if courier_data.1 %}
+                                                <br><span style="color: #dc3545; font-size: 11px;">+ уточнить</span>
+                                            {% endif %}
+                                        </td>
+                                    {% endif %}
                                 {% endfor %}
                             </tr>
                         </tbody>
@@ -128,9 +162,27 @@
     {{ block.super }}
 {% endblock %}
 
+{% block object-tools %}
+    <ul class="object-tools">
+        <!-- show_report_button -->
+        {% if show_report_button %}
+        <li>
+            <a href="{{ report_url }}" class="viewlink">
+                {% trans "Перейти в отчет" %}
+            </a>
+        </li>
+        {% endif %}
+        {% block object-tools-items %}
+            {{ block.super }}
+        {% endblock %}
+    </ul>
+{% endblock %}
+
 {% block extrahead %}
 {{ block.super }}
-<script src="{% static 'my_admin/js/shop/change_list.js' %}"></script>
+<script src="{% static 'my_admin/js/shop/list/change_list.js' %}"></script>
+<script src="{% static 'my_admin/js/shop/list/save_click.js' %}"></script>
+<script src="{% static 'my_admin/js/shop/list/smoke_input.js' %}" defer></script>
 <script src="{% static 'my_admin/js/shop/receipt_printing.js' %}"></script>
 <style>
     .field-get_delivery_type, .column-get_delivery_type {
@@ -145,28 +197,33 @@
 
     /* Status select styling */
     td.field-status select[data-selected="WCO"] {
-        background-color: #ffcdd2;
-        color: #b71c1c;
+        background-color: #ffcdd2;  /* Lighter red */
+        color: #b71c1c;             /* Darker red */
     }
 
     td.field-status select[data-selected="CFD"] {
-        background-color: #ffe0b2;
-        color: #e65100;
+        background-color: #ffcc80;  /* Light orange - less yellow than before */
+        color: #e65100;             /* Dark orange */
+    }
+
+    td.field-status select[data-selected="RDY"] {
+        background-color: #fff59d;  /* Light yellow */
+        color: #795548;             /* Brown - better contrast on yellow */
     }
 
     td.field-status select[data-selected="OND"] {
-        background-color: #fff9c4;
-        color: #f57f17;
+        background-color: #c8e6c9;  /* Light green */
+        color: #1b5e20;             /* Dark green */
     }
 
     td.field-status select[data-selected="DLD"] {
-        background-color: #c8e6c9;
-        color: #1b5e20;
+        background-color: #a5d6a7;  /* Slightly darker green to differentiate from OND */
+        color: #1b5e20;             /* Dark green */
     }
 
     td.field-status select[data-selected="CND"] {
-        background-color: #eeeeee;
-        color: #424242;
+        background-color: #eeeeee;  /* Light grey */
+        color: #424242;             /* Dark grey */
     }
 
     /* Table styling */
@@ -200,6 +257,43 @@
 
     .model-table th {
         font-weight: bold;
+    }
+    .report-link {
+        background: #417690;
+        padding: 10px 15px;
+        border-radius: 4px;
+        color: #fff;
+        text-decoration: none;
+    }
+    .report-link:hover {
+        background: #205067;
+    }
+
+
+    #save-action-button {
+        background: #417690;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        color: #fff;
+        cursor: pointer;
+        font-weight: normal;
+        font-size: 13px;
+        font-family: "Roboto", "Lucida Grande", Verdana, Arial, sans-serif;
+    }
+
+    #save-action-button:hover {
+        background: #205067;
+    }
+    .smoke-input {
+        -moz-appearance: textfield; /* Для Firefox */
+        -webkit-appearance: none;  /* Для Safari и Chrome */
+        appearance: none; /* Общий стиль */
+    }
+    .smoke-input::-webkit-inner-spin-button,
+    .smoke-input::-webkit-outer-spin-button {
+        display: none; /* Убираем стрелки в Chrome и Safari */
+        margin: 0;
     }
 </style>
 {% endblock %}

@@ -12,13 +12,13 @@ from shop.models import Order
 def edit_payment_type():
     orders = Order.objects.all()
     for order in orders:
-        if order.status == 'OND':
-            order.status = 'DLD'
+        if order.status == 'DLD':
+            order.status = 'OND'
             order.save(update_fields=['status'])
 
-        if order.payment_type is None:
-            order.payment_type = 'cash'
-            order.save(update_fields=['payment_type'])
+        # if order.payment_type is None:
+        #     order.payment_type = 'cash'
+        #     order.save(update_fields=['payment_type'])
 
     print("Successfully updated orders")
 

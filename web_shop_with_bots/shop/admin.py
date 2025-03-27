@@ -1,16 +1,7 @@
-from typing import Any, Union
 from django.contrib import admin
-from django.http.request import HttpRequest
-from django.utils import timezone
 from django.utils.html import format_html
-from delivery_contacts.utils import get_google_api_key
-from tm_bot.models import MessengerAccount
 from utils.utils import activ_actions
-from .forms import (OrderAddForm, OrderChangeForm,
-                    OrderGlovoAdminForm,
-                    OrderWoltAdminForm, OrderSmokeAdminForm,
-                    OrderNeTaDverAdminForm,
-                    OrderChangelistForm, OrderSealTeaAdminForm)
+import shop.forms as shop_forms
 from .models import (Dish, Order, OrderDish, Discount,
                      OrderGlovoProxy, OrderWoltProxy,
                      OrderSmokeProxy, OrderNeTaDverProxy,
@@ -22,8 +13,10 @@ from .admin_utils import (
     export_orders_to_excel,
     export_full_orders_to_excel,
     get_changelist_extra_context,
+    get_addchange_extra_context,
     my_get_object,
-    my_get_queryset)
+    my_get_queryset,
+    DeliveryTypeFilter, InvoiceFilter)
 from django.core.exceptions import ValidationError
 from .utils import get_flag, custom_source, custom_order_number
 from rangefilter.filters import (
@@ -35,7 +28,8 @@ from django.shortcuts import redirect
 from django.conf import settings
 from users.models import user_add_new_order_data
 from utils.admin_permissions import has_restaurant_admin_permissions
-from delivery_contacts.models import Courier, DeliveryZone, Delivery
+from api.admin_views import AdminReportView
+import re
 
 
 @admin.register(Discount)
@@ -61,9 +55,25 @@ class OrderDishInline(admin.TabularInline):
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == 'dish':
-            qs = Dish.objects.all().prefetch_related('translations')
-            return forms.ModelChoiceField(queryset=qs)
+            kwargs['queryset'] = Dish.objects.all().prefetch_related('translations')
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    # def formfield_for_foreignkey(self, db_field, request, **kwargs):
+    #     if db_field.name == 'dish':
+    #         qs = Dish.objects.all().prefetch_related('translations')
+    #         return forms.ModelChoiceField(queryset=qs)
+    #     return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    # def formfield_for_foreignkey(self, db_field, request, **kwargs):
+    #     if db_field.name == 'dish':
+    #         # This explicitly creates a proper ModelChoiceField
+    #         qs = Dish.objects.all().prefetch_related('translations')
+    #         kwargs['queryset'] = qs
+    #     return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    # def save_formset(self, request, form, formset, change):
+    #     instances = formset.save(commit=False)
+    #     for instance in instances:
+    #         instance.save()  # Передаем флаг в каждый экземпляр
+    #     formset.save_m2m()
 
 
 class CustomChangeList(ChangeList):
@@ -103,29 +113,32 @@ class OrderAdmin(admin.ModelAdmin):
 
         # Добавляем кнопку печати под номером
         print_button = format_html(
-            '<button type="button" class="print-button" data-id="{}" style="margin-top:5px;">'
-            '🖨️</button>',
+            '<button type="button" class="print-button" data-id="{}" style="background-color: #fff; border: 1px solid #ccc; padding: 3px 8px; border-radius: 3px; color: #555; cursor: pointer; margin-top:5px;">'
+            '<span style="font-size: 12px;">🖨</span></button>',
             obj.id
         )
-
         # Объединяем номер и кнопку с переносом строки между ними
         return format_html(
             '{}<br>{}',
             order_number,
-            print_button
+            print_button,
+            [str(obj),]
         )
     custom_order_number.short_description = '№'
 
     def warning(self, obj):
         # Условие для проверки различных состояний
         help_text = []
-        if (obj.delivery.type == 'delivery'
-                    and obj.delivery_zone.name == 'уточнить'):
-            help_text.append("Уточнить зону доставки.\n")
+        if obj.delivery.type == 'delivery':
+            if obj.delivery_zone.name == 'уточнить':
+                help_text.append("Уточнить зону доставки.\n")
 
-        if (obj.delivery.type == 'delivery'
-                    and obj.courier is None):
-            help_text.append("Не назначен курьер.\n")
+            if obj.courier is None:
+                help_text.append("Не назначен курьер.\n")
+
+            address = obj.recipient_address
+            if address not in ['', None] and not re.search(r'\d+', address):
+                help_text.append('Нет дома, перепроверить стоимость доставки\n')
 
         if obj.source not in settings.PARTNERS_LIST and obj.payment_type is None:
             help_text.append("Тип оплаты не определен.\n")
@@ -231,7 +244,7 @@ class OrderAdmin(admin.ModelAdmin):
                     'get_contacts',
                     'get_delivery_type')  # Добавляем кнопку печати в список
     list_editable = ['status', 'invoice', 'courier', 'payment_type']
-    # list_display_links = ('custom_order_number',)
+    list_display_links = ('info',)
     readonly_fields = [
                        'items_qty', 'get_msngr_link',
                        'amount', 'discount_amount',
@@ -247,59 +260,105 @@ class OrderAdmin(admin.ModelAdmin):
                        'get_delivery_cost'
                        ]
     list_filter = (('created', DateRangeQuickSelectListFilter),
-                   'status', 'source', 'city', 'courier')
+                   DeliveryTypeFilter, InvoiceFilter,
+                   'status', 'source', 'city', 'courier', 'payment_type')
     search_fields = ('recipient_phone', 'msngr_account__msngr_username',
-                     'recipient_name')
+                     'recipient_name', 'source_id', 'id')
     inlines = (OrderDishInline,)
     raw_id_fields = ['user', 'msngr_account']
     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
     actions = [export_orders_to_excel, export_full_orders_to_excel,]
     actions_on_top = True
+    save_on_top = True
     list_per_page = 20
     radio_fields = {"payment_type": admin.HORIZONTAL,
-                    "delivery": admin.HORIZONTAL,
-                    "discount": admin.VERTICAL}
+                    "delivery": admin.HORIZONTAL}
+                    #"discount": admin.VERTICAL}
 
     add_form_template = 'shop/order/add_form.html'
     change_form_template = 'shop/order/change_form.html'
     change_list_template = 'shop/order/change_list.html'
+
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        Выбираем форму в зависимости от действия (создание или редактирование).
+        """
+        if obj is None:  # Если создается новый заказ
+            kwargs['form'] = shop_forms.OrderAddForm
+        else:  # Если объект редактируется
+            kwargs['form'] = shop_forms.OrderChangeForm
+
+        form = super().get_form(request, obj, **kwargs)
+        form.user = request.user  # Передаем текущего пользователя в форму
+        return form
 
     def get_fieldsets(self, request, obj=None):
         if obj is None:  # Если это форма создания нового заказа
             return [
                 ('Данные заказа', {
                     'fields': (
-                        ('source', 'source_id', 'invoice'),
-                        ('delivery', 'discount', 'payment_type'),
+                        ('order_type', 'payment_type', 'invoice', 'source_id', 'city'),
+                        ('bot_order', 'delivery_time'),
                     )
                 }),
                 ('Сумма заказа', {
                     'fields': (
                         ('amount', 'final_amount_with_shipping', 'items_qty'),
+                        ('manual_discount')
                     )
+                }),
+                ('Контактная информация', {
+                    "classes": ["collapse"],
+                    'fields': (
+                        ('recipient_name', 'recipient_phone'),
+                    )
+                }),
+                ('Доставка', {
+                    "description": (
+                        ""
+                    ),
+                    "classes": ["collapse"],
+                    'fields': (
+                        ('recipient_address', 'coordinates', 'address_comment'),
+                        ('delivery_cost', 'delivery_zone', ),
+                    )
+                }),
+                ('Комментарий', {
+                    "classes": ["collapse"],
+                    'fields': ('comment',),
                 })
             ]
 
         # Если это форма редактирования существующего заказа, возвращаем полный набор полей
-        delivery_classes = ["collapse"]
-        if obj and obj.delivery.type == 'delivery':
-            delivery_classes = []
+        if obj:
+            if obj.delivery.type == 'delivery':
+                delivery_collapse_class = []
+            elif obj.delivery.type == 'takeaway':
+                delivery_collapse_class = ["collapse"]
+
+            comment_collapse_class = ["collapse"] if obj.comment in ['', None] else []
+
         return [
+            ("", {
+                'fields': (
+                    ('process_comment'),
+                )
+            }),
             ('Общие данные заказа', {
                 "classes": ["collapse"],
                 'fields': (
-                    ('process_comment'),
                     ('status', 'language'),
                     ('source', 'source_id'),
                     ('city', 'restaurant'),
                     ('delivery', 'payment_type', 'invoice'),
+                    ('delivery_time'),
                 )
             }),
             ('Контактная информация', {
                 'fields': (
                     ('recipient_name', 'recipient_phone', 'get_msngr_link'),
                     ('user', 'msngr_account', 'get_user_data'),
-                    ('delivery_time', 'persons_qty',),
+                    ('persons_qty', 'items_qty'),
                 )
             }),
 
@@ -309,7 +368,7 @@ class OrderAdmin(admin.ModelAdmin):
                     "и нажмите 'РАССЧИТАТЬ' для определения зоны доставки "
                     "и стоимости."
                 ),
-                "classes": delivery_classes,
+                "classes": delivery_collapse_class,
                 'fields': (
                     ('recipient_address', 'coordinates', 'address_comment'),
                     ('my_delivery_address', 'my_address_coordinates',
@@ -323,36 +382,17 @@ class OrderAdmin(admin.ModelAdmin):
             }),
             ('Расчет суммы заказа', {
                 'fields': (
-                    ('amount', 'get_delivery_cost'),
-                    ('discount', 'discount_amount'),
-                    ('promocode', 'promocode_disc_amount',),
-                    ('manual_discount'),
-                    ('discounted_amount'),
-                )
-            }),
-            ('ИТОГО', {
-                'fields': (
-                    ('final_amount_with_shipping'),
-                    ('items_qty'),
+                    ('amount', 'final_amount_with_shipping'),
+                    ('discount', 'manual_discount'),
+                    # ('promocode', 'promocode_disc_amount',),
+                    #('discounted_amount'),
                 )
             }),
             ('Комментарий', {
+                "classes": comment_collapse_class,
                 'fields': ('comment',),
             })
         ]
-
-    def get_form(self, request, obj=None, **kwargs):
-        """
-        Выбираем форму в зависимости от действия (создание или редактирование).
-        """
-        if obj is None:  # Если создается новый заказ
-            kwargs['form'] = OrderAddForm
-        else:  # Если объект редактируется
-            kwargs['form'] = OrderChangeForm
-
-        form = super().get_form(request, obj, **kwargs)
-        form.user = request.user  # Передаем текущего пользователя в форму
-        return form
 
     def get_delivery_type(self, obj):
         return obj.delivery.type
@@ -387,7 +427,7 @@ class OrderAdmin(admin.ModelAdmin):
                 'restaurant',
                 'orders_bot')
         # Проверяем наличие конкретного заказа
-        print("Checking order 8887:", qs.filter(id=8887).exists())
+        # print("Checking order 8887:", qs.filter(id=8887).exists())
 
         if request.user.is_superuser:
             return qs
@@ -400,7 +440,7 @@ class OrderAdmin(admin.ModelAdmin):
         restaurant = request.user.restaurant
         if restaurant:
             qs = qs.filter(restaurant=restaurant)
-            print("Checking order 8887:", qs.filter(id=8887).exists())
+            # print("Checking order 8887:", qs.filter(id=8887).exists())
             return qs
 
         user_id = request.GET.get('user_id')
@@ -413,7 +453,7 @@ class OrderAdmin(admin.ModelAdmin):
                         'msngr_account',
                         'courier',
                         'user__messenger_account')
-        print("Checking order 8887:", qs.filter(id=8887).exists())
+        # print("Checking order 8887:", qs.filter(id=8887).exists())
         return qs
 
     def get_object(self, request, object_id, from_field=None):
@@ -423,6 +463,7 @@ class OrderAdmin(admin.ModelAdmin):
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
+            path('report/', AdminReportView.as_view(), name='shop_order_report'),
             path('<path:object_id>/change/', self.change_view, name='order_change'),
         ]
         return custom_urls + urls
@@ -432,28 +473,35 @@ class OrderAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         # Сначала получаем существующий контекст
+        extra_context = extra_context or {}
+
+        # Only add report button for superusers
+        if request.user.is_superuser:
+            extra_context['show_report_button'] = True
+            extra_context['report_url'] = reverse('admin:shop_order_report')
+
         extra_context = get_changelist_extra_context(request, extra_context)
+
         return super(OrderAdmin, self).changelist_view(
             request, extra_context=extra_context)
 
     def add_view(self, request, form_url="", extra_context=None):
+        # Add Google API key, menu and delivery_zones to context
         extra_context = extra_context or {}
-        # Добавление ключа API Google Maps в контекст
-        extra_context["GOOGLE_API_KEY"] = get_google_api_key()
+        extra_context = get_addchange_extra_context(request, extra_context, 'all')
 
-        return super().add_view(
-            request,
-            form_url,
-            extra_context=extra_context
-        )
+        return super().add_view(request, form_url, extra_context=extra_context)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         order = Order.objects.get(pk=object_id)
-        # return redirect(order.get_admin_url())
-
         admin_url = order.get_admin_url()
         if admin_url != request.path:  # Проверяем, не совпадает ли текущий URL с URL, который мы пытаемся обработать
             return redirect(admin_url)
+
+        # Add Google API key, menu and delivery_zones to context
+        extra_context = extra_context or {}
+        extra_context = get_addchange_extra_context(request, extra_context, 'all')
+
         return super().change_view(request, object_id, form_url, extra_context)
 
     def get_fields(self, request, obj=None):
@@ -480,31 +528,6 @@ class OrderAdmin(admin.ModelAdmin):
 
         return formfield
 
-    # def formfield_for_foreignkey(self, db_field, request, **kwargs):
-    #     """
-    #     Обрабатываем поле ForeignKey для курьера и фильтруем по городу заказа
-    #     только при редактировании объекта.
-    #     """
-    #     if db_field.name == "courier":
-    #         # Проверяем URL. Если это changelist, не делаем фильтрацию
-    #         if request.resolver_match.url_name == 'shop_order_changelist':  # Замените на правильное имя URL
-    #             # Если это changelist, показываем всех курьеров
-    #             kwargs["queryset"] = Courier.objects.all()
-    #         else:
-    #             # Если это редактирование объекта, фильтруем курьеров по городу заказа
-    #             obj_id = request.resolver_match.kwargs.get('object_id')
-    #             if obj_id:
-    #                 # Извлекаем только необходимый объект заказа (один запрос)
-    #                 order = Order.objects.only('city').get(pk=obj_id)
-    #                 # Фильтруем курьеров по городу заказа
-    #                 kwargs["queryset"] = Courier.objects.filter(city=order.city)
-    #             else:
-    #                 # Если создаётся новый заказ, можно вернуть пустой список курьеров
-    #                 kwargs["queryset"] = Courier.objects.all()
-
-    #     return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
-
     def save_related(self, request, form, formsets, change):
         """
         Given the ``HttpRequest``, the parent ``ModelForm`` instance, the
@@ -527,10 +550,26 @@ class OrderAdmin(admin.ModelAdmin):
                 new_status = form.cleaned_data.get('status')
                 old_status = form.initial.get('status')
 
-                if old_status is not None and new_status != old_status:
+                if old_status is not None and new_status != old_status and new_status != 'RDY':
                     send_request_order_status_update(
                         new_status, int(form.instance.source_id),
                         form.instance.orders_bot)
+
+    def save_model(self, request, obj, form, change):
+        """
+        Set admin edit mode before saving
+        """
+        # import logging
+        # logger = logging.getLogger(__name__)
+
+        # try:
+        #     logger.info(f'Order save_model: ID={obj.pk}, change={change}, USER:{request.user}')
+        # Передаем флаг через save вместо использования класс-переменной
+        obj.save(is_admin_mode=True)
+        #     logger.info(f'Order successfully saved: ID={obj.pk}')
+        # except Exception as e:
+        #     logger.error(f'Error saving order ID={obj.pk}: {str(e)}', exc_info=True)
+        #     raise
 
     def get_changelist_form(self, request, **kwargs):
         """
@@ -538,7 +577,7 @@ class OrderAdmin(admin.ModelAdmin):
         с учётом того, является ли пользователь суперпользователем.
         """
         # Передаем request в форму, чтобы учитывать информацию о пользователе
-        kwargs['form'] = OrderChangelistForm
+        kwargs['form'] = shop_forms.OrderChangelistForm
         form = super().get_changelist_form(request, **kwargs)
 
         # Нужно передать request в форму вручную
@@ -618,8 +657,6 @@ class OrderAdmin(admin.ModelAdmin):
             request, obj)
 
 
-
-
 class OrderDishPartnerInline(admin.TabularInline):
     model = OrderDish
     min_num = 1
@@ -641,7 +678,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
     list_editable = ['status', 'invoice']
     list_display_links = ('order_number',)
     readonly_fields = ['items_qty', 'amount', 'created', 'order_number', 'final_amount_with_shipping']
-    list_filter = (('created', DateRangeQuickSelectListFilter), 'status')
+    list_filter = (('created', DateRangeQuickSelectListFilter), 'status', 'payment_type')
     search_fields = ('order_number', 'source_id')
     inlines = (OrderDishPartnerInline,)
     actions_selection_counter = False
@@ -653,7 +690,8 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
 
     class Media:
         js = (
-            'my_admin/js/shop/orderdishes_management.js',
+            'my_admin/js/shop/change/orderdishes_management.js',
+            'my_admin/js/shop/prevent_duplicate_orderdishes.js'
         )
 
     # def custom_order_number(self, obj):
@@ -724,7 +762,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
             return [
                 ('Данные заказа', {
                     'fields': (
-                        ('source_id', 'source', 'invoice'),
+                        ('source_id', 'source', 'invoice', 'payment_type'),
                         ('final_amount_with_shipping', 'items_qty')
                     )
                 }),
@@ -734,32 +772,45 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
             ('Данные заказа', {
                     'fields': (
                         ('status'),
-                        ('source_id', 'source'),
+                        ('source_id', 'source', 'invoice', 'payment_type'),
                         ('final_amount_with_shipping', 'items_qty')
                     )
                 }),
         ]
 
+    def add_view(self, request, form_url="", extra_context=None):
+        # Добавляем меню в контекст
+        extra_context = extra_context or {}
+        extra_context = get_addchange_extra_context(request, extra_context)
+
+        return super().add_view(request, form_url, extra_context=extra_context)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        # Добавляем меню в контекст
+        extra_context = extra_context or {}
+        extra_context = get_addchange_extra_context(request, extra_context, 'all')
+
+        return super().change_view(request, object_id, form_url, extra_context=extra_context)
 
 
 @admin.register(OrderGlovoProxy)
 class OrderGlovoProxyAdmin(BaseOrderProxyAdmin):
-    form = OrderGlovoAdminForm
+    form = shop_forms.OrderGlovoAdminForm
     source_code = 'P1-1'
 
 @admin.register(OrderWoltProxy)
 class OrderWoltProxyAdmin(BaseOrderProxyAdmin):
-    form = OrderWoltAdminForm
+    form = shop_forms.OrderWoltAdminForm
     source_code = 'P1-2'
 
 @admin.register(OrderSmokeProxy)
 class OrderSmokeProxyAdmin(BaseOrderProxyAdmin):
-    form = OrderSmokeAdminForm
+    form = shop_forms.OrderSmokeAdminForm
     source_code = 'P2-1'
 
 @admin.register(OrderNeTaDverProxy)
 class OrderNeTaDverProxyAdmin(BaseOrderProxyAdmin):
-    form = OrderNeTaDverAdminForm
+    form = shop_forms.OrderNeTaDverAdminForm
     source_code = 'P2-2'
 
     def get_changeform_initial_data(self, request):
@@ -770,7 +821,7 @@ class OrderNeTaDverProxyAdmin(BaseOrderProxyAdmin):
 
 @admin.register(OrderSealTeaProxy)
 class OrderSealTeaProxyAdmin(BaseOrderProxyAdmin):
-    form = OrderSealTeaAdminForm
+    form = shop_forms.OrderSealTeaAdminForm
     source_code = 'P3-1'
 
 # @admin.register(OrderGlovoProxy)

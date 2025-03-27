@@ -682,6 +682,7 @@ DISCOUNT_TYPES = [
     (3, _('cash_on_delivery')),
     (4, _('instagram_story')),
     (5, _('birthday')),
+    (6, _('for insiders')),
 ]
 
 DELIVERY_CHOICES = (
@@ -700,15 +701,17 @@ MESSENGERS = [
 # List of order statuses
 WAITING_CONFIRMATION = "WCO"
 CONFIRMED = "CFD"
-#ON_DELIVERY = "OND"
-DELIVERED = "DLD"
+READY = "RDY"
+ON_DELIVERY = "OND"
+#DELIVERED = "DLD"
 CANCELED = "CND"
 
 ORDER_STATUS_CHOICES = (
     (WAITING_CONFIRMATION, "ожидает подтверждения"),
     (CONFIRMED, "подтвержден"),
-    #(ON_DELIVERY, "передан в доставку"),
-    (DELIVERED, "выдан"),
+    (READY, "готов"),
+    (ON_DELIVERY, "отправлен"),
+    #(DELIVERED, "выдан"),
     (CANCELED, "отменен")
 )
 
@@ -723,16 +726,21 @@ ORDER_STATUS_TRANSLATIONS = {
         'en': 'confirmed',
         'sr-latn': 'potvrđen'
     },
-    # 'OND': {
-    #     'ru': 'передан в доставку',
-    #     'en': 'on delivery',
-    #     'sr-latn': 'na isporuci'
-    # },
-    'DLD': {
-        'ru': 'доставлен',
-        'en': 'delivered',
-        'sr-latn': 'isporučen'
+    'RDY': {
+        'ru': 'готов',
+        'en': 'ready',
+        'sr-latn': 'spreman'
     },
+    'OND': {
+        'ru': 'отправлен',
+        'en': 'departured',
+        'sr-latn': 'na isporuci'
+    },
+    # 'DLD': {
+    #     'ru': 'доставлен',
+    #     'en': 'delivered',
+    #     'sr-latn': 'isporučen'
+    # },
     'CND': {
         'ru': 'отменен',
         'en': 'canceled',
@@ -743,7 +751,7 @@ ORDER_STATUS_TRANSLATIONS = {
 PAYMENT_METHODS = [
     (None, '-------'),
     ('cash', 'cash'),
-    ('card_on_delivery', 'card_on_delivery'),
+    ('card_on_delivery', 'bezgotovinsko'),
     ('card', 'card')
 ]
 
@@ -753,10 +761,20 @@ SOURCE_TYPES = [
     ('P2-1', 'Smoke'),
     ('P2-2', 'Не та дверь'),
     ('P3-1', 'Seal Tea'),
-    ('1', 'телефон'),
-    ('2', 'ресторан'),
+    ('1', 'внутренний'),
+    # ('2', 'ресторан'),
     ('3', 'TM_Bot'),
     ('4', 'сайт'),
+]
+
+ORDER_TYPES = [
+    ('P1-1', 'Glovo'),
+    ('P1-2', 'Wolt'),
+    ('P2-1', 'Smoke'),
+    ('P2-2', 'Не та дверь'),
+    ('P3-1', 'Seal Tea'),
+    ('D', 'Доставка'),
+    ('T', 'Самовывоз'),
 ]
 
 PARTNERS_LIST = [

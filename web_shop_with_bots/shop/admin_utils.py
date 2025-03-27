@@ -1,5 +1,6 @@
 from .models import Order
-from delivery_contacts.models import Restaurant
+from delivery_contacts.models import Restaurant, DeliveryZone
+from delivery_contacts.utils import get_google_api_key
 from django.utils import timezone
 from datetime import datetime, timedelta
 from openpyxl import Workbook
@@ -9,6 +10,9 @@ from django.utils.timezone import make_aware
 from django.db.models import Sum, Count
 from django.conf import settings
 from decimal import Decimal
+from catalog.models import Category, Dish, DishCategory
+from django.contrib import admin
+from django.conf import settings
 
 
 def get_range_period(request):
@@ -207,8 +211,11 @@ def export_orders_to_excel(modeladmin, request, queryset):
     ws.append(['Заказ',
                'Адрес',
                'Сумма',
+               'N',
                'Чек',
+               'Примечание',
                'Стоимость доставки',
+               'Статус',
                'Курьер',
                ])
 
@@ -219,26 +226,37 @@ def export_orders_to_excel(modeladmin, request, queryset):
         else:
             if order.source in ['1', '3', '4']:
                 address = 'самовывоз'
-            elif order.source == ['P1-1']:
+            elif order.source == 'P1-1':
                 address = "GLOVO"
-            elif order.source == ['P1-2']:
+            elif order.source == 'P1-2':
                 address = "WOLT"
-            elif order.source == ['P2-1']:
+            elif order.source == 'P2-1':
                 address = "SMOKE"
+            elif order.source == 'P2-2':
+                address = "NE TA"
+            elif order.source == 'P3-1':
+                address = "SEAL TEA"
 
         if order.invoice:
             invoice = 1
         else:
             invoice = ''
 
+        note = order.source_id if order.source in ['3'] + settings.PARTNERS_LIST else ''
+
+        courier = str(order.courier) if order.courier is not None else ""
+
         ws.append(
             [
                 order.order_number,
                 address,
-                order.discounted_amount,
+                order.final_amount_with_shipping,
+                order.payment_type,
                 invoice,
+                note,
                 order.delivery_cost,
-                str(order.courier)
+                order.status,
+                courier
             ]
         )
 
@@ -257,8 +275,9 @@ def get_changelist_extra_context(request, extra_context, source=None):
     e = request.GET.get('e', None)
 
     today = timezone.now().date()
+    # today = timezone.now().date() - timedelta(days=2)
     filters = {
-               'created__date': today
+               'created__date': today,
                 }
     if source:
         filters['source'] = source
@@ -275,58 +294,48 @@ def get_changelist_extra_context(request, extra_context, source=None):
         filters['restaurant'] = restaurant
         title = f"Заказы ресторана: {restaurant.city}/{restaurant.address}"
 
-    today_orders = Order.objects.filter(
-                **filters
-            ).select_related(
-                'delivery',
-                'delivery_zone',
-                'courier')
+        today_orders = Order.objects.filter(
+                    **filters
+                ).exclude(
+                    status='CND'
+                ).select_related(
+                    'delivery',
+                    'delivery_zone',
+                    'courier')
+        extra_context.update(get_report_data(today_orders))
 
+    extra_context['title'] = title
+
+    return extra_context
+
+
+def get_report_data(orders_list):
     #Разбираем заказы по типам для дальнейшего анализа
     delivery_orders = []
     takeaway_orders = []
-    for order in today_orders:
+    partners_orders = []
+    for order in orders_list:
         if order.delivery.type == 'delivery':
             delivery_orders.append(order)
-        else:
+        elif order.delivery.type == 'takeaway':
             takeaway_orders.append(order)
-    partners_orders = today_orders.filter(source__in=settings.PARTNERS_LIST)
+            if order.source in settings.PARTNERS_LIST:
+                partners_orders.append(order)
 
     # Calculate the total discounted amount and total receipts
-    total_amount = sum(order.final_amount_with_shipping for order in today_orders)
-    total_qty = today_orders.count()
-    total_receipts = sum(order.invoice for order in today_orders)
+    total_amount = sum(order.final_amount_with_shipping for order in orders_list)
+    total_qty = orders_list.count()
+    total_receipts = sum(order.invoice for order in orders_list)
 
-    # Calculate total takeaways
-    total_nocash = (sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type == 'cash' and order.invoice is False)
+    total_nocash = (sum(order.final_amount_with_shipping for order in orders_list if order.source != 'P2-2' and order.payment_type == 'cash' and order.invoice is False)
                     + sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-2'))    # не та дверь платит налом без чека
-    total_gotovina = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type == 'cash' and order.invoice is True)
-    total_card = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type in ['card', 'card_on_delivery'])
-
-    total_smoke = sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-1')  #('P2-1', 'Smoke'),
-    total_curiers = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash')
-    total_terminal = total_amount - total_nocash - total_smoke - total_curiers
-
-    # if request.user.is_superuser or view == 'all_orders' or e == '1':
-    #     city_totals = (
-    #         today_orders
-    #         .values('city')
-    #         .annotate(
-    #             ttl_city_am=Sum('final_amount_with_shipping'),
-    #             ttl_city_qty=Count('id'),
-    #             ttl_city_rct=Count('invoice')
-    #         )
-    #     )
-    #     # Преобразуем QuerySet в список словарей
-    #     extra_context['city_totals'] = [
-    #         {
-    #             "city": city['city'],
-    #             "ttl_city_am":
-    #                 f"{city['ttl_city_am']:.2f} ({city['ttl_city_qty']} зак.)",
-    #             "ttl_city_rct": city['ttl_city_rct'],
-    #         }
-    #         for city in city_totals
-    #     ]
+    total_gotovina = sum(order.final_amount_with_shipping for order in orders_list if order.payment_type == 'cash' and order.invoice is True)
+    _takeaway_gotovina = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type == 'cash' and order.invoice is True)
+    # Calculate total takeaways
+    takeaway_nocash = (sum(order.final_amount_with_shipping for order in takeaway_orders if order.source != 'P2-2' and order.payment_type == 'cash' and order.invoice is False)
+                       + sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-2'))    # не та дверь платит налом без чека
+    takeaway_gotovina = total_gotovina
+    takeaway_card = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type in ['card', 'card_on_delivery'])
 
     # Prepare partners data
     SOURCE_DICT = dict(settings.SOURCE_TYPES)
@@ -338,8 +347,49 @@ def get_changelist_extra_context(request, extra_context, source=None):
         else:
             partners[partner_name] = order.final_amount_with_shipping
 
-    # Prepare couriers data
+    total_smoke = partners.get('Smoke', Decimal('0'))
+    total_curiers_show = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash')
+    total_curiers = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash' and order.invoice is True)
+    total_terminal = total_amount - total_nocash - total_smoke - total_curiers
+    curiers = get_couriers_data(delivery_orders)
+    total_cash = get_cash_report_total(curiers, takeaway_nocash, _takeaway_gotovina)
+    drugo_bezgotovinsko = get_bezgotovinsko_report_total(curiers, partners)
+
+    report = {
+        'total_amount': f"{total_amount:.2f} ({total_qty} зак.)",
+        'takeaway_nocash': float(takeaway_nocash),
+        'takeaway_gotovina': float(takeaway_gotovina),
+        'takeaway_card': takeaway_card,
+        'total_curiers': total_curiers_show,
+        'total_terminal': total_terminal,
+        #'total_receipts': total_receipts,
+        'partners': partners,
+        'couriers': curiers,
+        'total_cash': total_cash,
+        'drugo_bezgotovinsko': drugo_bezgotovinsko,
+    }
+
+    return report
+
+
+def get_couriers_data(delivery_orders):
+    """
+    Get courier-related data aggregated by restaurant.
+    couriers = {
+        'courier_name': [Decimal('0') - сумма доставок для оплаты курьеру,   0
+                         Bool - есть ли "уточнить",                         1
+                         Decimal('0') - сумма заказов безнал,                2
+                         Decimal('0') - сумма заказов нал,                  3
+                         Decimal('0') - сумма заказов безнал + нал,          4
+                         Decimal('0') - сумма заказов карта (безготовинско), 5
+                         Decimal('0') - сумма минимальной оплаты за выход], 6
+        'total_cash': Dec,
+        'total_bezgotovinsko': Dec,
+        }
+    """
+
     couriers = {}
+
     for order in delivery_orders:
         courier_name = order.courier if order.courier else 'Unknown'
         unclarified = False
@@ -353,37 +403,67 @@ def get_changelist_extra_context(request, extra_context, source=None):
             delivery_cost = order.delivery_cost
 
         if courier_name in couriers:
-            couriers[courier_name][0] += delivery_cost
+            couriers[courier_name][0] -= delivery_cost
         else:
             couriers[courier_name] = [Decimal('0'), False,
-                                      Decimal('0'), Decimal('0'),
+                                      Decimal('0'), Decimal('0'), Decimal('0'),
+                                      Decimal('0'),
                                       Decimal('0')]
             if order.courier:
-                couriers[courier_name][4] = order.courier.min_payout
+                couriers[courier_name][6] = order.courier.min_payout
 
-            couriers[courier_name][0] = delivery_cost
+            couriers[courier_name][0] = 0 - delivery_cost
         couriers[courier_name][1] = unclarified
 
-        if order.payment_type == 'cash':
+        if order.payment_type == 'cash' and order.invoice is False:
             couriers[courier_name][2] += order.final_amount_with_shipping
-        if order.payment_type in ['card', 'card_on_delivery']:
+            couriers[courier_name][4] += order.final_amount_with_shipping  # доб в тотал нал + безнал
+        elif order.payment_type == 'cash' and order.invoice is True:
             couriers[courier_name][3] += order.final_amount_with_shipping
+            couriers[courier_name][4] += order.final_amount_with_shipping  # доб в тотал нал + безнал
+        elif order.payment_type in ['card', 'card_on_delivery']:
+            couriers[courier_name][5] += order.final_amount_with_shipping
 
-    for courier in couriers:
-        couriers[courier][0] += couriers[courier][4]
+    total_cash = Decimal('0')
+    total_bezgotovinsko = Decimal('0')
 
-    extra_context['title'] = title
-    total_amount_str = f"{total_amount:.2f} ({total_qty} зак.)"
-    extra_context['total_amount'] = total_amount_str
-    extra_context['total_receipts'] = total_receipts
-    extra_context['total_nocash'] = float(total_nocash)
-    extra_context['total_gotovina'] = float(total_gotovina)
-    extra_context['total_card'] = total_card
-    extra_context['total_curiers'] = total_curiers
-    extra_context['total_terminal'] = total_terminal
-    extra_context['partners'] = partners
-    extra_context['couriers'] = couriers
-    return extra_context
+    # к стоимостям доставок добавляем оплату минимальную за выход
+    for results in couriers.values():
+        results[0] -= results[6]   # для получения полной ЗП прибавляем мин оклад
+
+        total_cash += results[0]
+        total_cash += results[4]
+        total_bezgotovinsko += results[5]
+
+    couriers.update({'total_cash': total_cash,
+                     'total_bezgotovinsko': total_bezgotovinsko})
+
+    return couriers
+
+
+def get_cash_report_total(curiers, takeaway_nocash, takeaway_gotovina):
+    total_cash = Decimal('0')
+
+    # суммируем курьеров
+    total_cash += curiers['total_cash']
+    # прибавляем безнал, gotovina
+    total_cash += takeaway_nocash
+    total_cash += takeaway_gotovina
+
+    return total_cash
+
+
+def get_bezgotovinsko_report_total(curiers, partners):
+    drugo_bezgotovinsko = Decimal('0')
+
+    # суммируем курьеров
+    drugo_bezgotovinsko += curiers['total_bezgotovinsko']
+    # прибавляем партнеров
+    for partner, total_value in partners.items():
+        if partner in ['Glovo', 'Wolt']:
+            drugo_bezgotovinsko += total_value
+
+    return drugo_bezgotovinsko
 
 
 def my_get_object(model, object_id, source=None):
@@ -432,3 +512,161 @@ def my_get_queryset(request, qs):
     if restaurant:
         qs = qs.filter(restaurant=restaurant)
         return qs
+
+
+def get_menu_data():
+    """
+    Формирует оптимизированные данные меню: словарь категорий и словарь блюд.
+
+    Returns:
+        tuple: (categories, dishes) где:
+            - categories: словарь категорий {id: {Image, Name, Dishes[]}}
+            - dishes: словарь блюд {id: {Name, Image, Price[]}}
+    """
+    # Язык, который мы хотим использовать
+    language_code = 'ru'
+
+    # Получаем активные категории с переводами
+    categories_queryset = Category.objects.filter(is_active=True).prefetch_related('translations')
+
+    # Подгружаем связи между категориями и блюдами с предзагрузкой данных о блюдах
+    dish_categories = DishCategory.objects.select_related('dish', 'category').prefetch_related(
+        'dish__translations'
+    )
+
+    # Создаем результирующие словари
+    categories = {}
+    dishes = {}
+
+    # Заполняем словарь категорий
+    for category in categories_queryset:
+        # Пытаемся получить перевод на русском
+        category_name = None
+        for translation in category.translations.all():
+            if translation.language_code == language_code and translation.name:
+                category_name = translation.name
+                break
+
+        # Если русского перевода нет, берем первый доступный
+        if not category_name and category.translations.exists():
+            category_name = category.translations.first().name
+
+        # Если вообще нет переводов, используем ID
+        if not category_name:
+            category_name = f"Категория {category.id}"
+
+        categories[category.id] = {
+            "Image": "",  # У категорий нет изображений в модели
+            "Name": category_name,
+            "Dishes": []  # Заполним позже
+        }
+
+    # Заполняем словарь блюд и связи категория-блюдо
+    for relation in dish_categories:
+        dish = relation.dish
+        category_id = relation.category_id
+
+        # Пропускаем, если категория не активна
+        if category_id not in categories:
+            continue
+
+        # Добавляем ID блюда в список блюд категории
+        categories[category_id]["Dishes"].append(dish.article)
+
+        # Если блюдо уже добавлено в словарь блюд, пропускаем
+        if dish.article in dishes:
+            continue
+
+        # Пытаемся получить перевод на русском
+        dish_name = None
+        for translation in dish.translations.all():
+            if translation.language_code == language_code and translation.short_name:
+                dish_name = translation.short_name
+                break
+
+        # Если русского перевода нет, берем первый доступный
+        if not dish_name and dish.translations.exists():
+            dish_name = dish.translations.first().short_name
+
+        # Если вообще нет переводов, используем артикул
+        if not dish_name:
+            dish_name = f"Блюдо {dish.article}"
+
+        dishes[dish.article] = {
+            "Name": dish_name,
+            "Image": dish.image.url if dish.image else "",
+            "Price": [
+                float(dish.final_price),     # основная цена
+                float(dish.final_price_p1),  # цена для партнера P1
+                float(dish.final_price_p2)   # цена для партнера P2
+            ]
+        }
+
+    # Удаляем категории без блюд
+    categories = {k: v for k, v in categories.items() if v["Dishes"]}
+
+    return categories, dishes
+
+
+def get_delivery_zones():
+    """
+    Формирует оптимизированные данные по зонам доставки.
+
+    Returns:
+        - delivery_zones: словарь зон доставки {id: {name, delivery_cost, is_promo, promo_min_order_amount}}
+
+    """
+    # Получаем активные категории с переводами
+    delivery_zones_list = DeliveryZone.objects.all()
+
+    # Создаем результирующие словари
+    delivery_zones = {}
+
+    # Заполняем словарь
+    for delivery_zone in delivery_zones_list:
+        delivery_zones[delivery_zone.id] = {
+            "name": delivery_zone.name,
+            "delivery_cost": delivery_zone.delivery_cost,
+            "is_promo": delivery_zone.is_promo,
+            "promo_min_order_amount": delivery_zone.promo_min_order_amount,
+        }
+
+    return delivery_zones
+
+
+def get_addchange_extra_context(request, extra_context, type=None, source=None):
+    extra_context["categories"], extra_context["dishes"] = get_menu_data()
+
+    if type == 'all':
+        extra_context["GOOGLE_API_KEY"] = get_google_api_key()
+        extra_context["delivery_zones"] = get_delivery_zones()
+    return extra_context
+
+
+class DeliveryTypeFilter(admin.SimpleListFilter):
+    title = 'Тип доставки'
+    parameter_name = 'delivery_type'
+
+    def lookups(self, request, model_admin):
+        return settings.DELIVERY_CHOICES
+
+    def queryset(self, request, queryset):
+        non_partner_queryset = queryset.exclude(source__in=settings.PARTNERS_LIST)
+
+        if self.value():
+            # Then apply the delivery type filter on non-partner orders
+            return non_partner_queryset.filter(delivery__type=self.value())
+        return queryset
+
+
+class InvoiceFilter(admin.SimpleListFilter):
+    title = 'Наличие чека'
+    parameter_name = 'invoice'
+
+    def lookups(self, request, model_admin):
+        return ((True, "есть чек"), (False, "без чека"))
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(invoice=self.value())
+        return queryset

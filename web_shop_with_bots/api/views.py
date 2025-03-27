@@ -73,6 +73,7 @@ class ContactsDeliveryViewSet(mixins.ListModelMixin,
         # Получаем уникальные города из ресторанов
         cities = set(Restaurant.objects.filter(
                         is_active=True).values_list('city', flat=True))
+        # cities = {'Beograd'}
         # Получаем все активные рестораны для данного города
         restaurants_qs = Restaurant.objects.filter(is_active=True)
         # Получаем условия доставки для данного города
@@ -1075,10 +1076,13 @@ def calculate_delivery(request):
     delivery = data.get('delivery', '')
     coordinates = data.get('coordinates', '')
 
-    if (recipient_address and amount and city and delivery
+    if (recipient_address and (amount is not None) and city and delivery
         and (coordinates not in ['undefined'])):
         amount = Decimal(amount)
-        delivery = Delivery.objects.get(id=int(delivery))
+        if delivery not in [True, False]:
+            delivery = Delivery.objects.get(id=int(delivery))
+        else:
+            delivery = Delivery.objects.get(city=city, type='delivery')
         lat, lon = parce_coordinates(coordinates)
 
         # Выполняем расчет доставки (ваша логика расчета)
@@ -1100,6 +1104,7 @@ def calculate_delivery(request):
             return JsonResponse({
                 'auto_delivery_zone': delivery_zone.name,
                 'auto_delivery_cost': delivery_cost,
+                'auto_delivery_zone_id': delivery_zone.id,
             })
 
         except:

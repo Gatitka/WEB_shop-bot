@@ -1,8 +1,7 @@
 from django.contrib.admin.views.decorators import staff_member_required
 from shop.models import Order, OrderDish
 from django.utils import timezone
-from datetime import timedelta
-from django.db.models import Q, Sum, Count
+from django.db.models import Sum, Count, F, Q
 from django.http import JsonResponse
 from django.db.models.functions import TruncDay
 import datetime
@@ -12,9 +11,21 @@ from django.utils.decorators import method_decorator
 from rest_framework.response import Response
 from django.conf import settings
 from django.db.models import Prefetch
+from django.views.generic import TemplateView
+from delivery_contacts.models import Courier, Restaurant
+from django.http import HttpResponseRedirect, JsonResponse
+from django.db.models.functions import Coalesce
+from decimal import Decimal
+from django.http import HttpResponseRedirect
+from datetime import timedelta
+from shop.admin_utils import get_report_data
+
 
 
 STANDARD_HEIGHT_ITEMS = 6  # Standard height is based on 6 items
+# When using DOUBLE_BOTH, the actual characters per line is reduced
+NORMAL_LINE_WIDTH = 48  # Maximum characters per line for 72mm paper
+DOUBLE_LINE_WIDTH = 24  # When using double width, line width is halved
 
 
 @staff_member_required
@@ -128,6 +139,65 @@ def sales_data(request):
 
 # ------------------------ ПЕЧАТЬ ЧЕКОВ ----------------------------
 
+def transliterate_serbian_to_russian(text):
+    """
+    Заменяет сербские символы на их ближайшие русские эквиваленты
+    для корректного отображения в CP866
+    """
+    if text is None:
+        return ""
+
+    serbian_to_russian = {
+        # Сербская кириллица -> Русская кириллица
+        'ђ': 'дж', 'Ђ': 'ДЖ',
+        'ј': 'й', 'Ј': 'Й',
+        'љ': 'ль', 'Љ': 'ЛЬ',
+        'њ': 'нь', 'Њ': 'НЬ',
+        'ћ': 'ч', 'Ћ': 'Ч',
+        'џ': 'дж', 'Џ': 'ДЖ',
+
+        # Сербская латиница -> Русская кириллица
+        'đ': 'дж', 'Đ': 'ДЖ',
+        'j': 'й', 'J': 'Й',
+        'lj': 'ль', 'Lj': 'ЛЬ', 'LJ': 'ЛЬ',
+        'nj': 'нь', 'Nj': 'НЬ', 'NJ': 'НЬ',
+        'ć': 'ч', 'Ć': 'Ч',
+        'č': 'ч', 'Č': 'Ч',
+        'dž': 'дж', 'Dž': 'ДЖ', 'DŽ': 'ДЖ',
+        'š': 'ш', 'Š': 'Ш',
+        'ž': 'ж', 'Ž': 'Ж',
+    }
+
+    for serbian, russian in serbian_to_russian.items():
+        text = text.replace(serbian, russian)
+
+    return text
+
+
+def encode_safely(text, encoding='cp866'):
+    """
+    Безопасное кодирование текста с заменой проблемных символов на ?
+    """
+    if text is None:
+        return b''
+
+    # Сначала транслитерация
+    transliterated_text = transliterate_serbian_to_russian(text)
+
+    # Затем безопасное кодирование
+    try:
+        return transliterated_text.encode(encoding, errors='replace')
+    except Exception:
+        # В случае непредвиденных ошибок возвращаем текст с ? вместо проблемных символов
+        result = bytearray()
+        for char in transliterated_text:
+            try:
+                result.extend(char.encode(encoding))
+            except UnicodeEncodeError:
+                result.extend(b'?')
+        return bytes(result)
+
+
 def get_receipt_data(order_id):
     """Get formatted receipt data for printing"""
     try:
@@ -164,6 +234,10 @@ def get_receipt_data(order_id):
         return Response(receipt_data)
     except Order.DoesNotExist:
         return Response({'error': 'Order not found'}, status=404)
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        return Response({'error': str(e), 'details': error_details}, status=500)
 
 
 def get_source_display(order):
@@ -219,7 +293,6 @@ def format_receipt(receipt_data, codepage='CP866'):
     """Format receipt text with printer control codes for 72mm paper"""
     cmd = PrinterCommands
     receipt = bytearray()  # Используем bytearray вместо списка строк
-    LINE_WIDTH = 48  # Maximum characters per line for 72mm paper
 
     # Initialize printer and reset formatting
     receipt.extend(cmd.INIT)
@@ -241,7 +314,7 @@ def format_receipt(receipt_data, codepage='CP866'):
     receipt.extend(cmd.ALIGN_LEFT)
     receipt.extend(cmd.BOLD_ON)
     receipt.extend(cmd.DOUBLE_BOTH)  # Увеличенные номера заказа
-    receipt.extend(str(receipt_data['order_number']).encode('cp866'))
+    receipt.extend(encode_safely(str(receipt_data['order_number']), codepage))
     receipt.extend(cmd.NORMAL_SIZE)
     receipt.extend(cmd.BOLD_OFF)
     receipt.extend(cmd.LF)
@@ -249,17 +322,24 @@ def format_receipt(receipt_data, codepage='CP866'):
 
     # Menu items - left aligned
     receipt.extend(cmd.ALIGN_LEFT)
-    receipt.extend(cmd.DOUBLE_HEIGHT)  # Средний размер для блюд
+    receipt.extend(cmd.DOUBLE_BOTH)     #размер для блюд
     for item in receipt_data['items']:
         name = item['name'].upper()
-        qty = str(item['quantity'])
+        qty = f"x {item['quantity']}"  # Format quantity with 'x ' prefix
 
-        # Calculate dots
-        available_space = LINE_WIDTH - len(name) - len(qty)
-        dots = '.' * available_space if available_space > 0 else ' '
+        # Calculate spaces needed - remember we're in double width mode
+        # so we need to account for the reduced character width
+        max_name_length = DOUBLE_LINE_WIDTH - len(qty) - 1  # Leave 1 space between name and qty
+        if len(name) > max_name_length:
+            # If name is too long, truncate it
+            name = name[:max_name_length-3] + "..."
 
-        line = name + dots + qty
-        receipt.extend(line.encode('cp866'))
+        # Calculate spaces needed
+        spaces_needed = DOUBLE_LINE_WIDTH - len(name) - len(qty)
+        spaces = ' ' * max(spaces_needed, 1)  # At least one space
+
+        line = name + spaces + qty
+        receipt.extend(encode_safely(line, codepage))
         receipt.extend(cmd.CRLF)
 
     receipt.extend(cmd.NORMAL_SIZE)
@@ -268,13 +348,14 @@ def format_receipt(receipt_data, codepage='CP866'):
     # Service info - left aligned
     receipt.extend(cmd.ALIGN_LEFT)
     service_text = f"приборы - {receipt_data['persons_qty']} шт."
-    receipt.extend(service_text.encode('cp866'))
+    receipt.extend(encode_safely(service_text, codepage))
     receipt.extend(cmd.CRLF)
 
     # Address
-    address_text = receipt_data['customer']['address']
-    receipt.extend(address_text.encode('cp866'))
-    receipt.extend(cmd.CRLF)
+    if 'customer' in receipt_data and receipt_data['customer'].get('address'):
+        address_text = receipt_data['customer']['address']
+        receipt.extend(encode_safely(address_text, codepage))
+        receipt.extend(cmd.CRLF)
 
     # Partner info if exists - right aligned
     if receipt_data['source_data']:
@@ -282,9 +363,9 @@ def format_receipt(receipt_data, codepage='CP866'):
         receipt.extend(cmd.DOUBLE_WIDTH)  # Увеличенный размер для источника
         receipt.extend(cmd.BOLD_ON)
         source_text = receipt_data['source_data']
-        if len(source_text) > LINE_WIDTH:
-            source_text = source_text[-LINE_WIDTH:]
-        receipt.extend(source_text.encode('cp866'))
+        if len(source_text) > DOUBLE_LINE_WIDTH:
+            source_text = source_text[-DOUBLE_LINE_WIDTH:]
+        receipt.extend(encode_safely(source_text, codepage))
         receipt.extend(cmd.NORMAL_SIZE)
         receipt.extend(cmd.BOLD_OFF)
         receipt.extend(cmd.CRLF)
@@ -312,6 +393,20 @@ def get_formatted_receipt(request, order_id):
             return receipt_response
 
         receipt_data = receipt_response.data
+
+        # Проверка на наличие важных полей для предотвращения ошибок
+        if not receipt_data:
+            return Response({'error': 'No receipt data available'}, status=400)
+
+        if 'order_number' not in receipt_data:
+            receipt_data['order_number'] = f"####"
+
+        if 'items' not in receipt_data or not isinstance(receipt_data['items'], list):
+            receipt_data['items'] = []
+
+        if 'persons_qty' not in receipt_data:
+            receipt_data['persons_qty'] = 1
+
         formatted_receipt = format_receipt(receipt_data, codepage)
 
         # Преобразуем бинарные данные в строку для передачи через API
@@ -331,4 +426,114 @@ def get_formatted_receipt(request, order_id):
         })
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        import traceback
+        error_details = traceback.format_exc()
+        return Response({'error': str(e), 'details': error_details}, status=500)
+
+
+
+# ------------------------ ОТЧЕТ СУПЕРАДМИНА ----------------------------
+
+
+class AdminReportView(TemplateView):
+    template_name = 'admin/superadmin_report.html'
+
+    @method_decorator(staff_member_required)
+    def dispatch(self, request, *args, **kwargs):
+        # Check if user is superuser
+        if not request.user.is_superuser:
+            return HttpResponseRedirect('/admin/shop/order/')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Get date range from request parameters
+        start_date, end_date = self.get_date_range()
+
+        # Get data for reports
+        context['restaurant_data'] = self.get_restaurant_data(start_date, end_date)
+
+        # Add date filtering context
+        context['report_date'] = self.report_date
+
+        return context
+
+    def get_date_range(self):
+        """Get date range from request parameters or use default (today)"""
+        today = timezone.now().date()
+
+        report_date_str = self.request.GET.get('report_date')
+
+        # Parse dates if provided
+        if report_date_str:
+            try:
+                report_date = datetime.datetime.strptime(report_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                report_date = today
+        else:
+            report_date = today
+
+        # Create start and end datetime for the same day
+        start_datetime = datetime.datetime.combine(report_date, datetime.datetime.min.time())
+        end_datetime = datetime.datetime.combine(report_date + datetime.timedelta(days=1), datetime.datetime.min.time())
+
+        # Make aware if using timezone
+        if settings.USE_TZ:
+            start_datetime = timezone.make_aware(start_datetime)
+            end_datetime = timezone.make_aware(end_datetime)
+
+        # Save report date for template
+        self.report_date = report_date_str or report_date.strftime('%Y-%m-%d')
+
+        return start_datetime, end_datetime
+
+    def get_restaurant_data(self, start_date, end_date):
+        """Get restaurant-related data aggregated by city and restaurant"""
+        orders = Order.objects.filter(
+                    created__gte=start_date,
+                    created__lt=end_date,
+                ).exclude(
+                    status='CND'
+                ).select_related(
+                        'delivery',
+                        'delivery_zone',
+                        'courier')
+
+        # Prepare result structure
+        restaurants_data = {}
+
+        # Process all cities
+        for city_code, city_name in settings.CITY_CHOICES:
+            city_orders = orders.filter(city=city_code)
+
+            # Skip cities with no orders
+            if not city_orders.exists():
+                continue
+
+            # Initialize city data
+            city_data = {
+                'name': city_name,
+                'restaurants': {}
+            }
+
+            # Get all restaurants in this city
+            restaurants = Restaurant.objects.filter(city=city_code)
+
+            # Process each restaurant
+            for restaurant in restaurants:
+                restaurant_orders = city_orders.filter(restaurant=restaurant)
+
+                # Skip restaurants with no orders
+                if not restaurant_orders.exists():
+                    continue
+
+                restaurant_data_item = get_report_data(restaurant_orders)
+                # Add restaurant data to the city
+                city_data['restaurants'][restaurant.id] = restaurant_data_item
+
+            # Only add cities with restaurants that have data
+            if city_data['restaurants']:
+                restaurants_data[city_code] = city_data
+
+        return restaurants_data

@@ -277,8 +277,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var amountObserver = new MutationObserver(function(mutationsList) {
         for (var mutation of mutationsList) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
-                calculateDiscountAmount();
-                calculateDiscountedAmount();
+                calculateFinalAmount();
             }
         }
     });
@@ -289,8 +288,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Слушаем изменения в поле суммы заказа
     document.addEventListener('amountChanged', function() {
-        calculateDiscountAmount();
-        calculateDiscountedAmount();
+        calculateFinalAmount();
     });
 
 
@@ -299,7 +297,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var discountObserver = new MutationObserver(function(mutationsList) {
         for (var mutation of mutationsList) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
-                calculateDiscountedAmount();
+                calculateFinalAmount();
             }
         }
     });
@@ -307,204 +305,135 @@ document.addEventListener('DOMContentLoaded', function() {
         discountObserver.observe(discountField, { attributes: false, childList: true, subtree: true }); // Исправлено - наблюдаем за discountField
     }
 
-
-    // .field-promocode_disc_amount .readonly'
-
     var manualDiscountField = document.getElementById('id_manual_discount');
     if (manualDiscountField) {
         manualDiscountField.addEventListener('input', function() {
-            calculateDiscountedAmount();
+            calculateFinalAmount();
         });
     }
 
-    // Обработчик изменений выбора скидки
-    document.querySelectorAll('input[name="discount"]').forEach(function(el) {
-        el.addEventListener('change', function() {
-            calculateDiscountAmount();
-            calculateDiscountedAmount();
+    var discountSelect = document.getElementById('id_discount');
+    if (discountSelect) {
+        discountSelect.addEventListener('change', function() {
+            calculateFinalAmount();
         });
+    }
+
+    // Улучшенная обработка поля стоимости доставки
+    var deliveryCostInput = document.getElementById('id_delivery_cost');
+    if (deliveryCostInput) {
+        console.log('Found delivery cost input:', deliveryCostInput);
+
+        // Добавляем несколько обработчиков событий для надежности
+        deliveryCostInput.addEventListener('input', function() {
+            console.log('Delivery cost input event fired:', this.value);
+            calculateFinalAmount();
+        });
+
+        deliveryCostInput.addEventListener('change', function() {
+            console.log('Delivery cost change event fired:', this.value);
+            calculateFinalAmount();
+        });
+
+        // Добавляем обработчик события blur для надежности
+        deliveryCostInput.addEventListener('blur', function() {
+            console.log('Delivery cost blur event fired:', this.value);
+            calculateFinalAmount();
+        });
+
+        // Добавляем обработчик события focus для надежности
+        deliveryCostInput.addEventListener('focus', function() {
+            console.log('Delivery cost focus event fired:', this.value);
+            // Сохраняем текущее значение для сравнения при потере фокуса
+            this.setAttribute('data-prev-value', this.value);
+        });
+
+        // Проверяем при потере фокуса, изменилось ли значение
+        deliveryCostInput.addEventListener('blur', function() {
+            var prevValue = this.getAttribute('data-prev-value');
+            if (prevValue !== this.value) {
+                console.log('Delivery cost value changed from', prevValue, 'to', this.value);
+                calculateFinalAmount();
+            }
+        });
+
+        // Настраиваем MutationObserver для отслеживания изменений атрибута value
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'value') {
+                    console.log('Delivery cost value attribute changed:', deliveryCostInput.value);
+                    calculateFinalAmount();
+                }
+            });
+        });
+
+        observer.observe(deliveryCostInput, { attributes: true });
+    } else {
+        console.warn('Delivery cost input not found!');
+    }
+
+    // Слушаем событие изменения стоимости доставки
+    document.addEventListener('deliveryCostChanged', function(event) {
+        console.log('Custom deliveryCostChanged event received:', event.detail);
+        calculateFinalAmount();
     });
 
-    // Функция для расчета и отображения скидки
-    function calculateDiscountAmount() {
-        // Если это первоначальный расчет (поле уже имеет значение) и скидки еще не загружены,
-        // то не пересчитываем и используем установленное значение
-        if (Object.keys(fetchedDiscounts).length === 0 && discountField.textContent.trim() !== '') {
-            console.log('Using existing discount value:', discountField.textContent);
-            return parseFloat(discountField.textContent) || 0;
-        }
+    // Функция для расчета скидок
+    function calculateDiscounts() {
+        // Получаем основные значения
+        var deliveryCostInput = document.getElementById('id_delivery_cost');
+        var amount = parseFloat(amountField.textContent) || 0;
+        var deliveryCost = deliveryCostInput ? parseFloat(deliveryCostInput.value) || 0 : 0;
+        var discountSelectValue = discountSelect ? discountSelect.value : '';
+        var manualDiscountValue = parseFloat(manualDiscountField.value) || 0;
 
-        var amountField = parseFloat(document.querySelector('.fieldBox.field-amount .readonly').textContent);
-        var discountField = document.querySelector('.fieldBox.field-discount_amount .readonly');
-        var discountRadioButtons = document.querySelectorAll('input[name="discount"]');
+        // Базовая сумма для расчета скидки (с доставкой)
+        var baseAmount = amount + deliveryCost;
+
+        // Рассчитываем скидку по выбранному типу
         var discountAmount = 0;
+        if (discountSelectValue && fetchedDiscounts[discountSelectValue]) {
+            var discount = fetchedDiscounts[discountSelectValue];
 
-        discountRadioButtons.forEach(function(radio) {
-            if (radio.checked) {
-                var discountId = radio.value;
-                console.log('discountId:', discountId);
-                console.log('fetchedDiscounts', fetchedDiscounts);
-                var discount = fetchedDiscounts[discountId];
-
-                if (discount && discount.is_active) {
-                    if (discount.discount_perc !== null) {
-                        discountAmount = amountField * (discount.discount_perc / 100);
-                    } else if (discount.discount_am !== null) {
-                        discountAmount = discount.discount_am;
-                    }
-                }
+            if (discount.discount_perc) {
+                discountAmount = baseAmount * (discount.discount_perc / 100);
+            } else if (discount.discount_am) {
+                discountAmount = discount.discount_am;
             }
-            console.log('Amount:', amountField);
-            console.log('Discount Amount:', discountAmount);
-
-            discountField.textContent = discountAmount.toFixed(2);
-            return discountAmount;
-        });
-    }
-
-    // Функция для расчета суммы с учетом скидок
-    function calculateDiscountedAmount() {
-        // Получаем элементы с проверкой на существование
-        const amountFieldElement = document.querySelector('.field-amount .readonly');
-        const discountFieldElement = document.querySelector('.field-discount_amount .readonly');
-        const manualDiscountElement = document.getElementById('id_manual_discount');
-        const discountedAmountElement = document.querySelector('.field-discounted_amount .readonly');
-
-        // Если нужные элементы не найдены, выходим из функции
-        if (!amountFieldElement || !discountedAmountElement) {
-            console.log('Необходимые DOM-элементы не найдены для расчета скидки');
-            return;
         }
 
-        // Получаем значения с проверкой на существование элементов
-        const amountField = parseFloat(amountFieldElement.textContent) || 0;
-        const discountAmount = discountFieldElement ? parseFloat(discountFieldElement.textContent) || 0 : 0;
-        const manualDisc = manualDiscountElement ? parseFloat(manualDiscountElement.value) || 0 : 0;
+        // Рассчитываем ручную скидку как процент от базовой суммы
+        var manualDiscountAmount = 0;
+        if (manualDiscountValue > 0) {
+            manualDiscountAmount = baseAmount * (manualDiscountValue / 100);
+        }
 
-        const discAmount = amountField - discountAmount - manualDisc;
-
-        console.log('Amount:', amountField);
-        console.log('Discount Amount:', discountAmount);
-        console.log('Manual Discount:', manualDisc);
-        console.log('Discounted Amount:', discAmount);
-
-        // var finalDiscountedAmount = handleDiscountedAmountChange(amountField, discAmount); // Проверяем сумму с учетом скидки 25%
-        document.querySelector('.field-discounted_amount .readonly').textContent = discAmount.toFixed(2);
-        calculateFinalAmountWithShipping(); //
+        // Общая сумма скидки
+        var totalDiscountAmount = discountAmount + manualDiscountAmount;
+        return totalDiscountAmount;
     }
 
-    // Функция для рассчета суммы с учетом доставки
-    function calculateFinalAmountWithShipping() {
-        var discountedAmount = parseFloat(document.querySelector('.field-discounted_amount .readonly').textContent) || 0;
-        var deliveryCost = parseFloat(document.getElementById('id_delivery_cost').value) || 0;
-        var autoDeliveryCost = parseFloat(document.getElementById('id_auto_delivery_cost').value) || 0;
-        var finalAmountWithShipping = discountedAmount + (deliveryCost || autoDeliveryCost);
-        document.querySelector('.field-final_amount_with_shipping .readonly').textContent = finalAmountWithShipping.toFixed(2);
+    // Функция для расчета итоговой суммы
+    function calculateFinalAmount() {
+        var amount = parseFloat(amountField.textContent) || 0;
+        var deliveryCost = parseFloat(deliveryCostInput.value) || 0;
+        var totalDiscountAmount = calculateDiscounts() || 0;
+
+        // Итоговая сумма = базовая сумма - скидки
+        var finalAmount = (amount + deliveryCost) - totalDiscountAmount;
+
+        // Обновляем поле final_amount_with_shipping
+        var finalAmountField = document.querySelector('.fieldBox.field-final_amount_with_shipping .readonly');
+        if (finalAmountField) {
+            finalAmountField.textContent = finalAmount.toFixed(2);
+        }
     }
 
 
     var autoDeliveryCost = document.getElementById('id_auto_delivery_cost');
     if (autoDeliveryCost) {
         autoDeliveryCost.addEventListener('change', function() {
-            calculateFinalAmountWithShipping();
+            calculateFinalAmount();
         });
     }
-
-    var DeliveryCost = document.getElementById('id_delivery_cost');
-    if (DeliveryCost) {
-        DeliveryCost.addEventListener('change', function() {
-            calculateFinalAmountWithShipping();
-        });
-    }
-
-    // Функция для проверки суммы с учетом скидки 25%
-    function handleDiscountedAmountChange(originalAmount, discAmount) {
-        // Отладочный вывод для проверки вызова функции
-        console.log('handleDiscountedAmountChange() вызвана');
-
-        // Отладочный вывод для проверки переданных значений
-        console.log('originalAmount:', originalAmount);
-        console.log('discAmount:', discAmount);
-
-        // Проверяем, превышает ли разница между суммами 25%
-        var threshold = originalAmount * 0.25;
-        var calcMessageElement = document.getElementById('id_calc_message');
-        console.log('threshold:', threshold);
-        if (originalAmount - discAmount > threshold) {
-            // Если превышает, возвращаем максимально возможную сумму с учетом ограничения 25%
-            if (calcMessageElement) {
-                var maxDisc = originalAmount - threshold;
-                calcMessageElement.value = 'Превышен порог макс скидки 25% / MAX сумм = ' + maxDisc;
-                calcMessageElement.style.display = 'block';
-            }
-        }
-        return discAmount;
-    }
-
-
-
-
-
-
-
-    // // Функция для рассчета скидки на самовывоз
-    // function calculateTakeawayDiscount() {
-    //     var deliveryType = document.querySelector('input[name="delivery"]:checked').value;
-    //     var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent);
-    //     var discountField = document.querySelector('.field-discount_amount .readonly');
-    //     // Находим родительский элемент с классом .field-takeaway_disc_amount
-    //     var takeawayDiscountField= document.getElementById('id_takeaway_disc_amount');
-    //     // Если родительский элемент найден
-
-    //     // Если поле для скидки найдено
-    //     if (takeawayDiscountField) {
-    //         // Если выбран самовывоз, рассчитываем скидку
-    //         if (deliveryType === '2') {
-    //             var discountAmount = amountField * 0.1; // 10% от суммы заказа
-    //             takeawayDiscountField.value = discountAmount.toFixed(2);
-    //         } else {
-    //             // Если выбрана доставка, скидка на самовывоз равна 0
-    //             takeawayDiscountField.value = '0.00';
-    //         }
-    //     }
-    // }
-
-    // // Функция для рассчета скидки наличными
-    // function calculateCashDiscount() {
-    //     console.log('fetchedDiscount:', fetchedDiscount);
-
-    //     var deliveryType = document.querySelector('input[name="delivery"]:checked').value;
-    //     var paymentType = document.querySelector('input[name="payment_type"]:checked').value;
-    //     var amountField = parseFloat(document.querySelector('.field-amount .readonly').textContent);
-    //     var languageValue = document.getElementById('id_language').value;
-
-    //     var cashDiscount = 0; // Изначально скидка равна 0
-
-
-    //     // Проверяем, есть ли данные о скидке в полученных данных и выполняются ли условия для расчета скидки
-    //     if ('cash_discount' in fetchedDiscount &&
-    //         fetchedDiscount['cash_discount'] !== null &&
-    //         paymentType === "cash" &&
-    //         languageValue === "ru" &&
-    //         deliveryType === '1') {
-    //         // Если есть данные о скидке и выполняются условия, рассчитываем скидку в %
-    //         if ('discount_perc' in fetchedDiscount['cash_discount']) {
-    //             cashDiscount = amountField * (fetchedDiscount['cash_discount']['discount_perc'] / 100);
-    //         } else if ('discount_am' in fetchedDiscount['cash_discount']) {
-    //             // Или используем размер скидки, если он указан
-    //             cashDiscount = fetchedDiscount['cash_discount']['discount_am'];
-    //         }
-    //     } else {
-    //         // Если условия не выполняются или данных о скидке нет, скидка равна 0
-    //         cashDiscount = 0;
-    //     }
-
-    //     // Если скидка была рассчитана, устанавливаем ее в соответствующее поле
-    //     if (cashDiscount !== 0) {
-    //         document.querySelector('.field-cash_discount_amount .readonly').textContent = cashDiscount.toFixed(2);
-    //     } else {
-    //         // Если скидка не была рассчитана (равна 0), устанавливаем 0.00
-    //         document.querySelector('.field-cash_discount_amount .readonly').textContent = '0.00';
-    //     }
-    // }
-});
+})

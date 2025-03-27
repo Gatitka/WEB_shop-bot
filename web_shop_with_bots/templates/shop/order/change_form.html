@@ -6,12 +6,18 @@
 
 {% block admin_change_form_document_ready %}
     {{ block.super }}
+
+    {{ categories|json_script:"categories-data" }}
+    {{ dishes|json_script:"dishes-data" }}
+    {{ delivery_zones|json_script:"delivery_zones-data" }}
+
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="{% static 'my_admin/js/shop/address_autocomplete.js' %}"></script>
-    <script src="{% static 'my_admin/js/shop/calculate_delivery.js' %}"></script>
-    <script src="{% static 'my_admin/js/shop/user_data.js' %}"></script>
-    <script src="{% static 'my_admin/js/shop/calculate_change_order_fields.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/change/calculate_delivery.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/change/user_data.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/change/calculate_change_order_fields.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/receipt_printing.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/prevent_duplicate_orderdishes.js' %}"></script>
 {% endblock %}
 
 {% block form_top %}

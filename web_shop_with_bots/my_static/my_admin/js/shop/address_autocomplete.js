@@ -22,6 +22,25 @@ document.addEventListener('DOMContentLoaded', () => {
         types: ['address']
     };
 
+    // Функция для отображения координат в help_text под полем адреса
+    function displayCoordinatesInHelpText(coordinates) {
+        // Ищем или создаем help text под полем адреса
+        let helpText = addressInput.parentNode.querySelector('.help');
+        if (!helpText) {
+            helpText = document.createElement('div');
+            helpText.className = 'help';
+            addressInput.parentNode.appendChild(helpText);
+        }
+
+        // Устанавливаем текст с координатами
+        if (coordinates) {
+            helpText.textContent = `коорд: ${coordinates}`;
+            helpText.style.display = 'block';
+        } else {
+            helpText.style.display = 'none';
+        }
+    }
+
     if (addressInput) {
         const csrfToken = getCSRFToken();
         const currentDomain = getCurrentDomain(); // Получаем текущий домен
@@ -70,6 +89,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     const coordinates = `${latitude}, ${longitude}`;
                     // Вставка координат в поле coordinates
                     coordinatesInput.value = coordinates;
+
+                    // Отображаем координаты в help_text
+                    displayCoordinatesInHelpText(coordinates);
+
+                    // Добавьте эти отладочные выводы
+                    console.log("Координаты получены и установлены:", coordinates);
+                    console.log("Генерация события coordinatesChanged");
+
+                    // Генерируем событие изменения координат для других скриптов
+                    const event = new CustomEvent('coordinatesChanged', {
+                        detail: { coordinates: coordinates }
+                    });
+                    document.dispatchEvent(event);
+                    console.log("Событие coordinatesChanged отправлено");
                 });
             };
             document.head.appendChild(googleMapsScript);
@@ -78,6 +111,31 @@ document.addEventListener('DOMContentLoaded', () => {
             addressInput.addEventListener('input', () => {
                 if (!addressInput.value) {
                     coordinatesInput.value = ''; // Установка пустой строки для очистки поля
+                    displayCoordinatesInHelpText('нет координат'); // Очищаем help text
+
+                    // Сбрасываем зону доставки на значение по умолчанию
+                    const deliveryZoneSelect = document.getElementById('id_delivery_zone');
+                    if (deliveryZoneSelect) {
+                        deliveryZoneSelect.value = '';
+
+                        // Сбрасываем стоимость доставки на 0
+                        const deliveryCostInput = document.getElementById('id_delivery_cost');
+                        if (deliveryCostInput) {
+                            deliveryCostInput.value = '0';
+
+                            // Генерируем событие изменения для deliveryCostInput
+                            deliveryCostInput.dispatchEvent(new Event('change'));
+                        }
+
+                        // Генерируем событие изменения для запуска связанных обработчиков
+                        deliveryZoneSelect.dispatchEvent(new Event('change'));
+                    }
+
+                    // Генерируем событие изменения координат для других скриптов
+                    const event = new CustomEvent('coordinatesChanged', {
+                        detail: { coordinates: '' }
+                    });
+                    document.dispatchEvent(event);
                 }
             });
         })

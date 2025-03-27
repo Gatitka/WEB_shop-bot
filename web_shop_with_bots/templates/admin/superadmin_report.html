@@ -1,0 +1,336 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static admin_urls %}
+
+
+{% block content %}
+<div class="report-container">
+    <a href="{% url 'admin:shop_order_changelist' %}" class="back-link">← {% trans "Вернуться к списку заказов" %}</a>
+
+    <h1>{% trans "Отчет по ресторанам" %}</h1>
+
+    <!-- Filter Section -->
+    <div class="filter-section">
+        <form method="get" action="">
+            <label for="report_date">{% trans "Дата отчета:" %}</label>
+            <input type="date" id="report_date" name="report_date" class="date-input" value="{{ report_date }}">
+
+            <button type="submit" class="filter-button">{% trans "Применить фильтр" %}</button>
+        </form>
+    </div>
+
+    <!-- Group data by city and restaurant -->
+    {% for city_code, city_data in restaurant_data.items %}
+    <div class="city-container">
+        <div class="city-header">{{ city_data.name }}</div>
+
+        <!-- Loop through each restaurant in the city -->
+        {% for restaurant_id, restaurant_data in city_data.restaurants.items %}
+        <div class="restaurant-container">
+            <div class="restaurant-name">{{ restaurant_data.name }}</div>
+
+            <div class="data-tables">
+                <!-- Restaurant metrics -->
+                <div class="data-table">
+                    <table class="model-table main-table">
+                        <tr class="total-row">
+                            <td>{% trans "Всего заказов" %}</td>
+                            <td> {{ restaurant_data.total_amount }} </td>
+                        </tr>
+
+                        <!-- Po terminalu -->
+                        <tr>
+                            <td>po terminalu</td>
+                            <td class="numeric">{{ restaurant_data.total_terminal|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Takeaway -->
+                        <tr style="background-color: rgba(255, 236, 179, 0.36);">
+                            <td>{% trans "безнал" %}</td>
+                            <td class="numeric">{{ restaurant_data.takeaway_nocash|floatformat:2 }}</td>
+                        </tr>
+                        <tr style="background-color: rgba(255, 236, 179, 0.36);">
+                            <td>{% trans "Gotovina" %}</td>
+                            <td class="numeric">{{ restaurant_data.takeaway_gotovina|floatformat:2 }}</td>
+                        </tr>
+                        <tr style="background-color: rgba(255, 236, 179, 0.36);">
+                            <td>{% trans "КАРТА" %}</td>
+                            <td class="numeric">{{ restaurant_data.takeaway_card|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Partners -->
+                        <tr class="partner-row">
+                            <td>{{ "Glovo" }}</td>
+                            <td class="numeric">{{ restaurant_data.partners.Glovo|floatformat:2 }}</td>
+                        </tr>
+                        <tr class="partner-row">
+                            <td>{{ "Wolt" }}</td>
+                            <td class="numeric">{{ restaurant_data.partners.Wolt|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Курьеры (добавлены в левую таблицу) -->
+                        {% for courier_name, courier_info in restaurant_data.couriers.items %}
+                            {% if courier_name != 'total_cash' and courier_name != 'total_bezgotovinsko' %}
+                                <!-- Строка с именем и картой -->
+                                <tr class="courier-card">
+                                    <td><strong>{{ courier_name }}</strong> - карта</td>
+                                    <td class="numeric">{{ courier_info.5|floatformat:2 }}</td>
+                                </tr>
+                                <!-- Строка с наличкой -->
+                                <tr class="courier-cash">
+                                    <td style="padding-left: 20px;">наличка (бн + н)</td>
+                                    <td class="numeric">{{ courier_info.4|floatformat:2 }}</td>
+                                </tr>
+                            {% endif %}
+                        {% endfor %}
+
+                        <!-- Итого по слева -->
+                        <tr class="total-cashless-sum-row">
+                            <td>Drugo bezgotovinsko:</td>
+                            <td class="numeric">{{ restaurant_data.drugo_bezgotovinsko|floatformat:2 }}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Courier metrics -->
+                <div class="data-table">
+                    {% if restaurant_data.couriers %}
+                    <table class="model-table secondary-table">
+                        <tbody>
+                            {% for courier_name, courier_info in restaurant_data.couriers.items %}
+                                {% if courier_name != 'total_cash' and courier_name != 'total_bezgotovinsko' %}
+                                    <!-- Regular courier row (cash payments) -->
+                                    <tr class="{% if courier_name == 'Unknown' %}unknown-row{% else %}courier-row{% endif %}">
+                                        <td>{{ courier_name }}</td>
+                                        <td class="numeric">{{ courier_info.4|floatformat:2 }}</td>
+                                    </tr>
+
+                                    <!-- Courier salary row (negative value) -->
+                                    <tr class="{% if courier_name == 'Unknown' %}unknown-row{% else %}courier-zp-row{% endif %}">
+                                        <td>{{ courier_name }} ZP</td>
+                                        <td class="numeric negative-value">-{{ courier_info.0|floatformat:2 }}
+                                            {% if courier_info.1 %}
+                                                <br><span class="clarify-note">+ уточнить</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endif%}
+                            {% endfor %}
+
+                            <!-- Безнал -->
+                            <tr class="takeaway-row">
+                                <td>{% trans "безнал" %}</td>
+                                <td class="numeric">{{ restaurant_data.takeaway_nocash|floatformat:2 }}</td>
+                            </tr>
+
+                            <!-- Gotovina -->
+                            <tr class="gotovina-row">
+                                <td>Gotovina</td>
+                                <td class="numeric">{{ restaurant_data.takeaway_gotovina|floatformat:2 }}</td>
+                            </tr>
+
+                            <!-- Total row -->
+                            <tr class="total-sum-row">
+                                <td>Итого Н:</td>
+                                <td class="numeric" id="total-sum-{{ restaurant_id }}">{{ restaurant_data.total_cash|floatformat:2 }}</td>
+                            </tr>
+
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="no-data">{% trans "Нет данных по курьерам за выбранный период" %}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="no-data">{% trans "Нет данных по ресторанам в этом городе за выбранный период" %}</div>
+        {% endfor %}
+    </div>
+    {% empty %}
+    <div class="no-data">{% trans "Нет данных по ресторанам за выбранный период" %}</div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <style>
+        /* Базовые стили контейнеров */
+        .report-container {
+            margin: 20px;
+        }
+        .filter-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--body-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        .city-container {
+            margin-bottom: 30px;
+        }
+        .restaurant-container {
+            margin-bottom: 30px;
+        }
+
+        /* Заголовки */
+        .city-header {
+            background-color: var(--primary);
+            color: var(--header-link-color);
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .restaurant-name {
+            background-color: var(--darkened-bg);
+            color: var(--body-fg);
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        /* Расположение таблиц */
+        .data-tables {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .data-table {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        /* Общие стили таблиц */
+        .model-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .model-table th,
+        .model-table td {
+            border: 1px solid var(--border-color);
+            padding: 8px;
+            text-align: left;
+            color: var(--body-fg);
+        }
+        .model-table th {
+            background-color: var(--darkened-bg);
+        }
+        .model-table .numeric {
+            text-align: right;
+        }
+
+        /* Форматирование строк таблицы */
+        .main-table th,
+        .main-table td {
+            padding: 8px;
+            font-size: 12px;
+        }
+        .secondary-table {
+            font-size: 12px;
+        }
+        .secondary-table th,
+        .secondary-table td {
+            padding: 4px;
+        }
+
+        /* Стили для строк различных типов */
+        .total-row {
+            background: linear-gradient(rgba(255, 182, 198, 0.3), rgba(255, 182, 198, 0.3));
+            font-weight: bold;
+        }
+        .takeaway-row {
+            background-color: rgba(255, 236, 179, 0.73);
+        }
+        .partner-row {
+            background-color: rgba(230, 230, 250, 0.3);
+        }
+        .courier-row, .courier-card {
+            background-color: rgba(173, 216, 230, 0.3);
+        }
+        .courier-zp-row, .courier-cash {
+            background-color: rgba(173, 216, 230, 0.1);
+        }
+        .smoke-row {
+            background-color: rgba(255, 192, 203, 0.3);
+        }
+        .gotovina-row {
+            background-color: rgba(144, 238, 144, 0.3);
+        }
+        .unknown-row {
+            background-color: rgba(255, 182, 193, 0.3);
+        }
+        .total-cashless-sum-row {
+            background: linear-gradient(rgba(152, 251, 152, 0.3), rgba(152, 251, 152, 0.3));
+            font-weight: bold;
+        }
+        .total-sum-row {
+            background: linear-gradient(rgba(255, 182, 193, 0.3), rgba(255, 182, 193, 0.3));
+            font-weight: bold;
+        }
+
+        /* Форма и элементы управления */
+        .date-input {
+            padding: 5px;
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            background-color: var(--body-bg);
+            color: var(--body-fg);
+        }
+        .filter-button {
+            padding: 5px 10px;
+            background-color: var(--primary);
+            color: var(--header-link-color);
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .filter-button:hover {
+            background-color: var(--primary-dark);
+        }
+        .back-link {
+            margin-bottom: 20px;
+            display: inline-block;
+            color: var(--link-fg);
+        }
+        .back-link:hover {
+            color: var(--link-hover-color);
+        }
+
+        /* Утилиты */
+        .no-data {
+            padding: 15px;
+            background-color: var(--darkened-bg);
+            border-radius: 4px;
+            color: var(--body-quiet-color);
+            font-style: italic;
+        }
+        .negative-value {
+            color: #dc3545;
+        }
+        .clarify-note {
+            color: #dc3545;
+            font-size: 11px;
+        }
+
+        /* SMOKE input */
+        .smoke-input {
+            width: 100px;
+            text-align: right;
+            border: 1px solid var(--border-color);
+            padding: 3px 5px;
+            border-radius: 3px;
+            background-color: var(--body-bg);
+            color: var(--body-fg);
+        }
+        .smoke-input:focus {
+            outline: 2px solid var(--primary);
+            border-color: var(--primary);
+        }
+    </style>
+{% endblock %}

@@ -49,9 +49,14 @@ def get_next_item_id_today_model(model, field):
 
 
 def get_first_order_true(obj):
-    # проверка на первый заказ только для заказов с сайта source='4'
+    """Проверка на первый заказ только для заказов с сайта source='4'."
+       Если есть зареганый юзер, то проверяется наличие у него заказаов.
+       Если юзера нет, то проверяется наличие заказов по телефону, для того чтобы
+       в админке отразить, что это первый заказ незарега и
+       его нужно переориентировать на сайт."""
+
     model_class = obj.__class__
-    if obj.source == '4':
+    if obj.source == '4' and obj.created_by == 1:
         if obj.user is not None:
             if not model_class.objects.filter(user=obj.user).exists():
                 return True

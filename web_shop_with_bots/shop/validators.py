@@ -12,8 +12,9 @@ from datetime import timedelta
 def validate_delivery_time(value, delivery, restaurant=None):
     if delivery is None:
         raise ValidationError(
-                ("Delivery is required.")
-            )
+            "No sufficent handling option for takeaway/delivery is found. "
+            "Maybe chosen type of delivery is unavailable "
+            "or chosen restaurant is closed.")
 
     if delivery.type == 'delivery':
         min_time = delivery.min_acc_time
@@ -23,7 +24,8 @@ def validate_delivery_time(value, delivery, restaurant=None):
 
     if delivery.type == 'takeaway':
         if restaurant is not None:
-            restaurant = Restaurant.objects.filter(id=restaurant).first()
+            if not isinstance(restaurant, Restaurant):
+                restaurant = Restaurant.objects.filter(id=restaurant).first()
             if restaurant:
                 min_time = restaurant.min_acc_time
                 max_time = restaurant.max_acc_time
