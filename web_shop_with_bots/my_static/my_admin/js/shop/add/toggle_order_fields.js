@@ -2,7 +2,7 @@
 //доставка открывается, только если выбрано доставка ДА
 document.addEventListener("DOMContentLoaded", function () {
     var orderTypeField = document.getElementById("id_order_type");
-    var manualDiscountField = document.getElementById("id_manual_discount");
+    var manualDiscountField = document.querySelector(".form-row.field-manual_discount");
     var dependentFields = document.querySelector(".form-row.field-bot_order.field-delivery_time");
     var amountField = document.querySelector('.fieldBox.field-amount');
     var finalAmountField = document.querySelector('.fieldBox.field-final_amount_with_shipping');
@@ -50,6 +50,15 @@ document.addEventListener("DOMContentLoaded", function () {
             if (deliveryFieldset) deliveryFieldset.style.display = "none";
             sourceIdField.style.display = 'block';
             sourceIdField.required = true;
+
+            // Если выбран Smoke, устанавливаем invoice в "Нет"
+            if (selectedValue === 'P2-1') {
+                const invoiceYesRadio = document.getElementById('id_invoice_0'); // "Да"
+                const invoiceNoRadio = document.getElementById('id_invoice_1'); // "Нет"
+                if (invoiceNoRadio) {
+                    invoiceNoRadio.checked = true;
+                }
+            }
         }
     }
 

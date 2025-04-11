@@ -66,6 +66,10 @@
                             <td>{{ "Wolt" }}</td>
                             <td class="numeric">{{ restaurant_data.partners.Wolt|floatformat:2 }}</td>
                         </tr>
+                        <tr class="partner-row">
+                            <td>{{ "Smoke" }}</td>
+                            <td class="numeric">{{ restaurant_data.partners.Smoke|floatformat:2 }}</td>
+                        </tr>
 
                         <!-- Курьеры (добавлены в левую таблицу) -->
                         {% for courier_name, courier_info in restaurant_data.couriers.items %}

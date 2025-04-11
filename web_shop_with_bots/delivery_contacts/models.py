@@ -351,9 +351,9 @@ class Restaurant(models.Model):
         return f'{self.city}/{self.address[0:10]}'
 
     def save(self, *args, **kwargs):
-        lat, lon, status = google_validate_address_and_get_coordinates(
-                                                                self.address,
-                                                                self.city)
+        lat, lon = google_validate_address_and_get_coordinates(
+                                                               self.address,
+                                                               self.city)
         self.coordinates = Point(lon, lat)
         return super().save()
 

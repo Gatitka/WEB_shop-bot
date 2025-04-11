@@ -68,9 +68,9 @@ def get_delivery_cost_zone_by_address(city, amount, delivery,
     Рассчитывает стоимость доставки и зону с учетом суммы заказа и адреса доставки.
     """
     # Перебираем все районы доставки и проверяем, входит ли адрес в каждый из них
-    lat, lon, status = google_validate_address_and_get_coordinates(address,
-                                                                   city)
-    logger.warning(f'получение координат из адреса, через бэк {address}')
+    logger.warning(f'получение координат из адреса, через бэк {address, city}')
+    lat, lon = google_validate_address_and_get_coordinates(address, city)
+
     delivery_zone = get_delivery_zone(city,
                                       lat, lon)
 

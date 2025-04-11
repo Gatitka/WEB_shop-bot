@@ -252,18 +252,20 @@ def send_error_message_order_unsaved(bot, order_id, e):
     """ Отправка сообщения телеграм-ботом в админский чат
         о том, что заказ из бота не сохранился."""
 
-    message = f'Заказ TM BOT #{order_id} не сохранился в базе данных.'
+    message = f'❗️Заказ TM BOT #{order_id} не сохранился в базе данных.'
+    cleaned_message = escape_markdown(message)
     chat_id = get_chat_id_by_bot(bot)
-    send_message_telegram(chat_id, message)
+    send_message_telegram(chat_id, cleaned_message)
 
 
 def send_error_message_order_saved(order):
     """ Отправка сообщения телеграм-ботом в админский чат
         о том, что заказ из бота сохранился но с ошибками."""
 
-    message = f'! Заказ TM BOT #{order.source_id} сохранился с ошибками.'
+    message = f'❗️Заказ TM BOT #{order.source_id} сохранился с ошибками или требует уточнения.'
+    cleaned_message = escape_markdown(message)
     chat_id = get_chat_id_by_order(order)
-    send_message_telegram(chat_id, message)
+    send_message_telegram(chat_id, cleaned_message)
 
 
 def send_message_telegram(chat_id, message, keyboard=None):

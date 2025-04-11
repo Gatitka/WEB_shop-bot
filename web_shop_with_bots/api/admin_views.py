@@ -2,8 +2,6 @@ from django.contrib.admin.views.decorators import staff_member_required
 from shop.models import Order, OrderDish
 from django.utils import timezone
 from django.db.models import Sum, Count, F, Q
-from django.http import JsonResponse
-from django.db.models.functions import TruncDay
 import datetime
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -14,12 +12,16 @@ from django.db.models import Prefetch
 from django.views.generic import TemplateView
 from delivery_contacts.models import Courier, Restaurant
 from django.http import HttpResponseRedirect, JsonResponse
-from django.db.models.functions import Coalesce
-from decimal import Decimal
-from django.http import HttpResponseRedirect
-from datetime import timedelta
-from shop.admin_utils import get_report_data
+from shop.admin_reports import get_report_data
+from django.views import View
+from django.shortcuts import get_object_or_404
+from django.urls import reverse
+import uuid
+from datetime import datetime, timedelta
 
+import logging.config
+
+logger = logging.getLogger(__name__)
 
 
 STANDARD_HEIGHT_ITEMS = 6  # Standard height is based on 6 items
@@ -38,30 +40,30 @@ def sales_data(request):
     date_range = [(last_30_days + timedelta(days=i)) for i in range(31)]
 
     def fill_missing_dates(queryset, date_range):
-        data_dict = {entry['day'].date(): entry['total'] for entry in queryset}
+        data_dict = {entry['day']: entry['total'] for entry in queryset}
         filled_data = [{'day': day, 'total': data_dict.get(day, 0)} for day in date_range]
         return filled_data
 
     def fill_missing_order_dates(queryset, date_range):
-        data_dict = {entry['day'].date(): entry['total_orders'] for entry in queryset}
+        data_dict = {entry['day']: entry['total_orders'] for entry in queryset}
         filled_data = [{'day': day, 'total_orders': data_dict.get(day, 0)} for day in date_range]
         return filled_data
 
+    # Добавляем фильтр для исключения заказов со статусом "CND"
+    not_canceled_filter = ~Q(status='CND')
+
     restaurant_title = None
     if not request.user.is_superuser:
-        base_filter_ = Q(created__gte=timezone.make_aware(
-                            datetime.datetime.combine(
-                                last_30_days,
-                                datetime.datetime.min.time())))
+        # Для DateField не требуется timezone.make_aware
+        base_filter_ = Q(execution_date__gte=last_30_days) & not_canceled_filter
         restaurant = request.user.restaurant
         restaurant_title = str(restaurant)
         rest_filter = Q(restaurant=restaurant.id)
         base_filter = base_filter_ & rest_filter
     else:
-        base_filter = Q(created__gte=timezone.make_aware(
-                                datetime.datetime.combine(
-                                    last_30_days,
-                                    datetime.datetime.min.time())))
+        # Для DateField не требуется timezone.make_aware
+        base_filter = Q(execution_date__gte=last_30_days) & not_canceled_filter
+
     web_filter = Q(source='4')
     bot_filter = Q(source='3')
 
@@ -69,12 +71,11 @@ def sales_data(request):
     base_web_filter_q = base_filter & web_filter
     base_bot_filter_q = base_filter & bot_filter
 
-    user = request.user
-
     # Запросы для подсчета общих продаж по дням
     total_sales_qs = Order.objects.filter(
             base_filter_q
-        ).annotate(day=TruncDay('created')).values('day').annotate(
+        ).values('execution_date').annotate(
+            day=F('execution_date'),  # Если execution_date это DateField
             total=Sum('final_amount_with_shipping')
         ).order_by('day')
     total_sales = fill_missing_dates(total_sales_qs, date_range)
@@ -82,7 +83,8 @@ def sales_data(request):
     # Запросы для подсчета продаж с сайта (source='4') по дням
     site_sales_qs = Order.objects.filter(
             base_web_filter_q
-        ).annotate(day=TruncDay('created')).values('day').annotate(
+        ).values('execution_date').annotate(
+            day=F('execution_date'),
             total=Sum('final_amount_with_shipping')
         ).order_by('day')
     site_sales = fill_missing_dates(site_sales_qs, date_range)
@@ -90,7 +92,8 @@ def sales_data(request):
     # Запросы для подсчета продаж с бота (source='3') по дням
     bot_sales_qs = Order.objects.filter(
             base_bot_filter_q
-        ).annotate(day=TruncDay('created')).values('day').annotate(
+        ).values('execution_date').annotate(
+            day=F('execution_date'),
             total=Sum('final_amount_with_shipping')
         ).order_by('day')
     bot_sales = fill_missing_dates(bot_sales_qs, date_range)
@@ -98,7 +101,8 @@ def sales_data(request):
     # Запросы для подсчета общего количества заказов по дням
     total_orders_qs = Order.objects.filter(
             base_filter_q
-        ).annotate(day=TruncDay('created')).values('day').annotate(
+        ).values('execution_date').annotate(
+            day=F('execution_date'),
             total_orders=Count('id')
         ).order_by('day')
     total_orders = fill_missing_order_dates(total_orders_qs, date_range)
@@ -106,7 +110,8 @@ def sales_data(request):
     # Запросы для подсчета количества заказов с сайта (source='4') по дням
     site_orders_qs = Order.objects.filter(
             base_web_filter_q
-        ).annotate(day=TruncDay('created')).values('day').annotate(
+        ).values('execution_date').annotate(
+            day=F('execution_date'),
             total_orders=Count('id')
         ).order_by('day')
     site_orders = fill_missing_order_dates(site_orders_qs, date_range)
@@ -114,7 +119,8 @@ def sales_data(request):
     # Запросы для подсчета количества заказов с бота (source='3') по дням
     bot_orders_qs = Order.objects.filter(
             base_bot_filter_q
-        ).annotate(day=TruncDay('created')).values('day').annotate(
+        ).values('execution_date').annotate(
+            day=F('execution_date'),
             total_orders=Count('id')
         ).order_by('day')
     bot_orders = fill_missing_order_dates(bot_orders_qs, date_range)
@@ -130,9 +136,9 @@ def sales_data(request):
 
     for key, value in data.items():
         for item in value:
-            item['day'] = datetime.datetime.combine(
+            item['day'] = datetime.combine(
                 item['day'],
-                datetime.datetime.min.time())
+                datetime.min.time())
     data['restaurant'] = restaurant_title
     return JsonResponse(data)
 
@@ -468,15 +474,15 @@ class AdminReportView(TemplateView):
         # Parse dates if provided
         if report_date_str:
             try:
-                report_date = datetime.datetime.strptime(report_date_str, '%Y-%m-%d').date()
+                report_date = datetime.strptime(report_date_str, '%Y-%m-%d').date()
             except ValueError:
                 report_date = today
         else:
             report_date = today
 
         # Create start and end datetime for the same day
-        start_datetime = datetime.datetime.combine(report_date, datetime.datetime.min.time())
-        end_datetime = datetime.datetime.combine(report_date + datetime.timedelta(days=1), datetime.datetime.min.time())
+        start_datetime = datetime.combine(report_date, datetime.min.time())
+        end_datetime = datetime.combine(report_date + timedelta(days=1), datetime.min.time())
 
         # Make aware if using timezone
         if settings.USE_TZ:
@@ -491,8 +497,8 @@ class AdminReportView(TemplateView):
     def get_restaurant_data(self, start_date, end_date):
         """Get restaurant-related data aggregated by city and restaurant"""
         orders = Order.objects.filter(
-                    created__gte=start_date,
-                    created__lt=end_date,
+                    execution_date__gte=start_date,
+                    execution_date__lt=end_date,
                 ).exclude(
                     status='CND'
                 ).select_related(
@@ -537,3 +543,124 @@ class AdminReportView(TemplateView):
                 restaurants_data[city_code] = city_data
 
         return restaurants_data
+
+
+# ------------------------ ПОВТОР ЗАКАЗА ----------------------------
+
+@method_decorator(staff_member_required, name='dispatch')
+class RepeatOrderView(View):
+    """
+    Представление для инициирования повтора заказа
+    """
+    def get(self, request, order_id):
+        try:
+            # Получаем заказ по ID
+            order = get_object_or_404(Order, pk=order_id)
+
+            # Проверяем права доступа
+            if not request.user.is_superuser and getattr(request.user, 'restaurant', None) != order.restaurant:
+                logger.warning(f"Попытка повтора заказа {order_id} пользователем {request.user} без прав доступа")
+                return JsonResponse({'error': 'У вас нет прав для повтора этого заказа'}, status=403)
+
+            # Получаем блюда заказа
+            order_dishes = OrderDish.objects.filter(order=order).select_related('dish')
+            dishes = []
+
+            for order_dish in order_dishes:
+                dishes.append({
+                    'dish_id': order_dish.dish.id,
+                    'quantity': order_dish.quantity,
+                })
+
+            # Формируем данные для формы нового заказа
+            data = {
+                'order_type': 'D' if order.delivery.type == 'delivery' else 'T',
+                'city': order.city,
+                'recipient_name': order.recipient_name,
+                'recipient_phone': order.recipient_phone,
+                'recipient_address': order.recipient_address,
+                # 'recipient_address_comment': order.recipient_address_comment,
+                'coordinates': order.coordinates,
+                'address_comment': order.address_comment,
+                'payment_type': order.payment_type,
+                'invoice': order.invoice,
+                'comment': order.comment,
+                'dishes': dishes,
+                'original_order_id': order.id,
+                'timestamp': timezone.now().isoformat()
+                # discount / manual_discount / restaurant /
+            }
+
+            # Генерируем уникальный токен для операции
+            repeat_token = str(uuid.uuid4())
+
+            # Сохраняем данные в сессию с ограниченным временем жизни
+            request.session[f'repeat_order_{repeat_token}'] = data
+
+            # Записываем информацию о действии в лог
+            logger.info(f"Заказ {order_id} подготовлен для повтора пользователем {request.user.username}, токен: {repeat_token}")
+
+            # Перенаправляем на страницу создания заказа с токеном
+            return HttpResponseRedirect(reverse('admin:shop_order_add') + f'?repeat_token={repeat_token}')
+
+        except Exception as e:
+            logger.error(f"Ошибка при подготовке повтора заказа {order_id}: {str(e)}")
+            return JsonResponse({'error': str(e)}, status=500)
+
+
+@method_decorator(staff_member_required, name='dispatch')
+class PrepareRepeatOrderView(View):
+    """
+    API для получения данных повторяемого заказа по токену
+    """
+    def get(self, request):
+        try:
+            # Получаем токен из параметров запроса
+            token = request.GET.get('token')
+            if not token:
+                return JsonResponse({'error': 'Отсутствует токен повтора заказа'}, status=400)
+
+            # Формируем ключ сессии
+            session_key = f'repeat_order_{token}'
+
+            # Получаем данные из сессии
+            order_data = request.session.get(session_key)
+
+            if not order_data:
+                logger.warning(f"Попытка использования недействительного или истекшего токена: {token}")
+                return JsonResponse({
+                    'error': 'Недействительный или истекший токен повтора заказа',
+                    'valid': False
+                }, status=400)
+
+            # Проверяем срок действия токена (15 минут)
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+
+            timestamp = datetime.fromisoformat(order_data['timestamp'])
+            if timezone.now() - timestamp > timedelta(minutes=15):
+                # Удаляем просроченные данные
+                del request.session[session_key]
+                request.session.modified = True
+
+                logger.warning(f"Попытка использования истекшего токена: {token}")
+                return JsonResponse({
+                    'error': 'Срок действия токена истек. Пожалуйста, повторите операцию.',
+                    'valid': False
+                }, status=400)
+
+            # Удаляем данные из сессии после первого использования
+            del request.session[session_key]
+            request.session.modified = True
+
+            logger.info(f"Токен {token} успешно использован для повтора заказа пользователем {request.user.username}")
+
+            # Возвращаем данные для заполнения формы
+            return JsonResponse({
+                'valid': True,
+                'data': order_data
+            })
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке токена повтора заказа: {str(e)}")
+            return JsonResponse({'error': str(e), 'valid': False}, status=500)

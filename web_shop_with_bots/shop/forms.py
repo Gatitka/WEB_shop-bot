@@ -862,14 +862,30 @@ class BasePartnerOrderForm(forms.ModelForm):
         required=True)
     # поле сделано обязательным
 
+    order_type = forms.ChoiceField(
+        choices=settings.ORDER_TYPES,
+        label='Тип заказа',
+        initial='T'  # Default to Delivery
+    )
+
     class Meta:
         fields = '__all__'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['source'].widget = forms.HiddenInput()
+        order_type = self.get_source_code()
+        self.fields['order_type'].widget = forms.HiddenInput()
+        self.fields['order_type'].initial = self.get_source_code()
+
+        if order_type == 'P2-1':
+            self.fields['invoice'].initial = False
+        # Заказы Smoke по умолчанию без чека
+
         if self.instance.pk is None and not self.user.is_superuser:
             set_admin_data(self, self.user)
+
+
+
 
     def clean(self):
         cleaned_data = super().clean()
@@ -880,7 +896,7 @@ class BasePartnerOrderForm(forms.ModelForm):
         )
         cleaned_data.update({
             'source': source,
-            'delivery': None,
+            'delivery': delivery,
             'created_by': 2,
             'status': 'CFD'
         })

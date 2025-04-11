@@ -97,7 +97,7 @@ class UserAddress(models.Model):
         if self.address and (not self.coordinates):
             # Если есть адрес, но нет координат, извлекаем координаты из адреса
             try:
-                lat, lon, status = (
+                lat, lon = (
                     google_validate_address_and_get_coordinates(self.address,
                                                                 self.city))
                 self.coordinates = f'{lat}, {lon}'

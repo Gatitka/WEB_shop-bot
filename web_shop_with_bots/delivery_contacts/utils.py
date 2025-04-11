@@ -7,53 +7,90 @@ from django.core.exceptions import ValidationError
 
 from web_shop_with_bots.settings import GOOGLE_API_KEY
 
+import logging
+# Создаем логгер
+logger = logging.getLogger(__name__)
 
 def receive_responce_from_google(address, city):
+    logger.debug(f"Запрос координат для адреса: '{address}', город: '{city}'")
+
     final_address = check_address_contains_city(address, city)
+    logger.debug(f"Итоговый адрес для запроса: '{final_address}'")
+
+    # Базовые параметры
     params = {
         'key': GOOGLE_API_KEY,
-        'address': final_address
+        'address': final_address,
+        'region': 'rs',
     }
 
+    # Добавляем компонентную фильтрацию, если город указан
+    if city:
+        # Формат для компонентной фильтрации: "component:value|component:value"
+        # Для города используем тип "locality"
+        params['components'] = f'locality:{city}|country:rs'
+
     base_url = 'https://maps.googleapis.com/maps/api/geocode/json?'
+    logger.debug(f"Отправка запроса к Google API с параметрами: {params}")
 
     try:
         response = requests.get(base_url, params=params)
-        response.raise_for_status()  # Проверяем успешность запроса
-        data = response.json()  # Парсим ответ в формате JSON
+        response.raise_for_status()
+        data = response.json()
+
+        logger.debug(f"Получен ответ от Google API: статус '{data.get('status')}', response: {data}")
         return data
 
     except requests.exceptions.RequestException as e:
-        # Если произошла ошибка при выполнении запроса, возвращаем None
-        print(f'Ошибка при запросе к API Google Maps: {e}')
+        logger.error(f"Ошибка при запросе к API Google Maps: {e}")
         return None
 
 
 def google_validate_address_and_get_coordinates(address, city=None):
-    data = receive_responce_from_google(address, city)
-    try:
-        if data['status'] == 'OK':
-            geometry = data['results'][0]['geometry']
-            lat = geometry['location']['lat']
-            lon = geometry['location']['lng']
-            return lat, lon, data['status']
-        else:
-            # Если статус ответа не 'OK', выбрасываем исключение с сообщением об ошибке
-            # raise Exception(f'Ошибка получения координат:'
-            #                 f'{data["status"]}, {address}')
-            raise ValidationError(
-                ('Ошибка получения координат из адреса. '
-                 'Проверьте точность адреса доставки.')
-            )
+    logger.info(f"Запрос на проверку и получение координат для адреса: '{address}', город: '{city}'")
 
-    except KeyError as e:
-        # # Если произошла ошибка из-за отсутствия ожидаемых ключей в ответе, возвращаем None
-        # print(f'Ошибка при разборе ответа от API Google Maps: {e}')
-        # return None
-        raise ValidationError(
-                ('Ошибка получения координат из адреса. '
-                 'Проверьте точность адреса доставки.')
+    data = receive_responce_from_google(address, city)
+
+    # Проверяем, получили ли мы вообще данные
+    if not data:
+        logger.error(f"Не получен ответ от сервиса геокодирования для адреса: '{address}', город: '{city}'")
+        raise ValidationError('Нет ответа от сервиса геокодирования. Проверьте подключение.')
+
+    # Проверяем успешность запроса
+    if data['status'] != 'OK':
+        error_message = {
+            'ZERO_RESULTS': 'Адрес не найден',
+            'OVER_QUERY_LIMIT': 'Превышен лимит запросов к API',
+            'REQUEST_DENIED': 'Запрос отклонен сервисом',
+            'INVALID_REQUEST': 'Неверный формат запроса',
+            'UNKNOWN_ERROR': 'Неизвестная ошибка сервиса геокодирования'
+        }.get(data['status'], f'Ошибка геокодирования: {data["status"]}')
+
+        logger.info(f"Ошибка геокодирования: {data['status']} для адреса: '{address}', город: '{city}'")
+        raise ValidationError(f'{error_message}. Проверьте точность адреса доставки.')
+
+    # Если результаты есть
+    if data['results']:
+        location_type = data['results'][0]['geometry']['location_type']
+        logger.info(f"Найден результат с точностью: {location_type} для адреса: '{address}'")
+
+        # но не с точностью ROOFTOP
+        if location_type not in ['ROOFTOP', 'RANGE_INTERPOLATED']:
+            logger.info(f"Недостаточная точность ({location_type}) для адреса: '{address}', город: '{city}'")
+            raise ValidationError(
+                'Невозможно точно определить координаты адреса. Проверьте точность адреса доставки.'
             )
+    else:
+        logger.info(f"Получен пустой список результатов для адреса: '{address}', город: '{city}'")
+        raise ValidationError('Не найдены результаты для указанного адреса')
+
+    # Если все проверки пройдены, возвращаем координаты
+    geometry = data['results'][0]['geometry']
+    lat = geometry['location']['lat']
+    lon = geometry['location']['lng']
+
+    logger.info(f"Успешно получены координаты: lat={lat}, lon={lon} для адреса: '{address}, {city}'")
+    return lat, lon
 
 
 def check_address_contains_city(address, city):
@@ -63,7 +100,7 @@ def check_address_contains_city(address, city):
                 "NoviSad", "НовиСад", "НовиСад", "NoviSad",]
 
     # Приводим адрес к нижнему регистру для корректной проверки
-    address_lower = address.lower()
+    address_lower = address.lower() if address else ''
 
     # Проверяем, содержится ли хотя бы одно из ключевых слов в адресе
     if any(keyword.lower() in address_lower for keyword in keywords):

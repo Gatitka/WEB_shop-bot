@@ -7,13 +7,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Получаем необходимые элементы формы
     const recipientAddressInput = document.getElementById('id_recipient_address');
     const calculateButton = document.querySelector('.fieldBox.field-calculate_delivery_button');
-    const deliverySelect = document.getElementById('id_delivery');
+    const deliverySelect = document.querySelector('input[name="delivery"]:checked');
     const amountField = document.querySelector('.field-amount .readonly');
     const deliveryCostInput = document.getElementById('id_delivery_cost');
     const autoDeliveryCostInput = document.getElementById('id_auto_delivery_cost');
     const coordinatesInput = document.getElementById('id_coordinates');
     const deliveryZoneSelect = document.getElementById('id_delivery_zone');
-    const errorMessageElement = document.querySelector('.fieldBox.field-error_message');
+    //const errorMessageElement = document.querySelector('.fieldBox.field-error_message');
+    const errorMessageElement = document.getElementById('id_error_message');
     const autoDeliveryZoneElement = document.getElementById('id_auto_delivery_zone');
 
     // Проверяем наличие элементов формы
@@ -70,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!calculateButton) return;
 
         const recipientAddress = recipientAddressInput?.value;
-        const deliveryOption = deliverySelect?.value;
+        const deliveryOption = document.querySelector('input[name="delivery"]:checked');
         const amount = parseFloat(amountField?.textContent || '0');
 
         if (recipientAddress && deliveryOption && amount !== 0) {
@@ -191,7 +192,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const city = document.getElementById('id_city')?.value;
             const recipientAddress = recipientAddressInput?.value || myDeliveryAddressElement?.value;
             const amount = amountField?.textContent?.trim();
-            const delivery = deliverySelect?.value;
+            const deliveryInput = document.querySelector('input[name="delivery"]:checked');
+            const delivery = deliveryInput ? deliveryInput.value : undefined;
             const coordinates = coordinatesInput?.value;
 
             console.log('Delivery calculation inputs:', {
@@ -404,15 +406,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Функция для проверки, включена ли доставка (теперь проверяем order_type)
     function isDeliveryEnabled() {
-        const deliveryField = document.getElementById('id_delivery');
-        // Получаем значение выбранного option
-        const selectedValue = deliveryField.value;
+        const selectedDelivery = document.querySelector('input[name="delivery"]:checked');
+        if (!selectedDelivery) return false;
 
-        // Проверяем, если значение 1 или 4
-        const isDelivery = (selectedValue === '1' || selectedValue === '4');
+        const selectedValue = selectedDelivery.value;
+        // Проверка на delivery Beograd и delivery NoviSad (1 и 3)
+        const isDelivery = (selectedValue === '1' || selectedValue === '3');
 
         console.log("Доставка включена:", isDelivery, "(selectedValue =", selectedValue + ")");
-
         return isDelivery;
     }
 

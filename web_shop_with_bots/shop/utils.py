@@ -1,22 +1,37 @@
+"""Вспомогательные функции для общей работы с моделями shop.models"""
 from django.db.models import Max
 from django.utils import timezone
-from django.utils.html import format_html
-from django.urls import reverse
+
 from datetime import timedelta
 
 
-def get_next_item_id_today(model, field, restaurant):
-    today_start = timezone.localtime(
-        timezone.now()).replace(hour=0, minute=0, second=0, microsecond=0)
-    # Начало текущего дня
+def get_execution_date(pk, execution_date, delivery_time, created):
+    # при сохранении заказа из всех источников опрееляется дата исполнения
+    new_order_num = False
+    if pk is None:
+        if delivery_time:
+            execution_date = delivery_time.date()
+        else:
+            execution_date = timezone.localtime().date()
 
-    today_end = (
-        today_start + timezone.timedelta(days=1)
-        - timezone.timedelta(microseconds=1)  # Конец текущего дня
-    )
+    else:
+        if delivery_time or execution_date is None:
+            if delivery_time is None and execution_date is None:
+                new_execution_date = created.date()
+            if delivery_time:
+                new_execution_date = delivery_time.date()
 
+            if execution_date != new_execution_date:
+                execution_date = new_execution_date
+                new_order_num = True
+
+    return execution_date, new_order_num
+
+
+def get_next_item_id(model, field, restaurant, execution_date):
+    # при сохранении заказа из всех источников новый номер заказа
     max_id = model.objects.filter(
-        created__range=(today_start, today_end),
+        execution_date=execution_date,     # (today_start, today_end),
         restaurant=restaurant
     ).aggregate(Max(field))[f'{field}__max']
 
@@ -27,25 +42,25 @@ def get_next_item_id_today(model, field, restaurant):
         return max_id + 1
 
 
-def get_next_item_id_today_model(model, field):
-    today_start = timezone.localtime(
-        timezone.now()).replace(hour=0, minute=0, second=0, microsecond=0)
-    # Начало текущего дня
+# def get_next_item_id_today_model(model, field):
+#     today_start = timezone.localtime(
+#         timezone.now()).replace(hour=0, minute=0, second=0, microsecond=0)
+#     # Начало текущего дня
 
-    today_end = (
-        today_start + timezone.timedelta(days=1)
-        - timezone.timedelta(microseconds=1)  # Конец текущего дня
-    )
+#     today_end = (
+#         today_start + timezone.timedelta(days=1)
+#         - timezone.timedelta(microseconds=1)  # Конец текущего дня
+#     )
 
-    max_id = model.objects.filter(
-        created__range=(today_start, today_end)
-    ).aggregate(Max(field))[f'{field}__max']
+#     max_id = model.objects.filter(
+#         created__range=(today_start, today_end)
+#     ).aggregate(Max(field))[f'{field}__max']
 
-    # Устанавливаем номер заказа на единицу больше MAX текущей даты
-    if max_id is None:
-        return 1
-    else:
-        return max_id + 1
+#     # Устанавливаем номер заказа на единицу больше MAX текущей даты
+#     if max_id is None:
+#         return 1
+#     else:
+#         return max_id + 1
 
 
 def get_first_order_true(obj):
@@ -93,28 +108,6 @@ def get_flag(instance):
     else:
         flag = 'RS'
     return flag
-
-
-def custom_source(obj):
-    # краткое название поля в list
-    source_id = f'#{obj.source_id}' if obj.source_id is not None else ''
-    source = obj.get_source_display()
-    if source == "TM_Bot" and obj.orders_bot_id:
-        source = f"{source}{obj.orders_bot_id}"
-    if obj.status == 'WCO':
-        return format_html(
-            '<span style="color:green; font-weight:bold;">{}<br>{}</span>',
-            source, source_id)
-
-    return format_html('{}<br>{}', source, source_id)
-
-
-def custom_order_number(obj):
-    # Создаем URL для редактирования заказа
-    edit_url = reverse('admin:shop_order_change', args=[obj.pk])
-    # Форматируем текст ссылки и возвращаем его
-    return format_html('<a href="{}">{} /{}</a>',
-                       edit_url, obj.order_number, obj.id)
 
 
 def get_delivery_time_if_none(delivery_time,

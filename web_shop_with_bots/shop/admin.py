@@ -1,26 +1,22 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from utils.utils import activ_actions
+import shop.admin_filters as admin_filters
+import shop.admin_reports as admin_reports
+import shop.admin_utils as admin_utils
 import shop.forms as shop_forms
-from .models import (Dish, Order, OrderDish, Discount,
-                     OrderGlovoProxy, OrderWoltProxy,
-                     OrderSmokeProxy, OrderNeTaDverProxy,
-                     OrderSealTeaProxy)
+from shop.utils import get_flag
+from shop.models import (Dish, Order, OrderDish, Discount,
+                         OrderGlovoProxy, OrderWoltProxy,
+                         OrderSmokeProxy, OrderNeTaDverProxy,
+                         OrderSealTeaProxy)
 from tm_bot.services import (send_message_new_order,
                              send_request_order_status_update)
 from django import forms
-from .admin_utils import (
-    export_orders_to_excel,
-    export_full_orders_to_excel,
-    get_changelist_extra_context,
-    get_addchange_extra_context,
-    my_get_object,
-    my_get_queryset,
-    DeliveryTypeFilter, InvoiceFilter, CourierFilter)
-from django.core.exceptions import ValidationError
-from .utils import get_flag, custom_source, custom_order_number
+
 from rangefilter.filters import (
-    DateRangeFilterBuilder, DateRangeQuickSelectListFilter
+    DateRangeFilter,
+    DateRangeFilterBuilder   #, DateRangeQuickSelectListFilter
 )
 from django.contrib.admin.views.main import ChangeList
 from django.urls import reverse, path
@@ -28,8 +24,7 @@ from django.shortcuts import redirect
 from django.conf import settings
 from users.models import user_add_new_order_data
 from utils.admin_permissions import has_restaurant_admin_permissions
-from api.admin_views import AdminReportView
-import re
+from api.admin_views import AdminReportView, RepeatOrderView, PrepareRepeatOrderView
 
 
 @admin.register(Discount)
@@ -106,54 +101,12 @@ class OrderAdmin(admin.ModelAdmin):
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
 
     def custom_order_number(self, obj):
-        # return custom_order_number(obj)
-        # return obj.order_number
-        # Формируем номер заказа
-        order_number = obj.order_number
-
-        # Добавляем кнопку печати под номером
-        print_button = format_html(
-            '<button type="button" class="print-button" data-id="{}" style="background-color: #fff; border: 1px solid #ccc; padding: 3px 8px; border-radius: 3px; color: #555; cursor: pointer; margin-top:5px;">'
-            '<span style="font-size: 12px;">🖨</span></button>',
-            obj.id
-        )
-        # Объединяем номер и кнопку с переносом строки между ними
-        return format_html(
-            '{}<br>{}',
-            order_number,
-            print_button,
-            [str(obj),]
-        )
+        return admin_utils.custom_order_number(obj)
     custom_order_number.short_description = '№'
 
     def warning(self, obj):
         # Условие для проверки различных состояний
-        help_text = []
-        if obj.delivery.type == 'delivery':
-            if obj.delivery_zone.name == 'уточнить':
-                help_text.append("Уточнить зону доставки.\n")
-
-            if obj.courier is None:
-                help_text.append("Не назначен курьер.\n")
-
-            address = obj.recipient_address
-            if address not in ['', None] and not re.search(r'\d+', address):
-                help_text.append('Нет дома, перепроверить стоимость доставки\n')
-
-        if obj.source not in settings.PARTNERS_LIST and obj.payment_type is None:
-            help_text.append("Тип оплаты не определен.\n")
-
-        if obj.process_comment:
-            help_text.append("Ошибки в сохранении заказа.\n")
-
-        help_text = "".join(help_text)
-
-        if help_text != '':
-            # Возвращение HTML с подсказкой
-            return format_html(
-                '<span style="color:red;" title="{}">!!!</span>', help_text)
-        else:
-            return ''
+        return admin_utils.warning(obj)
     warning.short_description = '!'
 
     def info(self, obj):
@@ -259,15 +212,19 @@ class OrderAdmin(admin.ModelAdmin):
                        'get_delivery_type',
                        'get_delivery_cost'
                        ]
-    list_filter = (('created', DateRangeQuickSelectListFilter),
-                   DeliveryTypeFilter, InvoiceFilter, CourierFilter,
+    list_filter = (('execution_date', DateRangeFilterBuilder()),
+                   admin_filters.OrderPeriodFilter,
+                   admin_filters.DeliveryTypeFilter,
+                   admin_filters.InvoiceFilter,
+                   admin_filters.CourierFilter,
                    'status', 'source', 'city', 'payment_type')
     search_fields = ('recipient_phone', 'msngr_account__msngr_username',
                      'recipient_name', 'source_id', 'id')
     inlines = (OrderDishInline,)
     raw_id_fields = ['user', 'msngr_account']
     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
-    actions = [export_orders_to_excel, export_full_orders_to_excel,]
+    actions = [admin_reports.export_orders_to_excel,
+               admin_reports.export_full_orders_to_excel,]
     actions_on_top = True
     save_on_top = True
     list_per_page = 20
@@ -406,17 +363,6 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        # from django.db import connection
-        # from django.db.models.query import QuerySet
-
-        # # Получаем все ID заказов напрямую из БД
-        # with connection.cursor() as cursor:
-        #     cursor.execute("SELECT id FROM shop_order ORDER BY created DESC")
-        #     ids = [row[0] for row in cursor.fetchall()]
-
-        # # Создаем QuerySet с этими ID
-        # qs = Order.objects.filter(id__in=ids)
-        # qs = Order._base_manager.all()
         qs = qs.select_related(
                 'user',
                 'delivery',
@@ -458,12 +404,14 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_object(self, request, object_id, from_field=None):
         model = self.model
-        return my_get_object(model, object_id)
+        return admin_utils.my_get_object(model, object_id)
 
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
             path('report/', AdminReportView.as_view(), name='shop_order_report'),
+            path('repeat/<int:order_id>/', RepeatOrderView.as_view(), name='admin_repeat_order'),
+            path('api/prepare_repeat_order/', PrepareRepeatOrderView.as_view(), name='admin_prepare_repeat_order'),
             path('<path:object_id>/change/', self.change_view, name='order_change'),
         ]
         return custom_urls + urls
@@ -472,6 +420,10 @@ class OrderAdmin(admin.ModelAdmin):
         return CustomChangeList
 
     def changelist_view(self, request, extra_context=None):
+        if not request.GET:
+            base_url = request.path
+            return redirect(f"{base_url}?order_period=today")
+
         # Сначала получаем существующий контекст
         extra_context = extra_context or {}
 
@@ -480,7 +432,7 @@ class OrderAdmin(admin.ModelAdmin):
             extra_context['show_report_button'] = True
             extra_context['report_url'] = reverse('admin:shop_order_report')
 
-        extra_context = get_changelist_extra_context(request, extra_context)
+        extra_context = admin_utils.get_changelist_extra_context(request, extra_context)
 
         return super(OrderAdmin, self).changelist_view(
             request, extra_context=extra_context)
@@ -488,7 +440,7 @@ class OrderAdmin(admin.ModelAdmin):
     def add_view(self, request, form_url="", extra_context=None):
         # Add Google API key, menu and delivery_zones to context
         extra_context = extra_context or {}
-        extra_context = get_addchange_extra_context(request, extra_context, 'all')
+        extra_context = admin_utils.get_addchange_extra_context(request, extra_context, 'all')
 
         return super().add_view(request, form_url, extra_context=extra_context)
 
@@ -500,7 +452,7 @@ class OrderAdmin(admin.ModelAdmin):
 
         # Add Google API key, menu and delivery_zones to context
         extra_context = extra_context or {}
-        extra_context = get_addchange_extra_context(request, extra_context, 'all')
+        extra_context = admin_utils.get_addchange_extra_context(request, extra_context, 'all')
 
         return super().change_view(request, object_id, form_url, extra_context)
 
@@ -674,38 +626,29 @@ class OrderDishPartnerInline(admin.TabularInline):
 
 
 class BaseOrderProxyAdmin(admin.ModelAdmin):
-    list_display = ('order_number', 'status', 'custom_total', 'note', 'invoice')
+    list_display = ('custom_order_number', 'custom_total', 'note', 'invoice', 'status')
     list_editable = ['status', 'invoice']
-    list_display_links = ('order_number',)
+    list_display_links = ('custom_order_number',)
     readonly_fields = ['items_qty', 'amount', 'created', 'order_number', 'final_amount_with_shipping']
-    list_filter = (('created', DateRangeQuickSelectListFilter), 'status', 'payment_type')
+    list_filter = (('execution_date', DateRangeFilterBuilder()),
+                   admin_filters.OrderPeriodFilter,
+                   admin_filters.InvoiceFilter,
+                   'status', 'payment_type')
     search_fields = ('order_number', 'source_id')
     inlines = (OrderDishPartnerInline,)
     actions_selection_counter = False
     actions_on_top = True
-    actions = [export_orders_to_excel, export_full_orders_to_excel]
+    actions = [admin_reports.export_orders_to_excel,
+               admin_reports.export_full_orders_to_excel]
     list_per_page = 10
+    add_form_template = 'shop/order/add_form_partner.html'
+    change_form_template = 'shop/order/change_form_partner.html'
     change_list_template = 'shop/order/change_list_partner.html'
     source_code = None  # должен быть переопределен в дочерних классах
 
-    class Media:
-        js = (
-            'my_admin/js/shop/change/orderdishes_management.js',
-            'my_admin/js/shop/prevent_duplicate_orderdishes.js'
-        )
-
-    # def custom_order_number(self, obj):
-    #     return f"{obj.order_number}/{obj.id}"
-    # custom_order_number.short_description = '№'
-
-    # def custom_created(self, obj):
-    #     local_time = obj.created.astimezone(timezone.get_current_timezone())
-    #     formatted_time = local_time.strftime(
-    #         '<span style="color:green;font-weight:bold;">%H:%M</span><br>%d.%m'
-    #         if obj.status == 'WCO' else '%H:%M<br>%d.%m'
-    #     )
-    #     return format_html(formatted_time)
-    # custom_created.short_description = 'создан'
+    def custom_order_number(self, obj):
+        return admin_utils.custom_order_number(obj)
+    custom_order_number.short_description = '№'
 
     def custom_total(self, obj):
         return obj.final_amount_with_shipping
@@ -725,16 +668,20 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
             raise NotImplementedError("source_code must be set in child class")
         qs = super().get_queryset(request).filter(
            source=self.source_code
-       ).select_related('restaurant')
-        return my_get_queryset(request, qs)
+        ).select_related('restaurant')
+        return admin_utils.my_get_queryset(request, qs)
 
     def get_object(self, request, object_id, from_field=None):
         if not self.source_code:
             raise NotImplementedError("source_code must be set in child class")
-        return my_get_object(self.model, object_id, source=self.source_code)
+        return admin_utils.my_get_object(self.model, object_id, source=self.source_code)
 
     def changelist_view(self, request, extra_context=None):
-        extra_context = get_changelist_extra_context(
+        if not request.GET:
+            base_url = request.path
+            return redirect(f"{base_url}?order_period=today")
+
+        extra_context = admin_utils.get_changelist_extra_context(
             request,
             extra_context,
             source=self.source_code
@@ -762,7 +709,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
             return [
                 ('Данные заказа', {
                     'fields': (
-                        ('source_id', 'source', 'invoice', 'payment_type'),
+                        ('source_id', 'order_type', 'invoice', 'payment_type'),
                         ('final_amount_with_shipping', 'items_qty')
                     )
                 }),
@@ -772,7 +719,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
             ('Данные заказа', {
                     'fields': (
                         ('status'),
-                        ('source_id', 'source', 'invoice', 'payment_type'),
+                        ('source_id', 'order_type', 'invoice', 'payment_type'),
                         ('final_amount_with_shipping', 'items_qty')
                     )
                 }),
@@ -781,14 +728,14 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
     def add_view(self, request, form_url="", extra_context=None):
         # Добавляем меню в контекст
         extra_context = extra_context or {}
-        extra_context = get_addchange_extra_context(request, extra_context)
+        extra_context = admin_utils.get_addchange_extra_context(request, extra_context)
 
         return super().add_view(request, form_url, extra_context=extra_context)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         # Добавляем меню в контекст
         extra_context = extra_context or {}
-        extra_context = get_addchange_extra_context(request, extra_context, 'all')
+        extra_context = admin_utils.get_addchange_extra_context(request, extra_context, 'all')
 
         return super().change_view(request, object_id, form_url, extra_context=extra_context)
 
@@ -823,316 +770,3 @@ class OrderNeTaDverProxyAdmin(BaseOrderProxyAdmin):
 class OrderSealTeaProxyAdmin(BaseOrderProxyAdmin):
     form = shop_forms.OrderSealTeaAdminForm
     source_code = 'P3-1'
-
-# @admin.register(OrderGlovoProxy)
-# class OrderGlovoProxyAdmin(admin.ModelAdmin):
-
-#     def custom_order_number(self, obj):
-#         # краткое название поля в list
-#         return f"{obj.order_number}/{obj.id}"
-#     custom_order_number.short_description = '№'
-
-#     def custom_created(self, obj):
-#         # Преобразование поля datetime в строку с помощью strftime()
-
-#         local_time = obj.created.astimezone(timezone.get_current_timezone())
-#         if obj.status == 'WCO':
-#             formatted_time = local_time.strftime('<span style="color:green;font-weight:bold;">%H:%M</span><br>%d.%m')
-#         else:
-#             formatted_time = local_time.strftime('%H:%M<br>%d.%m')
-#         return format_html(formatted_time)
-#     custom_created.short_description = 'создан'
-
-#     list_display = ('custom_order_number', 'custom_created',
-#                     'status', 'custom_total')
-#     list_editable = ['status',]
-#     list_display_links = ('custom_order_number', )
-#     readonly_fields = ['items_qty', 'amount', 'created', 'order_number',
-#                        'final_amount_with_shipping']
-#     list_filter = (('created', DateRangeFilterBuilder()), 'status')
-#     search_fields = ('order_number',)
-#     inlines = (OrderDishGlovoWoltInline,)
-#     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
-#     actions_on_top = True
-#     actions = [export_orders_to_excel, export_full_orders_to_excel,]
-#     list_per_page = 10
-#     fieldsets = (
-#         ('Данные заказа', {
-#             "fields": (
-#                 ('status', 'source_id'),
-#                 ('final_amount_with_shipping', 'items_qty'),
-
-#             ),
-#         }),
-#         # ('Город/ресторан', {
-#         #     "classes": ["collapse"],
-#         #     'fields': (
-#         #         ('city', 'restaurant'),
-#         #     )
-#         # }),
-#     )
-#     form = OrderGlovoAdminForm
-#     change_list_template = 'order/change_list_partner.html'
-
-#     def custom_total(self, obj):
-#         # краткое название поля в list
-#         return obj.final_amount_with_shipping
-#     custom_total.short_description = format_html('Сумма<br>заказа, DIN')
-
-#     def get_queryset(self, request):
-#         qs = super().get_queryset(request).filter(
-#                 source='P1-1'
-#             ).select_related('restaurant')
-#         return my_get_queryset(request, qs)
-
-#     def get_object(self, request, object_id, from_field=None):
-#         model = self.model
-#         return my_get_object(model, object_id, source='P1-1')
-
-#     def changelist_view(self, request, extra_context=None):
-#         extra_context = get_changelist_extra_context(request,
-#                                                      extra_context,
-#                                                      source='P1-1')
-
-#         return super(OrderGlovoProxyAdmin, self).changelist_view(
-#             request, extra_context=extra_context)
-
-#     def has_change_permission(self, request, obj=None):
-#         if request.user.is_superuser:
-#             return super().has_change_permission(request)
-
-#         return has_restaurant_admin_permissions(
-#             'delivery_contacts.change_orders_rest',
-#             request, obj)
-
-#     def get_form(self, request, obj=None, **kwargs):
-#         """
-#         Переопределяем метод get_form для передачи пользователя в форму.
-#         """
-#         form = super().get_form(request, obj, **kwargs)
-#         form.user = request.user  # Передаем текущего пользователя в форму
-#         return form
-
-
-# @admin.register(OrderWoltProxy)
-# class OrderWoltProxyAdmin(admin.ModelAdmin):
-
-#     def custom_order_number(self, obj):
-#         # краткое название поля в list
-#         return f"{obj.order_number}/{obj.id}"
-#     custom_order_number.short_description = '№'
-
-#     def custom_created(self, obj):
-#         # Преобразование поля datetime в строку с помощью strftime()
-
-#         local_time = obj.created.astimezone(timezone.get_current_timezone())
-#         if obj.status == 'WCO':
-#             formatted_time = local_time.strftime('<span style="color:green;font-weight:bold;">%H:%M</span><br>%d.%m')
-#         else:
-#             formatted_time = local_time.strftime('%H:%M<br>%d.%m')
-#         return format_html(formatted_time)
-#     custom_created.short_description = 'создан'
-
-#     list_display = ('custom_order_number', 'custom_created',
-#                     'status', 'custom_total')
-#     list_editable = ['status',]
-#     list_display_links = ('custom_order_number', )
-#     readonly_fields = ['items_qty', 'amount', 'created', 'order_number',
-#                        'final_amount_with_shipping']
-#     list_filter = (('created', DateRangeFilterBuilder()), 'status')
-#     search_fields = ('order_number',)
-#     inlines = (OrderDishGlovoWoltInline,)
-#     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
-#     actions_on_top = True
-#     actions = [export_orders_to_excel, export_full_orders_to_excel,]
-#     list_per_page = 10
-#     fieldsets = (
-#         ('Данные заказа', {
-#             "fields": (
-#                 ('status', 'source_id'),
-#                 ('final_amount_with_shipping', 'items_qty'),
-#             ),
-#         }),
-#         # ('Город/ресторан', {
-#         #     "classes": ["collapse"],
-#         #     'fields': (
-#         #         ('city', 'restaurant'),
-#         #     )
-#         # }),
-#     )
-#     form = OrderWoltAdminForm
-#     change_list_template = 'order/change_list_partner.html'
-
-#     def custom_total(self, obj):
-#         # краткое название поля в list
-#         return obj.final_amount_with_shipping
-#     custom_total.short_description = format_html('Сумма<br>заказа, DIN')
-
-#     def get_queryset(self, request):
-#         qs = super().get_queryset(request).filter(
-#                 source='P1-2'
-#             ).select_related('restaurant')
-#         return my_get_queryset(request, qs)
-
-#     def get_object(self, request, object_id, from_field=None):
-#         model = self.model
-#         return my_get_object(model, object_id, source='P1-2')
-
-#     def changelist_view(self, request, extra_context=None):
-#         extra_context = get_changelist_extra_context(request,
-#                                                      extra_context,
-#                                                      source='P1-2')
-
-#         return super(OrderWoltProxyAdmin, self).changelist_view(
-#             request, extra_context=extra_context)
-
-#     def has_change_permission(self, request, obj=None):
-#         if request.user.is_superuser:
-#             return super().has_change_permission(request)
-
-#         return has_restaurant_admin_permissions(
-#             'delivery_contacts.change_orders_rest',
-#             request, obj)
-
-#     def get_form(self, request, obj=None, **kwargs):
-#         """
-#         Переопределяем метод get_form для передачи пользователя в форму.
-#         """
-#         form = super().get_form(request, obj, **kwargs)
-#         form.user = request.user  # Передаем текущего пользователя в форму
-#         return form
-
-
-# @admin.register(OrderSmokeProxy)
-# class OrderSmokeProxyAdmin(admin.ModelAdmin):
-
-#     def custom_order_number(self, obj):
-#         # краткое название поля в list
-#         return f"{obj.order_number}/{obj.id}"
-#     custom_order_number.short_description = '№'
-
-#     def custom_created(self, obj):
-#         # Преобразование поля datetime в строку с помощью strftime()
-
-#         local_time = obj.created.astimezone(timezone.get_current_timezone())
-#         if obj.status == 'WCO':
-#             formatted_time = local_time.strftime(
-#                 '<span style="color:green;font-weight:bold;">%H:%M</span><br>%d.%m')
-#         else:
-#             formatted_time = local_time.strftime('%H:%M<br>%d.%m')
-#         return format_html(formatted_time)
-#     custom_created.short_description = 'создан'
-
-#     list_display = ('custom_order_number', 'custom_created',
-#                     'status', 'custom_total')
-#     list_editable = ['status',]
-#     list_display_links = ('custom_order_number', )
-#     readonly_fields = ['items_qty', 'amount', 'created', 'order_number',
-#                        'final_amount_with_shipping']
-#     list_filter = (('created', DateRangeFilterBuilder()), 'status')
-#     search_fields = ('order_number',)
-#     inlines = (OrderDishGlovoWoltInline,)
-#     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
-#     actions_on_top = True
-#     actions = [export_orders_to_excel, export_full_orders_to_excel,]
-#     list_per_page = 10
-#     fieldsets = (
-#         ('Данные заказа', {
-#             "fields": (
-#                 ('status', 'source_id'),
-#                 ('final_amount_with_shipping', 'items_qty'),
-#             ),
-#         }),
-#         # ('Город/ресторан', {
-#         #     "classes": ["collapse"],
-#         #     'fields': (
-#         #         ('city', 'restaurant'),
-#         #     )
-#         # }),
-#     )
-#     form = OrderSmokeAdminForm
-#     change_list_template = 'order/change_list_partner.html'
-
-#     def custom_total(self, obj):
-#         # краткое название поля в list
-#         return obj.final_amount_with_shipping
-#     custom_total.short_description = format_html('Сумма<br>заказа, DIN')
-
-#     def get_queryset(self, request):
-#         qs = super().get_queryset(request).filter(
-#                 source='P2-1'
-#             ).select_related('restaurant')
-#         return my_get_queryset(request, qs)
-
-#     def get_object(self, request, object_id, from_field=None):
-#         model = self.model
-#         return my_get_object(model, object_id, source='P2-1')
-
-#     def changelist_view(self, request, extra_context=None):
-#         extra_context = get_changelist_extra_context(request,
-#                                                      extra_context,
-#                                                      source='P2-1')
-#         return super(OrderSmokeProxyAdmin, self).changelist_view(
-#             request, extra_context=extra_context)
-
-#     def has_change_permission(self, request, obj=None):
-#         if request.user.is_superuser:
-#             return super().has_change_permission(request)
-
-#         return has_restaurant_admin_permissions(
-#             'delivery_contacts.change_orders_rest',
-#             request, obj)
-
-#     def get_form(self, request, obj=None, **kwargs):
-#         """
-#         Переопределяем метод get_form для передачи пользователя в форму.
-#         """
-#         form = super().get_form(request, obj, **kwargs)
-#         form.user = request.user  # Передаем текущего пользователя в форму
-#         return form
-
-################################################################ КОРЗИНА
-# class CartDishInline(admin.TabularInline):
-#     """
-#     Вложенная админка CartDish для добавления товаров в заказ
-#     (создания записей CartDish) сразу в админке заказа (через объект Cart).
-#     """
-#     model = CartDish
-#     min_num = 1   # хотя бы 1 блюдо должно быть добавлено
-#     extra = 0   # чтобы не добавлялись путые поля
-#     readonly_fields = ['amount', 'unit_price', 'dish_article', 'cart_number',]
-#     autocomplete_fields = ['dish']
-
-#     verbose_name = 'товар корзины'
-#     verbose_name_plural = 'товары корзины'
-
-#     # class Media:
-#     #     js = ('js/shop/admin/cartitem_data_admin_request.js',)
-
-#     def get_queryset(self, request):
-#         return super().get_queryset(request).prefetch_related('dish__translations', 'cart__user__messenger_account')
-
-# @admin.register(ShoppingCart)
-# class ShoppingCartAdmin(admin.ModelAdmin):
-#     """Настройки админ панели карзины.
-#     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
-#     list_display = ('pk', 'complited', 'user',
-#                     'created', 'discounted_amount')
-#     readonly_fields = ['created', 'discounted_amount',
-#                        'device_id', 'amount', 'discount', 'items_qty']
-#     list_filter = ('created', 'complited')
-#     raw_id_fields = ['user', ]
-#     inlines = (CartDishInline,)
-#     fields = (('created', 'complited'),
-#               ('user', 'device_id'),
-#               ('items_qty', 'amount'),
-#               ('promocode', 'discount'),
-#               ('discounted_amount'),
-#               )
-#     # change_form_template = 'admin/shop/shoppingcart/my_shoping_cart_change_form.html'
-
-#     # class Media:
-#     #     js = ('my_admin/js/shop/cartitem_data_admin_request.js',)
-
-#     def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
-#         return super().get_queryset(request).prefetch_related('user')

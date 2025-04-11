@@ -13,7 +13,7 @@ from delivery_contacts.models import (Delivery, DeliveryZone,
 from delivery_contacts.utils import get_delivery_cost
 from promos.models import Promocode
 from promos.services import get_promocode_discount_amount
-from shop.utils import get_first_order_true, get_next_item_id_today
+from shop.utils import get_first_order_true, get_next_item_id, get_execution_date
 from users.models import BaseProfile, UserAddress
 from users.validators import validate_first_and_last_name
 from django.utils.translation import gettext_lazy as _
@@ -56,11 +56,12 @@ class Order(models.Model):
         # default=timezone.now,
         # editable=True  # Explicitly make it editable
     )
-    # execution_date = models.DateField(
-    #     'Дата выполнения',
-    #     null=True,
-    #     blank=True
-    # )
+    execution_date = models.DateField(
+        'Дата выполнения',
+        null=True,
+        blank=True,
+        db_index=True
+    )
     status = models.CharField(
         max_length=3,
         verbose_name="Статус",
@@ -357,12 +358,12 @@ class Order(models.Model):
     )
 
     class Meta:
-        ordering = ['-created']
+        ordering = ['-execution_date', '-order_number']
         verbose_name = 'заказ'
         verbose_name_plural = 'заказы'
         constraints = [
             models.UniqueConstraint(
-                fields=['order_number', 'created'],
+                fields=['order_number', 'execution_date', 'restaurant'],
                 name='unique_order_number_created'
             ),
         ]
@@ -484,10 +485,16 @@ class Order(models.Model):
 
         is_admin_mode = kwargs.pop('is_admin_mode', False)
 
+        self.execution_date, new_order_num = get_execution_date(self.pk,
+                                                                self.execution_date,
+                                                                self.delivery_time,
+                                                                self.created)
+
         if self.pk is None:  # Если объект новый
 
-            self.order_number = get_next_item_id_today(Order, 'order_number',
-                                                       self.restaurant)
+            self.order_number = get_next_item_id(Order, 'order_number',
+                                                 self.restaurant,
+                                                 self.execution_date)
 
             self.is_first_order = get_first_order_true(self)
 
@@ -500,6 +507,11 @@ class Order(models.Model):
             return
 
         # Если объект уже существует, выполнить рассчеты и другие действия
+        if new_order_num:
+            self.order_number = get_next_item_id(Order, 'order_number',
+                                                 self.restaurant,
+                                                 self.execution_date)
+
         self.calculate_amount_with_shipping()
 
         free_delivery, fo_status = (

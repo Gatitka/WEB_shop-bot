@@ -1288,7 +1288,7 @@ class DeliveryOrderSerializer(BaseOrderSerializer):
         if my_address in [None, '']:
             if lat is None and lon is None:
                 try:
-                    lat, lon, status = (
+                    lat, lon = (
                         google_validate_address_and_get_coordinates(value,
                                                                     city)
                     )
@@ -1355,7 +1355,7 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
         if my_address in [None, '']:
             if lat is None and lon is None:
                 try:
-                    lat, lon, status = (
+                    lat, lon = (
                         google_validate_address_and_get_coordinates(value,
                                                                     city)
                     )
@@ -1379,7 +1379,7 @@ class DeliveryOrderWriteSerializer(BaseOrderSerializer):
 
         # пере получаем координаты для проверки переданных координат и адреса
         try:
-            self.lat_check, self.lon_check, status = (
+            self.lat_check, self.lon_check = (
                         google_validate_address_and_get_coordinates(value,
                                                                     city)
                     )
@@ -1572,16 +1572,7 @@ class BotOrderSerializer(serializers.ModelSerializer):
             delivery_time, time_comment, process_comment4 = (
                 tmbmod.get_time_tmbot(data.get("time")))
 
-            if (time_comment in ['', None]
-                    and data.get('comment') not in ['', None]):
-                comment = f"{data.get('comment')}"
-
-            elif (data.get('comment') in ['', None]
-                    and time_comment not in ['', None]):
-                comment = f"{time_comment}."
-
-            else:
-                comment = f"{time_comment}. {data.get('comment')}"
+            comment = tmbmod.get_comment_tmbot(time_comment, data.get('comment'))
 
             process_comment = (process_comment1 + process_comment2
                                + process_comment3 + process_comment4)
@@ -1627,7 +1618,9 @@ class BotOrderSerializer(serializers.ModelSerializer):
 
                 logger.info(f'Bot order #{order.source_id} saved under #{order.id}')
 
-                if order.process_comment:
+                if order.process_comment or (
+                    order.delivery.type == 'delivery'
+                        and order.delivery_zone.name == 'уточнить'):
                     try:
                         send_error_message_order_saved(order)
                     except Exception as exep:

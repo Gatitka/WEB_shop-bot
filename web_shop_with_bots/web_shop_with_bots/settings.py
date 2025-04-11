@@ -494,6 +494,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.WEBAccount'
 
+FIRST_DAY_OF_WEEK = 1
+
 # -------------------------------- STATIC + MEDIA ------------------------------------------
 
 if ENVIRONMENT != 'development':

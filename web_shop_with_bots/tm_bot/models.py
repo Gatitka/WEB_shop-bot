@@ -353,11 +353,11 @@ def get_delivery_data_tmbot(self, data, city, amount):
     if delivery.type == 'delivery':
         try:
             if address != '':
-                lat, lon, status = google_validate_address_and_get_coordinates(
+                lat, lon = google_validate_address_and_get_coordinates(
                                     address, city)
             elif data.get('comment') != '':
                 address = data.get('comment')
-                lat, lon, status = google_validate_address_and_get_coordinates(
+                lat, lon = google_validate_address_and_get_coordinates(
                                     address, city)
             else:
                 lat, lon = None, None
@@ -391,6 +391,20 @@ def get_time_tmbot(tmbot_time):
     else:
         time_comment = str(tmbot_time)
     return time, time_comment, process_comment
+
+
+def get_comment_tmbot(time_comment, comment):
+    if time_comment in ['', None] and comment not in ['', None]:
+        comment = f"{comment}"
+
+    elif time_comment not in ['', None] and comment in ['', None]:
+        comment = f"{time_comment}."
+
+    elif time_comment not in ['', None] and comment not in ['', None]:
+        comment = f"{time_comment}. {comment}"
+
+    else:
+        comment = None
 
 
 def get_orderdishes_tmbot(self, data):

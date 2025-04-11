@@ -102,6 +102,11 @@ document.addEventListener('DOMContentLoaded', function() {
         updateOrderAmount(); // Обновляем сумму заказа
     }
 
+    document.addEventListener('selectedDishesChanged', function() {
+		console.log('Получено событие изменения заказа');
+		updateOrderAmount();
+	});
+
     // Обработчик клика на кнопку "Добавить еще один Товар заказа"
     document.addEventListener('click', function(event) {
         if (event.target && event.target.closest('.add-row a')) {

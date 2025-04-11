@@ -5,9 +5,8 @@ from django.utils.html import format_html
 from .models import BaseProfile, UserAddress, WEBAccount
 from django.urls import reverse
 from .forms import BaseProfileAdminForm
-from shop.utils import get_flag
 from shop.models import Order
-from shop.utils import custom_source, custom_order_number
+from shop.admin_utils import custom_source, custom_order_number
 from django_admin_inline_paginator.admin import TabularInlinePaginated
 from audit.models import AuditLog
 from rangefilter.filters import NumericRangeFilter

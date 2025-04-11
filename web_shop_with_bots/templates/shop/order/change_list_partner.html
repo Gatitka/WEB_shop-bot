@@ -5,31 +5,6 @@
 {% block content %}
     <div class="changelist-form-container" style="display: flex; align-items: flex-start;">
         <div style="flex-grow: 1;">
-            <h2>{% trans "Сегодня ИТОГО" %}</h2>
-            <table id="today_results" class="model-table">
-                <thead>
-                    <tr>
-                        <th scope="col" style="width: 150px; text-align: center;">{% trans "Заказы" %}</th>
-                        <th scope="col" style="width: 50px; text-align: center;">{% trans "Чеки" %}</th>
-                        {% for courier_name, courier_value in couriers.items %}
-                            <th scope="col text-align: center; vertical-align: middle;">{{ courier_name|capfirst }}</th>
-                        {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td style="height: 50px; text-align: center; vertical-align: middle;">{{ total_amount }}</td>
-                        <td style="text-align: center; vertical-align: middle;">{{ total_receipts }}</td>
-                        {% for courier_name, courier_value in couriers.items %}
-                            {% if courier_value.1 %}
-                                <td style="text-align: center; vertical-align: middle;">{{ courier_value.0 }}<br>+ уточнить</td>
-                            {% elif not courier_value.1 %}
-                                <td style="text-align: center; vertical-align: middle;">{{ courier_value.0 }}</td>
-                            {% endif %}
-                        {% endfor %}
-                    </tr>
-                </tbody>
-            </table>
         </div>
 
         <!-- Блок с кнопками справа от таблицы -->
@@ -46,7 +21,7 @@
         </div>
     </div>
 
-    {{ block.super }}
+{{ block.super }}
 {% endblock %}
 
 {% block extrahead %}
@@ -54,87 +29,115 @@
 <script src="{% static 'my_admin/js/shop/list/change_list.js' %}"></script>
 <script src="{% static 'my_admin/js/shop/receipt_printing.js' %}"></script>
 <style>
-    .field-get_delivery_type {
+    .field-get_delivery_type, .column-get_delivery_type {
         display: none;
     }
-</style>
-<style>
-    .column-get_delivery_type {
-        display: none;
-    }
-</style>
-<style>
-    .related-widget-wrapper-link.add-related,
-    .related-widget-wrapper-link.change-related,
-    .related-widget-wrapper-link.delete-related {
-        display: none !important;
-    }
-</style>
-<style>
+
     .related-widget-wrapper-link.add-related,
     .related-widget-wrapper-link.change-related,
     .related-widget-wrapper-link.delete-related {
         display: none !important;
     }
 
-    /* Стили для select в зависимости от выбранного значения */
+    /* Status select styling */
     td.field-status select[data-selected="WCO"] {
-        background-color: #ffcdd2;  /* красный */
-        color: #b71c1c;
+        background-color: #ffcdd2;  /* Lighter red */
+        color: #b71c1c;             /* Darker red */
     }
 
     td.field-status select[data-selected="CFD"] {
-        background-color: #ffe0b2;  /* оранжевый */
-        color: #e65100;
+        background-color: #ffcc80;  /* Light orange - less yellow than before */
+        color: #e65100;             /* Dark orange */
+    }
+
+    td.field-status select[data-selected="RDY"] {
+        background-color: #fff59d;  /* Light yellow */
+        color: #795548;             /* Brown - better contrast on yellow */
     }
 
     td.field-status select[data-selected="OND"] {
-        background-color: #fff9c4;  /* желтый */
-        color: #f57f17;
+        background-color: #c8e6c9;  /* Light green */
+        color: #1b5e20;             /* Dark green */
     }
 
     td.field-status select[data-selected="DLD"] {
-        background-color: #c8e6c9;  /* зеленый */
-        color: #1b5e20;
+        background-color: #a5d6a7;  /* Slightly darker green to differentiate from OND */
+        color: #1b5e20;             /* Dark green */
     }
 
     td.field-status select[data-selected="CND"] {
-        background-color: #eeeeee;  /* серый */
-        color: #424242;
+        background-color: #eeeeee;  /* Light grey */
+        color: #424242;             /* Dark grey */
     }
 
-    /* Стили для options */
-    td.field-status select option[value="WCO"] {
-        background-color: #ffcdd2;
-        color: #b71c1c;
+    /* Table styling */
+    .model-table {
+        width: 100%;
+        border-collapse: collapse;
     }
 
-    td.field-status select option[value="CFD"] {
-        background-color: #ffe0b2;
-        color: #e65100;
+    .model-table th,
+    .model-table td {
+        border: 1px solid #ddd;
+        text-align: center;
     }
 
-    td.field-status select option[value="OND"] {
-        background-color: #fff9c4;
-        color: #f57f17;
+    /* Основная таблица */
+    .main-table th,
+    .main-table td {
+        padding: 8px;
+        font-size: 12px;
     }
 
-    td.field-status select option[value="DLD"] {
-        background-color: #c8e6c9;
-        color: #1b5e20;
+    /* Вспомогательные таблицы */
+    .secondary-table {
+        font-size: 10px;
     }
 
-    td.field-status select option[value="CND"] {
-        background-color: #eeeeee;
-        color: #424242;
+    .secondary-table th,
+    .secondary-table td {
+        padding: 4px;
     }
 
-    /* Общие стили для select */
-    td.field-status select {
-        padding: 2px 5px;
-        border-radius: 3px;
-        width: auto;
-        min-width: 150px;
+    .model-table th {
+        font-weight: bold;
+    }
+    .report-link {
+        background: #417690;
+        padding: 10px 15px;
+        border-radius: 4px;
+        color: #fff;
+        text-decoration: none;
+    }
+    .report-link:hover {
+        background: #205067;
+    }
+
+
+    #save-action-button {
+        background: #417690;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        color: #fff;
+        cursor: pointer;
+        font-weight: normal;
+        font-size: 13px;
+        font-family: "Roboto", "Lucida Grande", Verdana, Arial, sans-serif;
+    }
+
+    #save-action-button:hover {
+        background: #205067;
+    }
+    .smoke-input {
+        -moz-appearance: textfield; /* Для Firefox */
+        -webkit-appearance: none;  /* Для Safari и Chrome */
+        appearance: none; /* Общий стиль */
+    }
+    .smoke-input::-webkit-inner-spin-button,
+    .smoke-input::-webkit-outer-spin-button {
+        display: none; /* Убираем стрелки в Chrome и Safari */
+        margin: 0;
     }
 </style>
 {% endblock %}
