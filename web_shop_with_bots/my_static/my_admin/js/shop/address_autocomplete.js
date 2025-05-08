@@ -12,6 +12,14 @@ function getCurrentDomain() {
     return window.location.hostname;
 }
 
+
+// Функция для проверки наличия номера дома в адресе
+function hasHouseNumber(address) {
+    if (!address) return false;
+    // Регулярное выражение для поиска цифр, которые обычно указывают на номер дома
+    return /\d+/.test(address);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const addressInput = document.getElementById('id_recipient_address');
     const coordinatesInput = document.getElementById('id_coordinates'); // Добавлено определение поля с координатами
@@ -39,6 +47,23 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             helpText.style.display = 'none';
         }
+    }
+
+    // Функция для отображения предупреждения о необходимости номера дома
+    function displayHouseNumberWarning(show) {
+        // Ищем или создаем предупреждение под полем адреса
+        let warningText = addressInput.parentNode.querySelector('.house-number-warning');
+        if (!warningText) {
+            warningText = document.createElement('div');
+            warningText.className = 'house-number-warning';
+            warningText.style.color = 'red';
+            warningText.style.marginTop = '5px';
+            warningText.textContent = 'Необходимо указать номер дома для расчета доставки';
+            addressInput.parentNode.appendChild(warningText);
+        }
+
+        // Показываем или скрываем предупреждение
+        warningText.style.display = show ? 'block' : 'none';
     }
 
     if (addressInput) {
@@ -82,36 +107,62 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!place.geometry || !place.geometry.location) {
                         console.error('Location not found');
                         coordinatesInput.value = ''; // Установка пустой строки для очистки поля
+                        // Отображаем координаты в help_text
+                        displayHouseNumberWarning(false);
                         return;
                     }
-                    const latitude = place.geometry.location.lat(); // Получение широты
-                    const longitude = place.geometry.location.lng(); // Получение долготы
-                    const coordinates = `${latitude}, ${longitude}`;
-                    // Вставка координат в поле coordinates
-                    coordinatesInput.value = coordinates;
 
-                    // Отображаем координаты в help_text
-                    displayCoordinatesInHelpText(coordinates);
+                    // Получаем полный адрес
+                    const fullAddress = place.formatted_address || addressInput.value;
 
-                    // Добавьте эти отладочные выводы
-                    console.log("Координаты получены и установлены:", coordinates);
-                    console.log("Генерация события coordinatesChanged");
+                    // Проверяем наличие номера дома в адресе
+                    if (hasHouseNumber(fullAddress)) {
+                        // Если есть номер дома, заполняем координаты и триггерим расчет доставки
+                        const latitude = place.geometry.location.lat(); // Получение широты
+                        const longitude = place.geometry.location.lng(); // Получение долготы
+                        const coordinates = `${latitude}, ${longitude}`;
 
-                    // Генерируем событие изменения координат для других скриптов
-                    const event = new CustomEvent('coordinatesChanged', {
-                        detail: { coordinates: coordinates }
-                    });
-                    document.dispatchEvent(event);
-                    console.log("Событие coordinatesChanged отправлено");
+                        // Вставка координат в поле coordinates
+                        coordinatesInput.value = coordinates;
+
+                        // Отображаем координаты в help_text
+                        displayCoordinatesInHelpText(coordinates);
+
+                        // Скрываем предупреждение о номере дома
+                        displayHouseNumberWarning(false);
+
+                        // Добавьте эти отладочные выводы
+                        console.log("Номер дома найден. Координаты получены и установлены:", coordinates);
+                        console.log("Генерация события coordinatesChanged");
+
+                        // Генерируем событие изменения координат для других скриптов
+                        const event = new CustomEvent('coordinatesChanged', {
+                            detail: { coordinates: coordinates }
+                        });
+                        document.dispatchEvent(event);
+                        console.log("Событие coordinatesChanged отправлено");
+                    } else {
+                        // Если нет номера дома, очищаем координаты и показываем предупреждение
+                        coordinatesInput.value = '';
+                        displayCoordinatesInHelpText('');
+                        displayHouseNumberWarning(true);
+                        console.log("Номер дома не найден. Координаты не установлены.");
+                    }
                 });
             };
             document.head.appendChild(googleMapsScript);
 
             // Добавляем обработчик события input для поля адреса
             addressInput.addEventListener('input', () => {
-                if (!addressInput.value) {
-                    coordinatesInput.value = ''; // Установка пустой строки для очистки поля
-                    displayCoordinatesInHelpText('нет координат'); // Очищаем help text
+                // Проверяем, есть ли номер дома в текущем значении поля
+                const addressValue = addressInput.value;
+                const hasNumber = hasHouseNumber(addressValue);
+
+                if (!addressValue) {
+                    // Если поле пустое, очищаем всё
+                    coordinatesInput.value = '';
+                    displayCoordinatesInHelpText('');
+                    displayHouseNumberWarning(false);
 
                     // Сбрасываем зону доставки на значение по умолчанию
                     const deliveryZoneSelect = document.getElementById('id_delivery_zone');
@@ -136,6 +187,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         detail: { coordinates: '' }
                     });
                     document.dispatchEvent(event);
+                } else if (!hasNumber && coordinatesInput.value) {
+                    // Если пользователь удалил номер дома, но координаты были заполнены
+                    coordinatesInput.value = '';
+                    displayCoordinatesInHelpText('');
+                    displayHouseNumberWarning(true);
+
+                    // Генерируем событие очистки координат
+                    const event = new CustomEvent('coordinatesChanged', {
+                        detail: { coordinates: '' }
+                    });
+                    document.dispatchEvent(event);
+                } else if (hasNumber) {
+                    // Если номер дома есть, но координаты не заполнены автоматически,
+                    // скрываем предупреждение (координаты заполнятся при выборе адреса из выпадающего списка)
+                    displayHouseNumberWarning(false);
                 }
             });
         })

@@ -28,7 +28,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Функция для установки ручной скидки
     function setManualDiscount(value) {
         if (manualDiscountInput) {
-            manualDiscountInput.value = value;
+            // Получаем значение ручной скидки в процентах
+            const manualDiscountValue = getBaseAmount() * value / 100;
+            console.log('Ручная скидка (DIN):', manualDiscountValue);
+
+            manualDiscountInput.value = manualDiscountValue;
             console.log(`Установлена ручная скидка: ${value}%`);
         }
     }
@@ -53,6 +57,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return 0;
     }
 
+    // Функция получения стоимости доставки
+    function getBaseAmount() {
+        // Получаем сумму заказа
+        const amount = parseFloat(amountField?.textContent || "0") || 0;
+
+        // Получаем стоимость доставки
+        const deliveryCost = getDeliveryCost();
+        console.log('Стоимость доставки для расчета:', deliveryCost);
+
+        // Рассчитываем финальную сумму с учетом скидки
+        const baseAmount = amount + deliveryCost;
+        console.log('Финальная сумма:', baseAmount);
+
+        return baseAmount
+
+    }
+
     // Функция рассчета скидок и обновления полей формы
     function calculateDiscounts() {
         const orderType = orderTypeField.value;
@@ -70,27 +91,14 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Получаем сумму заказа
-        const amount = parseFloat(amountField?.textContent || "0") || 0;
-        if (amount <= 0) {
-            console.log('Сумма заказа = 0, скидки не рассчитываем');
-            return;
-        }
-
-        // Получаем стоимость доставки
-        const deliveryCost = getDeliveryCost();
-        console.log('Стоимость доставки для расчета:', deliveryCost);
-
-        // Определяем базовую сумму для расчета скидки (с доставкой)
-        const baseAmount = amount + deliveryCost;
-        console.log('Базовая сумма для расчета скидки:', baseAmount);
-
         // Получаем значение ручной скидки в процентах
-        const manualDiscountPercent = manualDiscountInput ? parseFloat(manualDiscountInput.value) || 0 : 0;
-        console.log('Ручная скидка (%):', manualDiscountPercent);
+        const manualDiscount = manualDiscountInput ? parseFloat(manualDiscountInput.value) || 0 : 0;
+        console.log('Ручная скидка (DIN):', manualDiscount);
 
         // Рассчитываем финальную сумму с учетом скидки
-        const finalAmount = baseAmount * (1 - manualDiscountPercent / 100);
+        const finalAmount = getBaseAmount() - manualDiscount;
+        updateDiscountPercent()
+
         console.log('Финальная сумма:', finalAmount);
 
         // Обновляем поле итоговой суммы
@@ -100,60 +108,83 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Функция для управления скидкой в зависимости от типа заказа
-    function handleOrderTypeChange() {
+    function handleDiscountChange() {
         const orderType = orderTypeField.value;
         console.log('Изменен тип заказа:', orderType);
 
-        // Получаем текущее значение скидки
-        const currentDiscount = manualDiscountInput ? parseFloat(manualDiscountInput.value) || 0 : 0;
-
-        // Если тип партнерский, сбрасываем скидку
-        if (isPartnerOrderType(orderType)) {
-            resetDiscount();
-        }
         // Если тип T (самовывоз), устанавливаем скидку 10%
-        else if (orderType === 'T') {
+        if (orderType === 'T') {
             // Устанавливаем 10% только если поле пустое или равно 0
-            if (currentDiscount === 0) {
-                setManualDiscount("10");
-                console.log('Установлена скидка 10% для самовывоза (поле было пустым или 0)');
-            } else {
-                console.log('Сохранено пользовательское значение скидки:', currentDiscount);
-            }
+            setManualDiscount("10");
+            console.log('Установлена скидка 10% для самовывоза ');
         }
         // Для других типов (включая D - доставку) обнуляем скидку
         else {
-            if (currentDiscount === 10) {  // Сбрасываем только если значение точно 10 (скидка за самовывоз)
-                resetDiscount();
-                console.log('Сброшена скидка для самовывоза (была 10%)');
-            } else {
-                // Сохраняем другие значения (пользовательские скидки или другие системные скидки)
-                console.log('Сохранено значение скидки (не равное 10%):', currentDiscount);
-            }
+            resetDiscount();
+            console.log('Сброшена скидка при смене типа заказа');
         }
 
         // Пересчитываем скидки
         calculateDiscounts();
     }
 
+    // Добавляем отображение процента скидки
+    if (manualDiscountInput) {
+        // Создаем элемент для отображения процента
+        var percentDisplay = document.createElement('span');
+        percentDisplay.id = 'discount-percent-display';
+        percentDisplay.style.marginLeft = '10px';
+        percentDisplay.style.color = '#666';
+        percentDisplay.style.fontStyle = 'italic';
+        percentDisplay.style.display = 'inline-block';
+
+        // Находим родительский элемент, который содержит поле ввода
+        var inputContainer = manualDiscountInput.parentNode;
+
+        // Добавляем процент сразу после поля ввода, но в той же строке
+        inputContainer.insertBefore(percentDisplay, manualDiscountInput.nextSibling);
+
+        // Функция для обновления отображения процента
+        function updateDiscountPercent() {
+            // Получаем сумму заказа и стоимость доставки
+            var amount = parseFloat(amountField?.textContent || '0') || 0;
+            var deliveryCost = parseFloat(deliveryCostInput?.value || '0') || 0;
+            var baseAmount = amount + deliveryCost;
+
+            // Получаем значение скидки
+            var discountValue = parseFloat(manualDiscountInput.value || '0') || 0;
+
+            // Рассчитываем процент если базовая сумма больше 0
+            if (baseAmount > 0) {
+                var percent = (discountValue / baseAmount * 100).toFixed(2);
+                percentDisplay.textContent = `(${percent}%)`;
+            } else {
+                percentDisplay.textContent = '(0%)';
+            }
+        }
+
+        // Вызываем функцию обновления процента с небольшой задержкой после загрузки страницы
+        setTimeout(updateDiscountPercent, 600);
+    }
+
     // События для отслеживания изменений
 
     // Изменение типа заказа
     if (orderTypeField) {
-        orderTypeField.addEventListener('change', handleOrderTypeChange);
+        orderTypeField.addEventListener('change', handleDiscountChange());
     }
 
     // Отслеживаем изменения в полях стоимости доставки
     if (deliveryCostInput) {
         deliveryCostInput.addEventListener('change', function() {
             console.log('Изменено поле delivery_cost:', this.value);
-            calculateDiscounts();
+            handleDiscountChange();
         });
 
         // Также слушаем событие input для мгновенной реакции при вводе
         deliveryCostInput.addEventListener('input', function() {
             console.log('Ввод в поле delivery_cost:', this.value);
-            calculateDiscounts();
+            handleDiscountChange();
         });
     }
 
@@ -174,24 +205,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // Слушаем событие об обновлении блюд от orderdishes_management.js
     document.addEventListener('dishesUpdated', function() {
         console.log('Получено событие обновления блюд');
-        calculateDiscounts();
+        handleDiscountChange();
     });
 
     // Добавляем обработчик для случая, когда мы знаем, что сумма изменилась
     document.addEventListener('amountChanged', function(event) {
         console.log('Получено событие изменения суммы:', event.detail);
-        calculateDiscounts();
+        handleDiscountChange();
     });
 
     // Добавляем обработчик для случая, когда мы знаем, что стоимость доставки изменилась
     document.addEventListener('deliveryCostChanged', function(event) {
         console.log('Получено событие изменения стоимости доставки:', event.detail);
-        calculateDiscounts();
+        handleDiscountChange();
     });
 
     // Инициализация начальных значений
     if (orderTypeField) {
-        handleOrderTypeChange(); // Установка начальной скидки в зависимости от типа заказа
+        handleDiscountChange(); // Установка начальной скидки в зависимости от типа заказа
     }
 
     // Выполняем начальный расчет с небольшой задержкой, чтобы все поля успели инициализироваться

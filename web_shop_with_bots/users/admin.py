@@ -6,7 +6,7 @@ from .models import BaseProfile, UserAddress, WEBAccount
 from django.urls import reverse
 from .forms import BaseProfileAdminForm
 from shop.models import Order
-from shop.admin_utils import custom_source, custom_order_number
+from shop.admin_utils import custom_source, get_custom_order_number
 from django_admin_inline_paginator.admin import TabularInlinePaginated
 from audit.models import AuditLog
 from rangefilter.filters import NumericRangeFilter
@@ -44,7 +44,7 @@ class OrderInline(TabularInlinePaginated):
     custom_source.short_description = 'Источник'
 
     def custom_order_number(self, obj):
-        return custom_order_number(obj)
+        return get_custom_order_number(obj)
     custom_order_number.short_description = '№'
 
     def has_add_permission(self, request, obj=None):
@@ -119,7 +119,7 @@ class BaseProfileAdmin(admin.ModelAdmin):
     """Настройки отображения данных таблицы User."""
     list_display = ('id', 'is_active', 'full_name',
                     'get_contacts', 'messenger_account', 'custom_orders_qty',
-                    'custom_first_web_order')
+                    'custom_first_web_order', 'date_joined')
     search_fields = ('first_name', 'last_name', 'phone', 'email')
     list_filter = ('is_active',
                    ('orders_qty', NumericRangeFilter),

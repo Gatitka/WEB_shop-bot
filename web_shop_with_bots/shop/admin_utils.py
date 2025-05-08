@@ -9,7 +9,7 @@ from django.conf import settings
 from catalog.models import Category, DishCategory
 import re
 from django.utils.html import format_html
-
+from shop.utils import get_flag
 
 
 def my_get_object(model, object_id, source=None):
@@ -181,6 +181,8 @@ def get_delivery_zones():
 
 
 def get_addchange_extra_context(request, extra_context, type=None, source=None):
+    """ Формирует extra_conext в форму создания заказа.
+        Пробрасывает GOOGLE_API_KEY, menu, delivery_zones."""
     extra_context["categories"], extra_context["dishes"] = get_menu_data()
 
     if type == 'all':
@@ -190,6 +192,8 @@ def get_addchange_extra_context(request, extra_context, type=None, source=None):
 
 
 def get_changelist_extra_context(request, extra_context, source=None):
+    """ Формирует extra_conext в форму списка заказов, добавляя данные
+    для ежедневного отчета."""
     extra_context = extra_context or {}
     view = request.GET.get('view', None)
     e = request.GET.get('e', None)
@@ -229,7 +233,15 @@ def get_changelist_extra_context(request, extra_context, source=None):
     return extra_context
 
 
-def custom_order_number(obj):
+# --------------------- ФОРМАТИРОВАНИЕ ПОЛЕЙ СПИСКА ЗАКАЗОВ -------------------------
+
+
+def get_custom_order_number(obj):
+    """
+    В форме списка заказов формирует колонку №, добавляя:
+    - скрытые данные о создании и времени выдачи (если в будущем).
+    - кнопки печати чека и копировани язаказа
+    """
     # return custom_order_number(obj)
     # return obj.order_number
     # Формируем номер заказа
@@ -243,8 +255,6 @@ def custom_order_number(obj):
         '<div class="order-action-buttons" style="display: flex; justify-content: space-between; margin-top:5px;">'
         '<button type="button" class="print-button" data-id="{}" title="Распечатать чек" style="background-color: #fff; border: 1px solid #ccc; padding: 3px 8px; border-radius: 3px; color: #555; cursor: pointer;">'
         '<span style="font-size: 12px;">🖨</span></button>'
-        # '<a href="/admin/shop/order/repeat/{}/" class="repeat-order-button" title="Повторить заказ" style="display: inline-block; background-color: #fff; border: 1px solid #ccc; padding: 3px 8px; border-radius: 3px; color: #555; text-decoration: none; cursor: pointer;">'
-        # '<span style="font-size: 12px;">🔄</span></a>'
         '</div>',
         obj.id, obj.id
     )
@@ -257,7 +267,11 @@ def custom_order_number(obj):
     )
 
 
-def warning(obj):
+def get_warning(obj):
+    """
+    В форме списка заказов формирует колонку !, добавляя !!!
+    в случаях ошибок/неполноты данных в заказе.
+    """
     help_text = []
     if obj.delivery.type == 'delivery':
         if obj.delivery_zone.name == 'уточнить':
@@ -286,7 +300,104 @@ def warning(obj):
         return ''
 
 
+def get_info(obj):
+    """
+    В форме списка заказов формирует колонку АДРЕС.
+    В случае партнерского заказа показывает его название.
+    В случае внутреннего заказа показывает "самовывоз" или адрес доставки.
+    """
+    source = obj.source
+    if source in ['1', '2', '3', '4']:
+        # если не через партнеров, а из наших источников заказ
+        if obj.delivery.type == 'delivery':
+            address = obj.recipient_address
+
+            if address in ['', None]:
+                return '❓нет адреса доставки'
+
+            if obj.delivery_zone.name == 'уточнить':
+                address = format_html('<span style="color:red;">{}</span>',
+                                      address)
+            return address
+
+        elif obj.delivery.type == 'takeaway':
+            return 'самовывоз'
+    else:
+        return obj.get_source_display()
+
+
+def get_custom_total(obj):
+    if (obj.process_comment or
+            obj.delivery_zone and obj.delivery_zone.name == 'уточнить'):
+        return format_html(
+            '<span style="color:red;">{}</span>',
+            obj.final_amount_with_shipping)
+    return obj.final_amount_with_shipping
+
+
+def get_note(obj):
+    """
+    В форме списка заказов формирует колонку ПРИМЕЧАНИЕ.
+    В случае партнерского заказа показывает его id в системе источнике.
+    """
+    if obj.source in ['3'] + settings.PARTNERS_LIST:
+        source = obj.get_source_display()
+        source_id = f'{obj.source_id}' if obj.source_id is not None else ''
+        if obj.source_id:
+            if source == 'TM_Bot':
+                source = f"{source}{obj.orders_bot_id}"
+                return format_html(
+                    '{}<br>{}',
+                    source, source_id)
+
+            return source_id
+        else:
+            return '❓нет ID'
+    return ''
+
+
+def get_custom_delivery_cost(obj):
+    if obj.delivery_zone:
+        if obj.delivery_zone.name in ['по запросу']:
+            return obj.delivery_cost
+        elif obj.delivery_zone.name in ['уточнить']:
+            return format_html('<span style="color:red;">{}</span>',
+                               obj.delivery_cost)
+        else:
+            return obj.delivery_zone.delivery_cost
+    return ''
+
+
+def get_contacts(obj):
+    lang = get_flag(obj)
+    name = format_html('{} {}',
+                       lang,
+                       obj.recipient_name if obj.recipient_name else '')
+    msngr_link = ''
+    phone = obj.recipient_phone if obj.recipient_phone else ''
+    if obj.user:
+        name = f'{lang}👤 {obj.recipient_name}'
+        if obj.is_first_order:
+            name = f'{lang}🥇👤 {obj.recipient_name}'
+        if obj.user.messenger_account:
+            msngr_link = format_html(obj.user.messenger_account.msngr_link)
+
+    else:
+        if obj.msngr_account:
+            msngr_link = format_html(obj.msngr_account.msngr_link)
+
+    return format_html('{}<br>{}<br>{}',
+                       name,
+                       phone,
+                       msngr_link)
+
+# --------------------- ФОРМАТИРОВАНИЕ ПОЛЕЙ В ДРУГИХ ФОРМАХ -----------------
+
+
 def custom_source(obj):
+    """
+    Формируем колонку ИСТОЧНИК в clients / messenger_account.
+    """
     # краткое название поля в list
     source_id = f'#{obj.source_id}' if obj.source_id is not None else ''
     source = obj.get_source_display()

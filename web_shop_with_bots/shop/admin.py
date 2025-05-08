@@ -5,7 +5,7 @@ import shop.admin_filters as admin_filters
 import shop.admin_reports as admin_reports
 import shop.admin_utils as admin_utils
 import shop.forms as shop_forms
-from shop.utils import get_flag
+
 from shop.models import (Dish, Order, OrderDish, Discount,
                          OrderGlovoProxy, OrderWoltProxy,
                          OrderSmokeProxy, OrderNeTaDverProxy,
@@ -24,7 +24,7 @@ from django.shortcuts import redirect
 from django.conf import settings
 from users.models import user_add_new_order_data
 from utils.admin_permissions import has_restaurant_admin_permissions
-from api.admin_views import AdminReportView, RepeatOrderView, PrepareRepeatOrderView
+from api.admin_views import AdminReportView
 
 
 @admin.register(Discount)
@@ -101,90 +101,31 @@ class OrderAdmin(admin.ModelAdmin):
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
 
     def custom_order_number(self, obj):
-        return admin_utils.custom_order_number(obj)
+        return admin_utils.get_custom_order_number(obj)
     custom_order_number.short_description = '№'
 
     def warning(self, obj):
-        # Условие для проверки различных состояний
-        return admin_utils.warning(obj)
+        return admin_utils.get_warning(obj)
     warning.short_description = '!'
 
     def info(self, obj):
-        source = obj.source
-        if source in ['1', '2', '3', '4']:
-            # если не через партнеров, а из наших источников заказ
-            if obj.delivery.type == 'delivery':
-                address = obj.recipient_address
-
-                if address in ['', None]:
-                    return '❓нет адреса доставки'
-
-                if obj.delivery_zone.name == 'уточнить':
-                    address = format_html('<span style="color:red;">{}</span>',
-                                          address)
-                return address
-
-            elif obj.delivery.type == 'takeaway':
-                return 'самовывоз'
-        else:
-            return obj.get_source_display()
+        return admin_utils.get_info(obj)
     info.short_description = 'Адрес'
 
     def custom_total(self, obj):
-        if obj.process_comment:
-            return format_html(
-                '<span style="color:red;" title="{}">!!!</span>',
-                obj.final_amount_with_shipping)
-        return obj.final_amount_with_shipping
+        return admin_utils.get_custom_total(obj)
     custom_total.short_description = format_html('Сумма<br>заказа,<br>DIN')
 
     def note(self, obj):
-        if obj.source in ['3'] + settings.PARTNERS_LIST:
-            source = obj.get_source_display()
-            source_id = f'{obj.source_id}' if obj.source_id is not None else ''
-            if obj.source_id:
-                if source == 'TM_Bot':
-                    source = f"{source}{obj.orders_bot_id}"
-                    return format_html(
-                        '{}<br>{}',
-                        source, source_id)
-
-                return source_id
-            else:
-                return '❓нет ID'
-        return ''
+        return admin_utils.get_note(obj)
     note.short_description = 'Примеч'
 
     def custom_delivery_cost(self, obj):
-        #return obj.delivery_cost if obj.delivery_cost != 0 else ''
-        if obj.delivery_zone:
-            return obj.delivery_zone.delivery_cost
-        return ''
+        return admin_utils.get_custom_delivery_cost(obj)
     custom_delivery_cost.short_description = format_html('Доставка,<br>DIN')
 
-    def get_contacts(self, instance):
-        lang = get_flag(instance)
-        name = format_html('{}<br>{}',
-                           lang,
-                           instance.recipient_name if instance.recipient_name else '')
-        msngr_link = ''
-        phone = instance.recipient_phone if instance.recipient_phone else ''
-        if instance.user:
-            name = f'{lang}👤 {instance.recipient_name}'
-            if instance.is_first_order:
-                name = f'{lang}🥇👤 {instance.recipient_name}'
-            if instance.user.messenger_account:
-                msngr_link = format_html(instance.user.messenger_account.msngr_link)
-
-        else:
-            if instance.msngr_account:
-                msngr_link = format_html(instance.msngr_account.msngr_link)
-
-        return format_html('{}<br>{}<br>{}',
-                           name,
-                           phone,
-                           msngr_link)
-
+    def get_contacts(self, obj):
+        return admin_utils.get_contacts(obj)
     get_contacts.allow_tags = True
     get_contacts.short_description = 'Контакты'
 
@@ -230,7 +171,6 @@ class OrderAdmin(admin.ModelAdmin):
     list_per_page = 20
     radio_fields = {"payment_type": admin.HORIZONTAL,
                     "delivery": admin.HORIZONTAL}
-                    #"discount": admin.VERTICAL}
 
     add_form_template = 'shop/order/add_form.html'
     change_form_template = 'shop/order/change_form.html'
@@ -268,6 +208,7 @@ class OrderAdmin(admin.ModelAdmin):
                     "classes": ["collapse"],
                     'fields': (
                         ('recipient_name', 'recipient_phone'),
+                        ('user', 'msngr_account')
                     )
                 }),
                 ('Доставка', {
@@ -406,18 +347,16 @@ class OrderAdmin(admin.ModelAdmin):
         model = self.model
         return admin_utils.my_get_object(model, object_id)
 
+    def get_changelist(self, request, **kwargs):
+        return CustomChangeList
+
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
             path('report/', AdminReportView.as_view(), name='shop_order_report'),
-            path('repeat/<int:order_id>/', RepeatOrderView.as_view(), name='admin_repeat_order'),
-            path('api/prepare_repeat_order/', PrepareRepeatOrderView.as_view(), name='admin_prepare_repeat_order'),
             path('<path:object_id>/change/', self.change_view, name='order_change'),
         ]
         return custom_urls + urls
-
-    def get_changelist(self, request, **kwargs):
-        return CustomChangeList
 
     def changelist_view(self, request, extra_context=None):
         if not request.GET:
@@ -556,21 +495,6 @@ class OrderAdmin(admin.ModelAdmin):
         # после сохранения НОВОГО заказа и его связей
         # отправляется сообщение о новом заказе
 
-    # def orderdishes_inline(self, *args, **kwargs):
-    #     context = getattr(self.response, 'context_data', None) or {}
-    #     inline = context['inline_admin_formset'] = context['inline_admin_formsets'].pop(0)
-    #     return get_template(inline.opts.template).render(context, self.request)
-
-    # def render_change_form(self, request, context=None, *args, **kwargs):
-    #     # self.request = request
-    #     # self.response = super().render_change_form(request, *args, **kwargs)
-    #     # return self.response
-    #     if context:
-    #         instance = context['adminform'].form.instance  # get the model instance from modelform
-    #         instance.request = request
-    #         instance.response = super().render_change_form(request, context, *args, **kwargs)
-    #         return instance.response
-
     # ------ ОТОБРАЖЕНИЕ ССЫЛКИ НА ЧАТ С КЛИЕНТОМ -----
 
     def get_msngr_link(self, instance):
@@ -655,12 +579,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
     custom_total.short_description = format_html('Сумма<br>заказа, DIN')
 
     def note(self, obj):
-        if obj.source in settings.PARTNERS_LIST:
-            if obj.source_id:
-                source_id = f'{obj.source_id}' if obj.source_id is not None else ''
-                return source_id
-            else:
-                return '❓нет ID'
+        return admin_utils.get_note(obj)
     note.short_description = 'Примечание'
 
     def get_queryset(self, request):

@@ -11,10 +11,19 @@
     <!-- Filter Section -->
     <div class="filter-section">
         <form method="get" action="">
-            <label for="report_date">{% trans "Дата отчета:" %}</label>
-            <input type="date" id="report_date" name="report_date" class="date-input" value="{{ report_date }}">
+            <div class="date-range-container">
+                <div class="date-field">
+                    <label for="start_date">{% trans "Период с:" %}</label>
+                    <input type="date" id="start_date" name="start_date" class="date-input" value="{{ start_date }}">
+                </div>
 
-            <button type="submit" class="filter-button">{% trans "Применить фильтр" %}</button>
+                <div class="date-field">
+                    <label for="end_date">{% trans "по:" %}</label>
+                    <input type="date" id="end_date" name="end_date" class="date-input" value="{{ end_date }}">
+                </div>
+
+                <button type="submit" class="filter-button">{% trans "Применить фильтр" %}</button>
+            </div>
         </form>
     </div>
 
@@ -278,6 +287,27 @@
         }
 
         /* Форма и элементы управления */
+        .filter-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--body-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+
+        .date-range-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .date-field {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
         .date-input {
             padding: 5px;
             border: 1px solid var(--border-color);
@@ -285,6 +315,7 @@
             background-color: var(--body-bg);
             color: var(--body-fg);
         }
+
         .filter-button {
             padding: 5px 10px;
             background-color: var(--primary);
@@ -294,9 +325,11 @@
             cursor: pointer;
             margin-left: 10px;
         }
+
         .filter-button:hover {
             background-color: var(--primary-dark);
         }
+
         .back-link {
             margin-bottom: 20px;
             display: inline-block;

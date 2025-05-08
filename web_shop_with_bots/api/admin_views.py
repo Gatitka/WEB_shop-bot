@@ -437,7 +437,6 @@ def get_formatted_receipt(request, order_id):
         return Response({'error': str(e), 'details': error_details}, status=500)
 
 
-
 # ------------------------ ОТЧЕТ СУПЕРАДМИНА ----------------------------
 
 
@@ -458,10 +457,12 @@ class AdminReportView(TemplateView):
         start_date, end_date = self.get_date_range()
 
         # Get data for reports
-        context['restaurant_data'] = self.get_restaurant_data(start_date, end_date)
+        context['restaurant_data'] = self.get_restaurant_data(start_date,
+                                                              end_date)
 
         # Add date filtering context
-        context['report_date'] = self.report_date
+        context['start_date'] = self.start_date
+        context['end_date'] = self.end_date
 
         return context
 
@@ -469,30 +470,36 @@ class AdminReportView(TemplateView):
         """Get date range from request parameters or use default (today)"""
         today = timezone.now().date()
 
-        report_date_str = self.request.GET.get('report_date')
+        start_date_str = self.request.GET.get('start_date')
+        end_date_str = self.request.GET.get('end_date')
 
-        # Parse dates if provided
-        if report_date_str:
+        if not start_date_str:
+            # не задан день или начало периода
+            # Create start and end datetime for the same day
+            start_date = today
+            end_date = today + timedelta(days=1)
+
+        if start_date_str:
             try:
-                report_date = datetime.strptime(report_date_str, '%Y-%m-%d').date()
+                if end_date_str in ['', None]:
+                    start_date = datetime.strptime(start_date_str,
+                                                   '%Y-%m-%d').date()
+                    end_date = start_date + timedelta(days=1)
+
+                else:
+                    start_date = datetime.strptime(start_date_str,
+                                                   '%Y-%m-%d').date()
+                    end_date = datetime.strptime(end_date_str,
+                                                 '%Y-%m-%d').date()
             except ValueError:
-                report_date = today
-        else:
-            report_date = today
-
-        # Create start and end datetime for the same day
-        start_datetime = datetime.combine(report_date, datetime.min.time())
-        end_datetime = datetime.combine(report_date + timedelta(days=1), datetime.min.time())
-
-        # Make aware if using timezone
-        if settings.USE_TZ:
-            start_datetime = timezone.make_aware(start_datetime)
-            end_datetime = timezone.make_aware(end_datetime)
+                start_date = today
+                end_date = today + timedelta(days=1)
 
         # Save report date for template
-        self.report_date = report_date_str or report_date.strftime('%Y-%m-%d')
+        self.start_date = start_date.strftime('%Y-%m-%d')
+        self.end_date = end_date.strftime('%Y-%m-%d')
 
-        return start_datetime, end_datetime
+        return start_date, end_date
 
     def get_restaurant_data(self, start_date, end_date):
         """Get restaurant-related data aggregated by city and restaurant"""
@@ -543,124 +550,3 @@ class AdminReportView(TemplateView):
                 restaurants_data[city_code] = city_data
 
         return restaurants_data
-
-
-# ------------------------ ПОВТОР ЗАКАЗА ----------------------------
-
-@method_decorator(staff_member_required, name='dispatch')
-class RepeatOrderView(View):
-    """
-    Представление для инициирования повтора заказа
-    """
-    def get(self, request, order_id):
-        try:
-            # Получаем заказ по ID
-            order = get_object_or_404(Order, pk=order_id)
-
-            # Проверяем права доступа
-            if not request.user.is_superuser and getattr(request.user, 'restaurant', None) != order.restaurant:
-                logger.warning(f"Попытка повтора заказа {order_id} пользователем {request.user} без прав доступа")
-                return JsonResponse({'error': 'У вас нет прав для повтора этого заказа'}, status=403)
-
-            # Получаем блюда заказа
-            order_dishes = OrderDish.objects.filter(order=order).select_related('dish')
-            dishes = []
-
-            for order_dish in order_dishes:
-                dishes.append({
-                    'dish_id': order_dish.dish.id,
-                    'quantity': order_dish.quantity,
-                })
-
-            # Формируем данные для формы нового заказа
-            data = {
-                'order_type': 'D' if order.delivery.type == 'delivery' else 'T',
-                'city': order.city,
-                'recipient_name': order.recipient_name,
-                'recipient_phone': order.recipient_phone,
-                'recipient_address': order.recipient_address,
-                # 'recipient_address_comment': order.recipient_address_comment,
-                'coordinates': order.coordinates,
-                'address_comment': order.address_comment,
-                'payment_type': order.payment_type,
-                'invoice': order.invoice,
-                'comment': order.comment,
-                'dishes': dishes,
-                'original_order_id': order.id,
-                'timestamp': timezone.now().isoformat()
-                # discount / manual_discount / restaurant /
-            }
-
-            # Генерируем уникальный токен для операции
-            repeat_token = str(uuid.uuid4())
-
-            # Сохраняем данные в сессию с ограниченным временем жизни
-            request.session[f'repeat_order_{repeat_token}'] = data
-
-            # Записываем информацию о действии в лог
-            logger.info(f"Заказ {order_id} подготовлен для повтора пользователем {request.user.username}, токен: {repeat_token}")
-
-            # Перенаправляем на страницу создания заказа с токеном
-            return HttpResponseRedirect(reverse('admin:shop_order_add') + f'?repeat_token={repeat_token}')
-
-        except Exception as e:
-            logger.error(f"Ошибка при подготовке повтора заказа {order_id}: {str(e)}")
-            return JsonResponse({'error': str(e)}, status=500)
-
-
-@method_decorator(staff_member_required, name='dispatch')
-class PrepareRepeatOrderView(View):
-    """
-    API для получения данных повторяемого заказа по токену
-    """
-    def get(self, request):
-        try:
-            # Получаем токен из параметров запроса
-            token = request.GET.get('token')
-            if not token:
-                return JsonResponse({'error': 'Отсутствует токен повтора заказа'}, status=400)
-
-            # Формируем ключ сессии
-            session_key = f'repeat_order_{token}'
-
-            # Получаем данные из сессии
-            order_data = request.session.get(session_key)
-
-            if not order_data:
-                logger.warning(f"Попытка использования недействительного или истекшего токена: {token}")
-                return JsonResponse({
-                    'error': 'Недействительный или истекший токен повтора заказа',
-                    'valid': False
-                }, status=400)
-
-            # Проверяем срок действия токена (15 минут)
-            from datetime import datetime, timedelta
-            from django.utils import timezone
-
-            timestamp = datetime.fromisoformat(order_data['timestamp'])
-            if timezone.now() - timestamp > timedelta(minutes=15):
-                # Удаляем просроченные данные
-                del request.session[session_key]
-                request.session.modified = True
-
-                logger.warning(f"Попытка использования истекшего токена: {token}")
-                return JsonResponse({
-                    'error': 'Срок действия токена истек. Пожалуйста, повторите операцию.',
-                    'valid': False
-                }, status=400)
-
-            # Удаляем данные из сессии после первого использования
-            del request.session[session_key]
-            request.session.modified = True
-
-            logger.info(f"Токен {token} успешно использован для повтора заказа пользователем {request.user.username}")
-
-            # Возвращаем данные для заполнения формы
-            return JsonResponse({
-                'valid': True,
-                'data': order_data
-            })
-
-        except Exception as e:
-            logger.error(f"Ошибка при обработке токена повтора заказа: {str(e)}")
-            return JsonResponse({'error': str(e), 'valid': False}, status=500)

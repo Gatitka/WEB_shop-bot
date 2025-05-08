@@ -67,7 +67,16 @@ class OrderPeriodFilter(admin.SimpleListFilter):
         )
 
     def queryset(self, request, queryset):
-        today = timezone.now().date()
+        # Получаем текущую дату-время в UTC
+        now_utc = timezone.now()
+
+        # Преобразуем к текущему часовому поясу пользователя
+        # TIME_ZONE из settings.py или из пользовательских настроек
+        now_local = timezone.localtime(now_utc)
+
+        # Извлекаем только дату
+        today = now_local.date()
+        #today = timezone.now().date()
         tomorrow = today + timedelta(days=1)
         yesterday = today - timedelta(days=1)
 

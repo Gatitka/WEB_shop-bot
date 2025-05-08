@@ -9,6 +9,15 @@
 ///////////////////////////////////////////////   ПОЛУЧЕНИЕ ЦЕН
 document.addEventListener('DOMContentLoaded', function() {
 
+    // Флаг, указывающий, что мы находимся в режиме редактирования, а не ввода начальных данных
+    var isEditing = false;
+
+    // Включаем режим редактирования после небольшой задержки
+    setTimeout(function() {
+        isEditing = true;
+        console.log('Режим редактирования активирован');
+    }, 500);
+
     // Функция для получения текущего домена
     function getCurrentDomain() {
         return window.location.hostname;
@@ -270,10 +279,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
 ///////////////////////////////////////////////   РАССЧЕТ СКИДОК
+    var amountField = document.querySelector('.fieldBox.field-amount .readonly');
+    var manualDiscountField = document.getElementById('id_manual_discount');
+    var deliveryCostInput = document.getElementById('id_delivery_cost');
+    var finalAmountField = document.querySelector('.fieldBox.field-final_amount_with_shipping .readonly');
+    var discountSelect = document.getElementById('id_discount');
+    var deliverySelect = document.getElementById('id_delivery');
+
+    var discountField = document.querySelector('.field-discount_amount .readonly');
 
     // Создаем экземпляр MutationObserver для отслеживания изменений в элементе '.field-amount .readonly'
     // Элемент '.field-amount .readonly', за которым нужно следить
-    var amountField = document.querySelector('.fieldBox.field-amount .readonly');
     var amountObserver = new MutationObserver(function(mutationsList) {
         for (var mutation of mutationsList) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
@@ -293,7 +309,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     // Создаем экземпляр MutationObserver для отслеживания изменений в элементе '.field-discount_amount .readonly'
-    var discountField = document.querySelector('.field-discount_amount .readonly');
     var discountObserver = new MutationObserver(function(mutationsList) {
         for (var mutation of mutationsList) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
@@ -305,71 +320,104 @@ document.addEventListener('DOMContentLoaded', function() {
         discountObserver.observe(discountField, { attributes: false, childList: true, subtree: true }); // Исправлено - наблюдаем за discountField
     }
 
-    var manualDiscountField = document.getElementById('id_manual_discount');
+
+    // Настраиваем обработчики для поля ручной скидки
     if (manualDiscountField) {
+        manualDiscountField.addEventListener('change', function() {
+            if (isEditing) calculateFinalAmount();
+        });
+
         manualDiscountField.addEventListener('input', function() {
-            calculateFinalAmount();
+            if (isEditing) calculateFinalAmount();
+        });
+
+        manualDiscountField.addEventListener('blur', function() {
+            if (isEditing) calculateFinalAmount();
         });
     }
 
-    var discountSelect = document.getElementById('id_discount');
+    // Обработчик изменения выбора скидки
     if (discountSelect) {
         discountSelect.addEventListener('change', function() {
-            calculateFinalAmount();
+            if (isEditing) calculateFinalAmount();
         });
     }
 
-    // Улучшенная обработка поля стоимости доставки
-    var deliveryCostInput = document.getElementById('id_delivery_cost');
-    if (deliveryCostInput) {
-        console.log('Found delivery cost input:', deliveryCostInput);
-
-        // Добавляем несколько обработчиков событий для надежности
-        deliveryCostInput.addEventListener('input', function() {
-            console.log('Delivery cost input event fired:', this.value);
-            calculateFinalAmount();
-        });
-
-        deliveryCostInput.addEventListener('change', function() {
-            console.log('Delivery cost change event fired:', this.value);
-            calculateFinalAmount();
-        });
-
-        // Добавляем обработчик события blur для надежности
-        deliveryCostInput.addEventListener('blur', function() {
-            console.log('Delivery cost blur event fired:', this.value);
-            calculateFinalAmount();
-        });
-
-        // Добавляем обработчик события focus для надежности
-        deliveryCostInput.addEventListener('focus', function() {
-            console.log('Delivery cost focus event fired:', this.value);
-            // Сохраняем текущее значение для сравнения при потере фокуса
-            this.setAttribute('data-prev-value', this.value);
-        });
-
-        // Проверяем при потере фокуса, изменилось ли значение
-        deliveryCostInput.addEventListener('blur', function() {
-            var prevValue = this.getAttribute('data-prev-value');
-            if (prevValue !== this.value) {
-                console.log('Delivery cost value changed from', prevValue, 'to', this.value);
+    // Обработчик изменения типа доставки
+    if (deliverySelect) {
+        deliverySelect.addEventListener('change', function() {
+            if (isEditing) {
+                handleDeliveryTypeChange();
                 calculateFinalAmount();
             }
         });
+    }
 
-        // Настраиваем MutationObserver для отслеживания изменений атрибута value
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                if (mutation.type === 'attributes' && mutation.attributeName === 'value') {
-                    console.log('Delivery cost value attribute changed:', deliveryCostInput.value);
-                    calculateFinalAmount();
-                }
-            });
+    // // Улучшенная обработка поля стоимости доставки
+    // if (deliveryCostInput) {
+    //     console.log('Found delivery cost input:', deliveryCostInput);
+
+    //     // Добавляем несколько обработчиков событий для надежности
+    //     deliveryCostInput.addEventListener('input', function() {
+    //         console.log('Delivery cost input event fired:', this.value);
+    //         calculateFinalAmount();
+    //     });
+
+    //     deliveryCostInput.addEventListener('change', function() {
+    //         console.log('Delivery cost change event fired:', this.value);
+    //         calculateFinalAmount();
+    //     });
+
+    //     // Добавляем обработчик события blur для надежности
+    //     deliveryCostInput.addEventListener('blur', function() {
+    //         console.log('Delivery cost blur event fired:', this.value);
+    //         calculateFinalAmount();
+    //     });
+
+    //     // Добавляем обработчик события focus для надежности
+    //     deliveryCostInput.addEventListener('focus', function() {
+    //         console.log('Delivery cost focus event fired:', this.value);
+    //         // Сохраняем текущее значение для сравнения при потере фокуса
+    //         this.setAttribute('data-prev-value', this.value);
+    //     });
+
+    //     // Проверяем при потере фокуса, изменилось ли значение
+    //     deliveryCostInput.addEventListener('blur', function() {
+    //         var prevValue = this.getAttribute('data-prev-value');
+    //         if (prevValue !== this.value) {
+    //             console.log('Delivery cost value changed from', prevValue, 'to', this.value);
+    //             calculateFinalAmount();
+    //         }
+    //     });
+
+    //     // Настраиваем MutationObserver для отслеживания изменений атрибута value
+    //     const observer = new MutationObserver(function(mutations) {
+    //         mutations.forEach(function(mutation) {
+    //             if (mutation.type === 'attributes' && mutation.attributeName === 'value') {
+    //                 console.log('Delivery cost value attribute changed:', deliveryCostInput.value);
+    //                 calculateFinalAmount();
+    //             }
+    //         });
+    //     });
+
+    //     observer.observe(deliveryCostInput, { attributes: true });
+    // } else {
+    //     console.warn('Delivery cost input not found!');
+    // }
+
+    // Обработчики для поля стоимости доставки
+    if (deliveryCostInput) {
+        deliveryCostInput.addEventListener('input', function() {
+            if (isEditing) calculateFinalAmount();
         });
 
-        observer.observe(deliveryCostInput, { attributes: true });
-    } else {
-        console.warn('Delivery cost input not found!');
+        deliveryCostInput.addEventListener('change', function() {
+            if (isEditing) calculateFinalAmount();
+        });
+
+        deliveryCostInput.addEventListener('blur', function() {
+            if (isEditing) calculateFinalAmount();
+        });
     }
 
     // Слушаем событие изменения стоимости доставки
@@ -378,14 +426,63 @@ document.addEventListener('DOMContentLoaded', function() {
         calculateFinalAmount();
     });
 
+    // Функция для установки ручной скидки
+    function setManualDiscount(value) {
+        if (manualDiscountField) {
+            // Получаем сумму заказа и стоимость доставки
+            const amount = parseFloat(amountField?.textContent || '0') || 0;
+            const deliveryCost = parseFloat(deliveryCostInput?.value || '0') || 0;
+            const baseAmount = amount + deliveryCost;
+
+            // Получаем значение ручной скидки в процентах
+            const manualDiscountValue = baseAmount * value / 100;
+            console.log('Ручная скидка (DIN):', manualDiscountValue);
+
+            manualDiscountField.value = manualDiscountValue;
+            console.log(`Установлена ручная скидка: ${value}%`);
+        }
+    }
+
+    // Функция сброса скидки на 0
+    function resetDiscount() {
+        setManualDiscount("0");
+    }
+
+    // Функция для управления скидкой в зависимости от типа заказа
+    function handleDiscountChange() {
+        if (!deliverySelect || !isEditing) return;
+
+        // Получаем текст выбранного типа доставки
+        const selectedText = deliverySelect.options[deliverySelect.selectedIndex].text;
+        console.log('Текст типа доставки:', selectedText);
+
+        // Если тип T (самовывоз), устанавливаем скидку 10%
+        if (selectedText.toLowerCase().includes('takeaway')) {
+            // Устанавливаем 10% только если поле пустое или равно 0
+            ManualDiscountValue = setManualDiscount("10");
+            console.log('Установлена скидка 10% для самовывоза ');
+            return ManualDiscountValue
+        }
+        // Для других типов (включая D - доставку) обнуляем скидку
+        else {
+            resetDiscount();
+            console.log('Выбрана доставка, сбрасываем скидку');
+            return 0
+        }
+
+        // Пересчитываем итоговую сумму
+        calculateFinalAmount();
+    }
+
     // Функция для расчета скидок
     function calculateDiscounts() {
+        if (!amountField || !finalAmountField || !isEditing) return;
+
         // Получаем основные значения
-        var deliveryCostInput = document.getElementById('id_delivery_cost');
         var amount = parseFloat(amountField.textContent) || 0;
         var deliveryCost = deliveryCostInput ? parseFloat(deliveryCostInput.value) || 0 : 0;
         var discountSelectValue = discountSelect ? discountSelect.value : '';
-        var manualDiscountValue = parseFloat(manualDiscountField.value) || 0;
+        const manualDiscountValue = parseFloat(manualDiscountField?.value || '0') || 0;
 
         // Базовая сумма для расчета скидки (с доставкой)
         var baseAmount = amount + deliveryCost;
@@ -402,19 +499,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Рассчитываем ручную скидку как процент от базовой суммы
-        var manualDiscountAmount = 0;
-        if (manualDiscountValue > 0) {
-            manualDiscountAmount = baseAmount * (manualDiscountValue / 100);
-        }
-
         // Общая сумма скидки
-        var totalDiscountAmount = discountAmount + manualDiscountAmount;
+        var totalDiscountAmount = discountAmount + manualDiscountValue;
+        updateDiscountPercent()
         return totalDiscountAmount;
     }
 
     // Функция для расчета итоговой суммы
     function calculateFinalAmount() {
+        if (!amountField || !finalAmountField || !isEditing) return;
+
         var amount = parseFloat(amountField.textContent) || 0;
         var deliveryCost = parseFloat(deliveryCostInput.value) || 0;
         var totalDiscountAmount = calculateDiscounts() || 0;
@@ -423,10 +517,55 @@ document.addEventListener('DOMContentLoaded', function() {
         var finalAmount = (amount + deliveryCost) - totalDiscountAmount;
 
         // Обновляем поле final_amount_with_shipping
-        var finalAmountField = document.querySelector('.fieldBox.field-final_amount_with_shipping .readonly');
         if (finalAmountField) {
             finalAmountField.textContent = finalAmount.toFixed(2);
         }
+
+        console.log('Рассчитана итоговая сумма:', {
+            amount: amount,
+            deliveryCost: deliveryCost,
+            discounts: totalDiscountAmount,
+            finalAmount: finalAmount
+        });
+    }
+
+    // Добавляем отображение процента скидки
+    if (manualDiscountField) {
+        // Создаем элемент для отображения процента
+        var percentDisplay = document.createElement('span');
+        percentDisplay.id = 'discount-percent-display';
+        percentDisplay.style.marginLeft = '10px';
+        percentDisplay.style.color = '#666';
+        percentDisplay.style.fontStyle = 'italic';
+        percentDisplay.style.display = 'inline-block';
+
+        // Находим родительский элемент, который содержит поле ввода
+        var inputContainer = manualDiscountField.parentNode;
+
+        // Добавляем процент сразу после поля ввода, но в той же строке
+        inputContainer.insertBefore(percentDisplay, manualDiscountField.nextSibling);
+
+        // Функция для обновления отображения процента
+        function updateDiscountPercent() {
+            // Получаем сумму заказа и стоимость доставки
+            var amount = parseFloat(amountField?.textContent || '0') || 0;
+            var deliveryCost = parseFloat(deliveryCostInput?.value || '0') || 0;
+            var baseAmount = amount + deliveryCost;
+
+            // Получаем значение скидки
+            var discountValue = parseFloat(manualDiscountField.value || '0') || 0;
+
+            // Рассчитываем процент если базовая сумма больше 0
+            if (baseAmount > 0) {
+                var percent = (discountValue / baseAmount * 100).toFixed(2);
+                percentDisplay.textContent = `(${percent}%)`;
+            } else {
+                percentDisplay.textContent = '(0%)';
+            }
+        }
+
+        // Вызываем функцию обновления процента с небольшой задержкой после загрузки страницы
+        setTimeout(updateDiscountPercent, 600);
     }
 
 
@@ -436,4 +575,5 @@ document.addEventListener('DOMContentLoaded', function() {
             calculateFinalAmount();
         });
     }
+
 })

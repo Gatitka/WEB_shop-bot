@@ -180,26 +180,6 @@ def get_rep_dic(reply_data, free_delivery=False,
     return reply_data
 
 
-def get_repeat_order_form_data(order):
-    repeat_order_form_data = {
-        "recipient_name": order.recipient_name,
-        "recipient_phone": str(order.recipient_phone),
-        "city": order.city,
-        "comment": order.comment,
-        "persons_qty": order.persons_qty,
-        "delivery": str(order.delivery.type),
-    }
-
-    if order.delivery.type == 'delivery':
-        repeat_order_form_data['recipient_address'] = order.recipient_address
-        repeat_order_form_data['delivery_zone'] = str(order.delivery_zone)
-
-    elif order.delivery.type == 'takeaway':
-        repeat_order_form_data['restaurant'] = order.restaurant
-
-    return repeat_order_form_data
-
-
 def get_promoc_resp_dict(data, request):
 
     promocode = data.get('promocode')

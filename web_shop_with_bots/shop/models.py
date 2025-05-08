@@ -202,41 +202,8 @@ class Order(models.Model):
         blank=True,
         max_digits=8, decimal_places=2
     )
-    # auth_fst_ord_disc = models.BooleanField(
-    #     verbose_name='скидка за первый заказ',
-    #     default=False
-    # )
-    # auth_fst_ord_disc_amount = models.DecimalField(
-    #     verbose_name='скидка за первый заказ, DIN',
-    #     help_text="рассчитывается автоматически.",
-    #     default=0,
-    #     null=True,
-    #     max_digits=8, decimal_places=2
-    # )
-    # takeaway_disc = models.BooleanField(
-    #     verbose_name='скидка самовывоз',
-    #     default=False
-    # )
-    # takeaway_disc_amount = models.DecimalField(
-    #     verbose_name='скидка самовывоз, DIN',
-    #     help_text="рассчитывается автоматически.",
-    #     default=0,
-    #     null=True,
-    #     max_digits=8, decimal_places=2
-    # )
-    # cash_discount_disc = models.BooleanField(
-    #     verbose_name='скидка за оплату наличными',
-    #     default=False
-    # )
-    # cash_discount_amount = models.DecimalField(
-    #     verbose_name='скидка за оплату наличными, DIN',
-    #     help_text="рассчитывается автоматически.",
-    #     default=0,
-    #     null=True,
-    #     max_digits=8, decimal_places=2
-    # )
     manual_discount = models.DecimalField(
-        verbose_name='Доп скидка, %',
+        verbose_name='Доп скидка, DIN',
         help_text="Доп скидка вводится вручную прим.'10.00'.<br>",
         default=0,
         null=True,
@@ -433,12 +400,16 @@ class Order(models.Model):
             # если задана ручная скидка, то это скорее всего админ сохраняет
             # и обычная скидка стирается, а ручная скидка становится основной
             if self.manual_discount > 0:
-                self.discount_amount = Decimal(
-                                        self.amount_with_shipping
-                                        * self.manual_discount / 100
-                                    ).quantize(Decimal('0.01'))
-                self.discount = None
+                # если скидка %
+                # self.discount_amount = Decimal(
+                #                         self.amount_with_shipping
+                #                         * self.manual_discount / 100
+                #                     ).quantize(Decimal('0.01'))
+                # если скидка DIN
+                self.discount_amount = self.manual_discount
+
                 self.total_discount_amount = self.discount_amount
+                self.discount = None
 
         self.discounted_amount = Decimal(
                                     self.amount_with_shipping

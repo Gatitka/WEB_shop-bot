@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from .admin_utils import export_tm_accounts_to_excel
 from .models import Message, MessengerAccount, OrdersBot, AdminChatTM
 from shop.models import Order
-from shop.admin_utils import custom_source, custom_order_number
+from shop.admin_utils import custom_source, get_custom_order_number
 from django_admin_inline_paginator.admin import TabularInlinePaginated
 from django import forms
 from utils.admin_permissions import (has_restaurant_admin_permissions,
@@ -76,7 +76,7 @@ class OrderInline(TabularInlinePaginated):
     custom_source.short_description = 'Источник'
 
     def custom_order_number(self, obj):
-        return custom_order_number(obj)
+        return get_custom_order_number(obj)
     custom_order_number.short_description = '№'
 
 

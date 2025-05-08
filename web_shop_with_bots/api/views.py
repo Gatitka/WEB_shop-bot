@@ -27,7 +27,7 @@ from promos.models import PrivatPromocode, PromoNews
 from shop.models import Order, OrderDish, Discount, current_cash_disc_status
 from shop.services import (get_base_profile_and_shopping_cart, get_cart,
                            base_profile_first_order, get_cash_discount)
-from .services import (get_promoc_resp_dict, get_repeat_order_form_data,
+from .services import (get_promoc_resp_dict,
                        get_reply_data_delivery, get_reply_data_takeaway)
 from shop.validators import validate_user_order_exists
 from users.models import BaseProfile, UserAddress
