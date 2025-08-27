@@ -157,7 +157,7 @@ class Order(models.Model):
     )
     persons_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во приборов *',
-        validators=[MaxValueValidator(50)],
+        validators=[MaxValueValidator(100)],
         null=True, blank=True
     )
 

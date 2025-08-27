@@ -94,10 +94,15 @@ def get_couriers_data(delivery_orders):
         return {'Нет курьеров': [0, False, 0, 0, 0, 0, 0]}
 
     couriers = {}
+    # накапливаем уникальные дни, когда курьер выходил (по заказам)
+    courier_days = {}  # {courier_name: set(dates)}
 
     for order in delivery_orders:
         courier_name = order.courier if order.courier else 'Unknown'
         unclarified = False
+
+        # учитываем рабочие дни курьера, чтобы добавить коректно мин за выход
+        courier_days = couriers_working_days(order, courier_name, courier_days)
 
         if order.delivery_zone.delivery_cost != float(0):
             delivery_cost = order.delivery_zone.delivery_cost
@@ -110,10 +115,15 @@ def get_couriers_data(delivery_orders):
         if courier_name in couriers:
             couriers[courier_name][0] -= delivery_cost
         else:
-            couriers[courier_name] = [Decimal('0'), False,
-                                      Decimal('0'), Decimal('0'), Decimal('0'),
-                                      Decimal('0'),
-                                      Decimal('0')]
+            couriers[courier_name] = [
+                Decimal('0'),  # 0: сумма выплат курьеру (минусуем как расходы)
+                False,         # 1: был "уточнить"
+                Decimal('0'),  # 2: безнал (cash без чека у вас это "nocash")
+                Decimal('0'),  # 3: нал с чеком
+                Decimal('0'),  # 4: суммарно (2+3)
+                Decimal('0'),  # 5: карта (bezgotovinsko)
+                Decimal('0'),  # 6: итоговая минималка за все дни
+            ]
             if order.courier:
                 couriers[courier_name][6] = order.courier.min_payout
 
@@ -129,19 +139,28 @@ def get_couriers_data(delivery_orders):
         elif order.payment_type in ['card', 'card_on_delivery']:
             couriers[courier_name][5] += order.final_amount_with_shipping
 
-    total_cash = Decimal('0')
-    total_bezgotovinsko = Decimal('0')
+    # в данных по курьерам корректируем мин оплату за выход по дням,
+    # и добавляем ключи 'total_cash', 'total_bezgotovinsko'
+    couriers = get_correct_min_payout_and_totals(couriers, courier_days)
 
-    # к стоимостям доставок добавляем оплату минимальную за выход
-    for results in couriers.values():
-        results[0] -= results[6]   # для получения полной ЗП прибавляем мин оклад
+    # total_cash = Decimal('0')
+    # total_bezgotovinsko = Decimal('0')
 
-        total_cash += results[0]
-        total_cash += results[4]
-        total_bezgotovinsko += results[5]
+    # # к стоимостям доставок добавляем оплату минимальную за выход
+    # for courier_name, results in couriers.items():
+    #     day_count = len(courier_days.get(courier_name, set()))
+    #     daily_min = results[6]  # ставка за 1 день (Decimal)
+    #     results[6] = (daily_min * day_count) if daily_min else Decimal('0')
 
-    couriers.update({'total_cash': total_cash,
-                     'total_bezgotovinsko': total_bezgotovinsko})
+    #     # к расходам на курьера добавляем общую сумму минималок за период
+    #     results[0] -= results[6]
+
+    #     total_cash += results[0]      # выплаты курьеру (расход)
+    #     total_cash += results[4]      # наличные выручки (nocash+gotovina)
+    #     total_bezgotovinsko += results[5]  # карта
+
+    # couriers.update({'total_cash': total_cash,
+    #                  'total_bezgotovinsko': total_bezgotovinsko})
 
     return couriers
 
@@ -427,3 +446,46 @@ def export_orders_to_excel(modeladmin, request, queryset):
 
 export_orders_to_excel.short_description = (
     "Сохранить отчет по продажам в Excel.")
+
+
+def couriers_working_days(order, courier_name, courier_days):
+    # берём адекватную дату для подсчёта "рабочего дня" и добавляем в список раочих дней
+    working_date = None
+    if getattr(order, 'execution_date', None):
+        working_date = order.execution_date
+    elif getattr(order, 'delivery_time', None):
+        working_date = order.delivery_time.date()
+    else:
+        working_date = order.created.astimezone(None).date()
+
+    if courier_name not in courier_days:
+        courier_days[courier_name] = set()
+    courier_days[courier_name].add(working_date)
+
+    return courier_days
+
+
+def get_correct_min_payout_and_totals(couriers, courier_days):
+    """ Итоговая оплата курьерам корректируется на кол-во мин оплат за выходы.
+    Добавляются ключи 'total_cash', 'total_bezgotovinsko'
+    - итого нала и безнала по всем курьерам."""
+    total_cash = Decimal('0')
+    total_bezgotovinsko = Decimal('0')
+
+    # к стоимостям доставок добавляем оплату минимальную за выход
+    for courier_name, results in couriers.items():
+        day_count = len(courier_days.get(courier_name, set()))
+        daily_min = results[6]  # ставка за 1 день (Decimal)
+        results[6] = (daily_min * day_count) if daily_min else Decimal('0')
+
+        # к расходам на курьера добавляем общую сумму минималок за период
+        results[0] -= results[6]
+
+        total_cash += results[0]      # выплаты курьеру (расход)
+        total_cash += results[4]      # наличные выручки (nocash+gotovina)
+        total_bezgotovinsko += results[5]  # карта
+
+    couriers.update({'total_cash': total_cash,
+                     'total_bezgotovinsko': total_bezgotovinsko})
+
+    return couriers

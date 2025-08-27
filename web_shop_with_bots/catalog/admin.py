@@ -8,6 +8,8 @@ from utils.admin_permissions import (
     has_restaurant_admin_permissions,
     has_city_admin_permissions)
 from django.db.models import Prefetch
+from django.contrib import messages
+from django.core.exceptions import ValidationError
 
 
 def make_active(modeladmin, request, queryset):
@@ -83,12 +85,12 @@ class DishAdmin(TranslatableAdmin):
                 ('text'),
             )
         }),
-        ('Тексты для мессенджера', {
-            'fields': (
-                ('msngr_short_name'),
-                ('msngr_text'),
-            )
-        }),
+        # ('Тексты для мессенджера', {
+        #     'fields': (
+        #         ('msngr_short_name'),
+        #         ('msngr_text'),
+        #     )
+        # }),
         ('Цена', {
             'fields': (
                 ('price', 'discount'),
@@ -120,6 +122,12 @@ class DishAdmin(TranslatableAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related('translations')
+
+    def save_model(self, request, obj, form, change):
+        try:
+            super().save_model(request, obj, form, change)
+        except ValidationError as e:
+            self.message_user(request, str(e), level=messages.ERROR)
 
     # def get_object(self, request, object_id, from_field=None):
     #     """

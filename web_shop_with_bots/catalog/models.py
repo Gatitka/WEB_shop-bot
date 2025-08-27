@@ -239,17 +239,8 @@ class Dish(TranslatableModel):
 
     def save(self, *args, **kwargs):
         if not self.id:
-            max_id = Dish.objects.all().aggregate(Max('id'))
-            if max_id['id__max'] is not None:
-                self.id = max_id['id__max'] + 1
-            else:
-                self.id = 1
-
-            if not self.priority:
-                max_position = Dish.objects.filter(
-                        category=self.category.first()
-                    ).all().order_by('-priority').values('priority').first()
-                self.priority = max_position['priority'] + 1
+            max_id = Dish.objects.aggregate(Max('id'))['id__max'] or 0
+            self.id = max_id + 1
 
         if self.discount:
             self.final_price = Decimal(

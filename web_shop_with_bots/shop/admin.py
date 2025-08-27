@@ -571,7 +571,7 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
     source_code = None  # должен быть переопределен в дочерних классах
 
     def custom_order_number(self, obj):
-        return admin_utils.custom_order_number(obj)
+        return admin_utils.get_custom_order_number(obj)
     custom_order_number.short_description = '№'
 
     def custom_total(self, obj):

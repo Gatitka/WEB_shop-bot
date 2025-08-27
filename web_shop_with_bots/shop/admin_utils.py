@@ -72,8 +72,13 @@ def get_menu_data():
     # Язык, который мы хотим использовать
     language_code = 'ru'
 
-    # Получаем активные категории с переводами
-    categories_queryset = Category.objects.filter(is_active=True).prefetch_related('translations')
+    # Получаем активные категории с переводами отсортированные
+    # по приоритетности, чтобы Допы были в конце списка
+    categories_queryset = Category.objects.filter(
+            is_active=True
+        ).prefetch_related(
+            'translations'
+        ).order_by('priority')
 
     # Подгружаем связи между категориями и блюдами с предзагрузкой данных о блюдах
     dish_categories = DishCategory.objects.select_related('dish', 'category').prefetch_related(
