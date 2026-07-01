@@ -9,7 +9,7 @@ from django.utils.safestring import mark_safe
 from utils.admin_permissions import (has_restaurant_admin_permissions,
                                      has_city_admin_permissions)
 
-from utils.utils import activ_actions
+from utils.utils import active_actions
 
 from .models import Delivery, DeliveryZone, Restaurant, Courier
 
@@ -17,7 +17,7 @@ from .models import Delivery, DeliveryZone, Restaurant, Courier
 @admin.register(Courier)
 class CourierAdmin(admin.ModelAdmin):
     list_display = ('id', 'is_active', 'city', 'name')
-    actions = [*activ_actions]
+    actions = [*active_actions]
     list_filter = ('is_active', 'city')
 
     def has_change_permission(self, request, obj=None):
@@ -43,7 +43,7 @@ class DeliveryAdmin(TranslatableAdmin):
                     'acctodayhours')
     readonly_fields = ('admin_photo',)
     list_filter = ('is_active', 'city', 'type')
-    actions = [*activ_actions]
+    actions = [*active_actions]
 
     fieldsets = (
         ('Основное', {
@@ -122,7 +122,7 @@ class DeliveryZoneAdmin(OSMGeoAdmin):
                     )
     search_fields = ('district', 'city')
     list_filter = ('city', 'is_promo')
-    actions = [*activ_actions]
+    actions = [*active_actions]
     fields = (
         'city',
         'name',
@@ -187,7 +187,7 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
                     'is_overloaded', 'admin_photo', 'is_default')
     readonly_fields = ('admin_photo', 'get_admin')
     list_filter = ('is_active', 'city')
-    actions = [*activ_actions]
+    actions = [*active_actions]
     fields = (
         ('short_name'),
         ('is_active', 'is_default', 'is_overloaded'),

@@ -37,7 +37,7 @@ class Command(BaseCommand):
         disc3, created = Discount.objects.get_or_create(
             type=3,
             discount_perc=10,
-            is_active=True,
+            is_active=False,
             valid_from=today,
             valid_to=valid_to,
             title_rus='10% скидка за оплату наличными заказа с доставкой'

@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.utils.translation import gettext as _, ngettext
+from django.core.exceptions import ValidationError
 
 
 def validate_first_and_last_name(value):

@@ -4,6 +4,7 @@ from django.core.validators import MinLengthValidator
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
 from tm_bot.validators import validate_msngr_username
@@ -18,6 +19,7 @@ from django import forms
 from decimal import Decimal
 from django.db.models import Sum
 
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +57,7 @@ class AdminChatTM(models.Model):
 
 class OrdersBot(models.Model):
     msngr_type = models.CharField(
-        'msngr typ',
+        'Тип мессенджера',
         max_length=3,
         choices=settings.MESSENGERS,
     )
@@ -65,17 +67,19 @@ class OrdersBot(models.Model):
         validators=[MinLengthValidator(4)],
         unique=True,
         blank=True, null=True,
+        help_text=("Это внутреннее название для системы.<br>"
+                   "Реальное название менять через BotFather.")
     )
-    msngr_id = models.CharField(
-        'ID бота в ТМ',
-        max_length=100,
-        validators=[MinLengthValidator(4)],
-        unique=True,
-        blank=True, null=True,
-        help_text="Получить через BotFather."
-    )
+    # msngr_id = models.CharField(
+    #     'ID бота в ТМ',
+    #     max_length=100,
+    #     validators=[MinLengthValidator(4)],
+    #     unique=True,
+    #     blank=True, null=True,
+    #     help_text="Получить через BotFather."
+    # )
     source_id = models.CharField(
-        'ID на платформе',
+        'ID на платформе Botobot',
         max_length=100,
         validators=[MinLengthValidator(4)],
         unique=True,
@@ -110,11 +114,26 @@ class OrdersBot(models.Model):
                       "изменению статуса заказа через админку)"),
         blank=True, null=True
     )
+    admin_username = models.CharField(
+        max_length=100,
+        verbose_name=("Username админа"),
+        blank=True, null=True
+    )
+    admin_id = models.CharField(
+        max_length=100,
+        verbose_name=("ID админа"),
+        blank=True, null=True,
+        help_text=("Кому будет отправляться тестовая промо-рассылка")
+    )
 
     class Meta:
         ordering = ['city']
         verbose_name = 'Бот д/приема заказов'
         verbose_name_plural = 'Боты д/приема заказов'
+
+    def __str__(self):
+        return "OrdersBot {} #{}, {}".format(
+                self.msngr_type, self.id, self.city)
 
 
 class MessengerAccount(models.Model):
@@ -125,7 +144,7 @@ class MessengerAccount(models.Model):
         choices=settings.MESSENGERS,
     )
     msngr_id = models.CharField(
-        'ID',
+        'мснджр ID',
         max_length=100,
         validators=[MinLengthValidator(4)],
         unique=True,
@@ -143,9 +162,10 @@ class MessengerAccount(models.Model):
         'Username  *',
         max_length=100,
         validators=[validate_msngr_username,],
+        blank=True, null=True,
         # unique=True, изменяемо, может быть ''
         help_text=(
-            "Для Tm username начинается с @. ( прим '@yume_sushi')<br>"
+            "Для Tm username в начале ничего нет<br>"
             "Для Wts username = номер телефона. (прим '+38212345678')<br>"
             "Для Vbr username = номер телефона. (прим '+38212345678')")
     )
@@ -196,7 +216,11 @@ class MessengerAccount(models.Model):
     msngr_link = models.URLField(
         'Текст ссылки в Чат',
         blank=True, null=True,
-        help_text="Ссылка на чат, внесется автоматически."
+        help_text=(
+            "Ссылка на чат создаётся автоматически.<br>"
+            "Если у пользователя нет username (для Telegram) или телефона "
+            "(для WhatsApp), то перейти в чат невозможно."
+        )
     )
     city = models.CharField(
         max_length=40,
@@ -205,18 +229,17 @@ class MessengerAccount(models.Model):
         default=settings.DEFAULT_CITY,
         blank=True, null=True,
     )
-    # в админке поле не используется, т.к. необходимо HTML форматирование
 
     class Meta:
         ordering = ['-created']
-        verbose_name = 'Соц сети аккаунт'
-        verbose_name_plural = 'Соц сети аккаунты'
+        verbose_name = 'Мессенджер аккаунт'
+        verbose_name_plural = 'Мессенджер аккаунты'
 
     def __str__(self):
+        if self.msngr_username not in ['', None]:
+            return f"{self.msngr_username} ({self.msngr_type})"
 
-        return (f"{self.msngr_username}({self.msngr_type})")   #  "
-                #f"{self.msngr_first_name if self.msngr_first_name is not None else ''} "
-                #f"{self.msngr_last_name if self.msngr_last_name is not None else ''}")
+        return f"нет юзернейм ({self.msngr_type})"
 
     def save(self, *args, **kwargs):
         # Проверяем, создаем ли мы новый объект или обновляем существующий
@@ -239,11 +262,15 @@ class MessengerAccount(models.Model):
     def get_msngr_link(self):
         # Генерирует ссылку на чат в мессенджере на основе msngr_username
         # В данном примере, предполагается, что вы используете Telegram
-        if self.msngr_username == '':
+        if self.msngr_username in ['', None]:
             self.msngr_link = ''
 
         elif self.msngr_type == 'tm':
-            username = self.msngr_username[1:]
+            if self.msngr_username[0] == '@':
+                username = self.msngr_username[1:]
+            else:
+                username = self.msngr_username
+
             self.msngr_link = (
                 f"<a href='https://t.me/{username}'"
                 f" target='_blank'>чат {username}(Tm)</a>"
@@ -306,6 +333,81 @@ class MessengerAccount(models.Model):
             total_sum = 0
             orders_qty = 0
         return f"{total_sum} rsd ({orders_qty} зак.)"
+
+    def create_bot_links(self, city: str) -> None:
+        """Создаёт MessengerAccountBot для всех активных ботов.
+        Для бота города city проставляет tg_can_write=True и last_login,
+        остальным — tg_can_write=None.
+        """
+        bots = OrdersBot.objects.filter(is_active=True)
+        MessengerAccountBot.objects.bulk_create([
+            MessengerAccountBot(
+                messenger_account=self,
+                bot=bot,
+                last_login=timezone.now() if bot.city == city else None,
+                tg_can_write=True if bot.city == city else None,
+            )
+            for bot in bots
+        ])
+
+
+class MessengerAccountBot(models.Model):
+    """
+    Связка Telegram-аккаунта и конкретного бота заказов.
+    Здесь храним ТЕХНИЧЕСКОЕ состояние доставки сообщений
+    для пары (messenger_account, OrdersBot).
+    """
+    messenger_account = models.ForeignKey(
+        'MessengerAccount',
+        on_delete=models.CASCADE,
+        related_name='bot_links',
+        verbose_name='Telegram аккаунт',
+    )
+    bot = models.ForeignKey(
+        'OrdersBot',
+        on_delete=models.CASCADE,
+        related_name='account_links',
+        verbose_name='Бот заказов',
+    )
+    tg_can_write = models.BooleanField(
+        'Бот может писать этому пользователю',
+        null=True,
+        blank=True,
+        help_text=(
+            "None — ещё не пробовали писать; "
+            "True — была успешная отправка; "
+            "False — бот заблокирован пользователем (403 bot was blocked)."
+        ),
+    )
+    last_success_at = models.DateTimeField(
+        'Последняя успешная отправка',
+        null=True,
+        blank=True,
+    )
+    last_error_at = models.DateTimeField(
+        'Последняя ошибка отправки',
+        null=True,
+        blank=True,
+    )
+    last_error_code = models.CharField(
+        'Код последней ошибки Telegram',
+        max_length=50,
+        null=True,
+        blank=True,
+    )
+    last_login = models.DateTimeField(
+        'Последний вход',
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        unique_together = ('messenger_account', 'bot')
+        verbose_name = 'Связка аккаунт–бот'
+        verbose_name_plural = 'Связки аккаунт–бот'
+
+    def __str__(self):
+        return f"{self.messenger_account} ↔ {self.bot}"
 
 
 def msgr_account_unique(value):

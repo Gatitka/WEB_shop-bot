@@ -18,7 +18,7 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td style="background-color:rgba(255, 250, 205, 0.30);" rowspan="3">Самовывоз</td>
+                            <td style="background-color:rgba(255, 250, 205, 0.30);" rowspan="4">Самовывоз</td>
                             <td>безнал</td>
                             <td>{{ takeaway_nocash }}</td>
                         </tr>
@@ -29,6 +29,10 @@
                         <tr>
                             <td>КАРТА</td>
                             <td>{{ takeaway_card }}</td>
+                        </tr>
+                        <tr>
+                            <td>Ресторан ИТОГО</td>
+                            <td>{{ restaurant_am }}</td>
                         </tr>
                         <tr>
                             <td>Курьеры (бн + н)</td>
@@ -169,6 +173,8 @@
     </div>
     {% endif %}
 
+    <div id="filters-toggle" class="button" title="Свернуть/развернуть фильтры"></div>
+
     {{ block.super }}
 {% endblock %}
 
@@ -182,6 +188,11 @@
             </a>
         </li>
         {% endif %}
+        <li>
+            <a href="{{ xls_url }}" class="viewlink">
+                {% trans "↓ Скачать отчет" %}
+            </a>
+        </li>
         {% block object-tools-items %}
             {{ block.super }}
         {% endblock %}
@@ -194,6 +205,7 @@
 <script src="{% static 'my_admin/js/shop/list/save_click.js' %}"></script>
 <script src="{% static 'my_admin/js/shop/list/smoke_input.js' %}" defer></script>
 <script src="{% static 'my_admin/js/shop/receipt_printing.js' %}"></script>
+<script src="{% static 'my_admin/js/shop/toggle_filters.js' %}"></script>
 <style>
     .field-get_delivery_type, .column-get_delivery_type {
         display: none;
@@ -282,14 +294,20 @@
 
     #save-action-button {
         background: #417690;
-        padding: 10px 15px;
+        padding: 10px 18px;
+        min-height: 38px;
+        min-width: 110px;
         border: none;
         border-radius: 4px;
         color: #fff;
         cursor: pointer;
-        font-weight: normal;
+        font-weight: 400;
         font-size: 13px;
+        line-height: 18px;
         font-family: "Roboto", "Lucida Grande", Verdana, Arial, sans-serif;
+        box-sizing: border-box;
+        appearance: none;
+        -webkit-appearance: none;
     }
 
     #save-action-button:hover {
@@ -304,6 +322,22 @@
     .smoke-input::-webkit-outer-spin-button {
         display: none; /* Убираем стрелки в Chrome и Safari */
         margin: 0;
+    }
+
+    .actions {
+        display: flex !important;
+        align-items: center;
+        gap: 6px;              /* расстояние между select и кнопкой */
+    }
+
+    .actions select {
+        margin-right: 0 !important;
+    }
+
+    .actions button,
+    .actions input[type="submit"] {
+        margin-left: 0 !important;
+    }
     }
 </style>
 {% endblock %}

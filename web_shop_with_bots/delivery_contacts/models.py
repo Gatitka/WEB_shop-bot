@@ -38,7 +38,7 @@ class Delivery(TranslatableModel):
         choices=settings.CITY_CHOICES
     )
     type = models.CharField(
-        max_length=8,
+        max_length=15,
         verbose_name="Тип *",
         choices=settings.DELIVERY_CHOICES
     )
@@ -149,8 +149,8 @@ class Delivery(TranslatableModel):
         return queryset
 
     class Meta:
-        verbose_name = 'доставка'
-        verbose_name_plural = 'способы доставки'
+        verbose_name = 'способ получения'
+        verbose_name_plural = 'способы получения'
 
     def __str__(self):
         return f'{self.type} {self.city}'

@@ -1,8 +1,9 @@
+from api.admin_views import AdminReportView, AdminXlsReportView
 from django.contrib import admin
 from django.utils.html import format_html
-from utils.utils import activ_actions
+from utils.utils import active_actions
 import shop.admin_filters as admin_filters
-import shop.admin_reports as admin_reports
+import shop.reports.excel as xls_reports
 import shop.admin_utils as admin_utils
 import shop.forms as shop_forms
 
@@ -10,8 +11,8 @@ from shop.models import (Dish, Order, OrderDish, Discount,
                          OrderGlovoProxy, OrderWoltProxy,
                          OrderSmokeProxy, OrderNeTaDverProxy,
                          OrderSealTeaProxy)
-from tm_bot.services import (send_message_new_order,
-                             send_request_order_status_update)
+from tm_bot.services import (send_message_new_order_admin_user,
+                             send_messages_order_status_update_user_bot)
 from django import forms
 
 from rangefilter.filters import (
@@ -24,7 +25,11 @@ from django.shortcuts import redirect
 from django.conf import settings
 from users.models import user_add_new_order_data
 from utils.admin_permissions import has_restaurant_admin_permissions
-from api.admin_views import AdminReportView
+from utils.admin_audit_mixin import ValidationLoggingMixin
+
+import logging
+logger = logging.getLogger(__name__)
+
 
 
 @admin.register(Discount)
@@ -32,7 +37,7 @@ class DiscountAdmin(admin.ModelAdmin):
     """Настройки админ панели промо-новостей."""
     list_display = ['id', 'is_active', 'title_rus']
     readonly_fields = ('id', 'created',)
-    actions = [*activ_actions]
+    actions = [*active_actions]
     search_fields = ('promocode', 'title_rus')
     list_filter = ('is_active',)
 
@@ -96,7 +101,7 @@ class CustomChangeList(ChangeList):
 
 
 @admin.register(Order)
-class OrderAdmin(admin.ModelAdmin):
+class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
     """Настройки админ панели заказов.
     ДОДЕЛАТЬ: отображение отображение итоговых сумм при редакции заказа"""
 
@@ -158,14 +163,14 @@ class OrderAdmin(admin.ModelAdmin):
                    admin_filters.DeliveryTypeFilter,
                    admin_filters.InvoiceFilter,
                    admin_filters.CourierFilter,
+                   admin_filters.DiscountedAmountFilter,
                    'status', 'source', 'city', 'payment_type')
     search_fields = ('recipient_phone', 'msngr_account__msngr_username',
                      'recipient_name', 'source_id', 'id')
     inlines = (OrderDishInline,)
     raw_id_fields = ['user', 'msngr_account']
     actions_selection_counter = False   # Controls whether a selection counter is displayed next to the action dropdown. By default, the admin changelist will display it
-    actions = [admin_reports.export_orders_to_excel,
-               admin_reports.export_full_orders_to_excel,]
+
     actions_on_top = True
     save_on_top = True
     list_per_page = 20
@@ -195,12 +200,12 @@ class OrderAdmin(admin.ModelAdmin):
                 ('Данные заказа', {
                     'fields': (
                         ('order_type', 'payment_type', 'invoice', 'source_id', 'city'),
-                        ('bot_order', 'delivery_time'),
+                        ('bot_order', 'delivery_time', 'campaign'),
                     )
                 }),
                 ('Сумма заказа', {
                     'fields': (
-                        ('amount', 'final_amount_with_shipping', 'items_qty'),
+                        ('amount', 'final_amount_with_shipping', 'items_qty', 'persons_qty'),
                         ('manual_discount')
                     )
                 }),
@@ -231,7 +236,7 @@ class OrderAdmin(admin.ModelAdmin):
         if obj:
             if obj.delivery.type == 'delivery':
                 delivery_collapse_class = []
-            elif obj.delivery.type == 'takeaway':
+            elif obj.delivery.type in ['takeaway', 'restaurant']:
                 delivery_collapse_class = ["collapse"]
 
             comment_collapse_class = ["collapse"] if obj.comment in ['', None] else []
@@ -249,7 +254,7 @@ class OrderAdmin(admin.ModelAdmin):
                     ('source', 'source_id'),
                     ('city', 'restaurant'),
                     ('delivery', 'payment_type', 'invoice'),
-                    ('delivery_time'),
+                    ('delivery_time', 'campaign'),
                 )
             }),
             ('Контактная информация', {
@@ -354,27 +359,35 @@ class OrderAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path('report/', AdminReportView.as_view(), name='shop_order_report'),
+            path('xls_report/', AdminXlsReportView.as_view(), name='shop_order_xls_report'),
             path('<path:object_id>/change/', self.change_view, name='order_change'),
         ]
         return custom_urls + urls
 
     def changelist_view(self, request, extra_context=None):
-        if not request.GET:
-            base_url = request.path
-            return redirect(f"{base_url}?order_period=today")
+        try:
+            if not request.GET:
+                base_url = request.path
+                return redirect(f"{base_url}?order_period=today")
 
-        # Сначала получаем существующий контекст
-        extra_context = extra_context or {}
+            extra_context = extra_context or {}
+            extra_context['xls_url'] = reverse('admin:shop_order_xls_report')
 
-        # Only add report button for superusers
-        if request.user.is_superuser:
-            extra_context['show_report_button'] = True
-            extra_context['report_url'] = reverse('admin:shop_order_report')
+            if request.user.is_superuser or request.user.has_perm("shop.view_superuser_report"):
+                extra_context['show_report_button'] = True
+                extra_context['report_url'] = reverse('admin:shop_order_report')
 
-        extra_context = admin_utils.get_changelist_extra_context(request, extra_context)
+            extra_context = admin_utils.get_changelist_extra_context(request, extra_context)
 
-        return super(OrderAdmin, self).changelist_view(
-            request, extra_context=extra_context)
+            return super(OrderAdmin, self).changelist_view(
+                request, extra_context=extra_context)
+        except Exception as e:
+            from django.contrib import messages
+            from django.http import HttpResponseRedirect
+            import traceback
+            traceback.print_exc()
+            messages.error(request, f"Ошибка: {type(e).__name__}: {e}")
+            return HttpResponseRedirect(request.path)
 
     def add_view(self, request, form_url="", extra_context=None):
         # Add Google API key, menu and delivery_zones to context
@@ -384,16 +397,26 @@ class OrderAdmin(admin.ModelAdmin):
         return super().add_view(request, form_url, extra_context=extra_context)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
-        order = Order.objects.get(pk=object_id)
-        admin_url = order.get_admin_url()
-        if admin_url != request.path:  # Проверяем, не совпадает ли текущий URL с URL, который мы пытаемся обработать
-            return redirect(admin_url)
+        try:
+            order = Order.objects.get(pk=object_id)
+            admin_url = order.get_admin_url()
+            if admin_url != request.path:
+                return redirect(admin_url)
 
-        # Add Google API key, menu and delivery_zones to context
-        extra_context = extra_context or {}
-        extra_context = admin_utils.get_addchange_extra_context(request, extra_context, 'all')
+            extra_context = extra_context or {}
+            extra_context = admin_utils.get_addchange_extra_context(
+                request, extra_context, 'all'
+            )
 
-        return super().change_view(request, object_id, form_url, extra_context)
+            return super().change_view(request, object_id, form_url, extra_context)
+
+        except Exception as e:
+            from django.contrib import messages
+            from django.http import HttpResponseRedirect
+            import traceback
+            traceback.print_exc()
+            messages.error(request, f"Ошибка: {type(e).__name__}: {e}")
+            return HttpResponseRedirect(request.path)
 
     def get_fields(self, request, obj=None):
         fields = super().get_fields(request, obj)
@@ -432,19 +455,24 @@ class OrderAdmin(admin.ModelAdmin):
             self.save_formset(request, form, formset, change=change)
         if not change:
             if form.instance.source not in settings.PARTNERS_LIST:
-                send_message_new_order(form.instance)
+                send_message_new_order_admin_user(form.instance)
             if form.instance.user:
                 user_add_new_order_data(form.instance)
 
-        if form.instance.source == '3':
-            if settings.SEND_BOTOBOT_UPDATES:
-                new_status = form.cleaned_data.get('status')
-                old_status = form.initial.get('status')
+        # проверяем поменялся ли статус и инициируем отправку телеграм сообщений
+        new_status = form.cleaned_data.get('status')
+        old_status = form.initial.get('status')
+        delivery_type = form.instance.delivery.type
 
-                if old_status is not None and new_status != old_status and new_status != 'RDY':
-                    send_request_order_status_update(
-                        new_status, int(form.instance.source_id),
-                        form.instance.orders_bot)
+        if (old_status is not None and new_status != old_status):
+            # print(f'----------->DELIVERY TYPE = {delivery_type}')
+            if (delivery_type == 'delivery' and new_status != 'RDY'
+                    or delivery_type == 'takeaway'):
+
+                logger.debug('Order status changing triger sending Tm messages.\n'
+                             'Order: %s', form.instance)
+                send_messages_order_status_update_user_bot(new_status,
+                                                           form.instance)
 
     def save_model(self, request, obj, form, change):
         """
@@ -455,8 +483,20 @@ class OrderAdmin(admin.ModelAdmin):
 
         # try:
         #     logger.info(f'Order save_model: ID={obj.pk}, change={change}, USER:{request.user}')
+        # 1) если user не выбран, но есть msngr_account — подтянуть профиль
+        if obj.source in ['3', '4'] and obj.msngr_account and not obj.user_id:
+            profile = getattr(obj.msngr_account, 'profile', None)
+            if profile is not None:
+                obj.user = profile
+
         # Передаем флаг через save вместо использования класс-переменной
-        obj.save(is_admin_mode=True)
+        try:
+            obj.save(is_admin_mode=True)
+        except Exception as e:
+            raise Exception(
+                f"Ошибка в заказе №{obj.order_number} (id={obj.pk}): "
+                f"{type(e).__name__}: {e}"
+            ) from e
         #     logger.info(f'Order successfully saved: ID={obj.pk}')
         # except Exception as e:
         #     logger.error(f'Error saving order ID={obj.pk}: {str(e)}', exc_info=True)
@@ -499,10 +539,22 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_msngr_link(self, instance):
         try:
-            return format_html(instance.user.messenger_account.msngr_link)
+            if instance.user.messenger_account.msngr_link:
+                return format_html(instance.user.messenger_account.msngr_link)
+            return format_html(
+                "<span style='color:#888;'>"
+                "Чат недоступен<br>нет username (Telegram)<br>или телефона (WhatsApp)."
+                "</span>"
+            )
         except:
             try:
-                return format_html(instance.msngr_account.msngr_link)
+                if instance.msngr_account.msngr_link:
+                    return format_html(instance.msngr_account.msngr_link)
+                return format_html(
+                    "<span style='color:#888;'>"
+                    "Чат недоступен<br>нет username (Telegram)<br>или телефона (WhatsApp)."
+                    "</span>"
+                )
             except:
                 return '-'
 
@@ -514,9 +566,8 @@ class OrderAdmin(admin.ModelAdmin):
             return instance.user.get_orders_data()
         elif instance.msngr_account and instance.user is None:
             return instance.msngr_account.get_orders_data()
-        # elif instance.msngr_account and instance.user:
-        # вернуть данные из зареганого пользователя, т.к. по умолчанию все заказы
-        # уже объединились в его аккаунте
+        elif instance.user:
+            return f"{instance.user.orders_amount} din ({instance.user.orders_qty} зак.)"
         else:
             return ''
     get_user_data.allow_tags = True
@@ -549,7 +600,7 @@ class OrderDishPartnerInline(admin.TabularInline):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
-class BaseOrderProxyAdmin(admin.ModelAdmin):
+class BaseOrderProxyAdmin(ValidationLoggingMixin, admin.ModelAdmin):
     list_display = ('custom_order_number', 'custom_total', 'note', 'invoice', 'status')
     list_editable = ['status', 'invoice']
     list_display_links = ('custom_order_number',)
@@ -562,8 +613,6 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
     inlines = (OrderDishPartnerInline,)
     actions_selection_counter = False
     actions_on_top = True
-    actions = [admin_reports.export_orders_to_excel,
-               admin_reports.export_full_orders_to_excel]
     list_per_page = 10
     add_form_template = 'shop/order/add_form_partner.html'
     change_form_template = 'shop/order/change_form_partner.html'
@@ -653,10 +702,20 @@ class BaseOrderProxyAdmin(admin.ModelAdmin):
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         # Добавляем меню в контекст
-        extra_context = extra_context or {}
-        extra_context = admin_utils.get_addchange_extra_context(request, extra_context, 'all')
+        try:
+            extra_context = extra_context or {}
+            extra_context = admin_utils.get_addchange_extra_context(
+                request, extra_context, 'all'
+            )
+            return super().change_view(request, object_id, form_url, extra_context=extra_context)
 
-        return super().change_view(request, object_id, form_url, extra_context=extra_context)
+        except Exception as e:
+            from django.contrib import messages
+            from django.http import HttpResponseRedirect
+            import traceback
+            traceback.print_exc()
+            messages.error(request, f"Ошибка: {type(e).__name__}: {e}")
+            return HttpResponseRedirect(request.path)
 
 
 @admin.register(OrderGlovoProxy)

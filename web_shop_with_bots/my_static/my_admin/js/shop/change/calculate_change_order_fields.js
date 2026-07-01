@@ -188,6 +188,10 @@ document.addEventListener('DOMContentLoaded', function() {
         var itemsCount = 0;
 
         unitAmountFields.forEach(function(field) {
+            var row = field.closest('tr');
+            if (!row || row.classList.contains('empty-form') || row.id.includes('__prefix__')) {
+                return;
+            }
             var fieldValue = parseFloat(field.textContent);
             if (!isNaN(fieldValue)) {
                 totalAmount += fieldValue;

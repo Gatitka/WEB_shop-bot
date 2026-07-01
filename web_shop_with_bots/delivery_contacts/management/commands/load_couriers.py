@@ -18,7 +18,8 @@ class Command(BaseCommand):
                 courier, _ = Courier.objects.get_or_create(
                     city=row['город'],  # Укажите ваш город
                     name=row['имя'],  # Укажите имя для зоны доставки
-                    is_active=row['активно']
+                    is_active=row['активен'],
+                    min_payout=row['мин_оплата_за_выход,DIN']
                 )
 
         self.stdout.write(

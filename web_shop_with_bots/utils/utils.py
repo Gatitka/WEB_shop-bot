@@ -1,17 +1,23 @@
-
+from catalog.models import Dish, Category, DishCategory
+from delivery_contacts.models import Restaurant, Delivery, DeliveryZone
+from tm_bot.models import OrdersBot
+from promos.models import Banner
+from api.utils.core_cache import invalidate_cache_for_model
 
 
 def make_active(modeladmin, request, queryset):
-    """Добавление действия активации выбранных позиций."""
-    queryset.update(is_active=1)
+    queryset.update(is_active=True)
+    invalidate_cache_for_model(queryset.model)
 
 
-def make_deactive(modeladmin, request, queryset):
-    """Добавление действия деактивации выбранных позиций."""
-    queryset.update(is_active=0)
+make_active.short_description = "Активировать выбранные"
 
 
-make_active.short_description = "Отметить позиции активными"
-make_deactive.short_description = "Отметить позиции не активными"
+def make_inactive(modeladmin, request, queryset):
+    queryset.update(is_active=False)
+    invalidate_cache_for_model(queryset.model)
 
-activ_actions = [make_active, make_deactive]
+
+make_inactive.short_description = "Деактивировать выбранные"
+
+active_actions = [make_active, make_inactive]

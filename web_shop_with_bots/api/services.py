@@ -5,6 +5,15 @@ from shop.models import (get_amount, get_promocode_results,
                          get_delivery_discount, check_total_discount,
                          get_auth_first_order_discount,
                          cash_discount, current_cash_disc_status)
+import hmac
+import hashlib
+import time
+import json
+from urllib.parse import parse_qsl
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_reply_data_takeaway(delivery,
@@ -244,3 +253,51 @@ def get_promoc_resp_dict(data, request):
     # }
 
     return promoc_resp_dict
+
+
+def verify_telegram_payload(data: dict | str, bot_token: str, max_age: int = 600):
+    """
+    data: либо сырая строка init_data (POST из Mini App), либо dict (GET от Login Widget).
+    Возвращает dict с ключами: user (dict), start_param (str|None).
+    Бросает ValueError при ошибке.
+    """
+    logger.debug("Начинается проверка telegram_payload: %s", data)
+    if isinstance(data, str):
+        # raw init_data from Mini App
+        pairs = dict(parse_qsl(data, keep_blank_values=True))
+    else:
+        pairs = dict(data)
+
+    provided_hash = pairs.pop("hash", None)
+    if not provided_hash:
+        raise ValueError("hash missing")
+
+    data_check = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs.keys()))
+    secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    calc = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calc, provided_hash):
+        raise ValueError("bad signature")
+
+    auth_date = int(pairs.get("auth_date", "0") or 0)
+    if int(time.time()) - auth_date > max_age:
+        raise ValueError("expired")
+
+    # user: в Mini App это JSON-строка; в Widget — просто поля id, first_name...
+    raw_user = pairs.get("user")
+    if isinstance(raw_user, str):
+        user = json.loads(raw_user or "{}")
+    else:
+        # Login Widget: собираем из отдельных ключей
+        user = {
+            "id": int(pairs.get("id", 0)),
+            "first_name": pairs.get("first_name"),
+            "last_name": pairs.get("last_name"),
+            "username": pairs.get("username"),
+            "photo_url": pairs.get("photo_url"),
+        }
+    reply_dic = {
+        "user": user,
+        "start_param": pairs.get("start_param"),
+        "raw": pairs,
+    }
+    return reply_dic

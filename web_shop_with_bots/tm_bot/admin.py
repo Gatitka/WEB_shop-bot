@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from .admin_utils import export_tm_accounts_to_excel
-from .models import Message, MessengerAccount, OrdersBot, AdminChatTM
+from .models import Message, MessengerAccount, OrdersBot, AdminChatTM, MessengerAccountBot
+from .admin_filters import Bot1WriteFilter, Bot2WriteFilter
 from shop.models import Order
 from shop.admin_utils import custom_source, get_custom_order_number
 from django_admin_inline_paginator.admin import TabularInlinePaginated
@@ -35,14 +36,81 @@ from utils.admin_permissions import (has_restaurant_admin_permissions,
 
 @admin.register(OrdersBot)
 class OrdersBotAdmin(admin.ModelAdmin):
-    list_display = ('id', 'msngr_type', 'city', 'source_id')
-    # form = OrdersBotForm
+    list_display = ('name', 'city', 'msngr_type', 'admin_id')
+    search_fields = ('name', 'city', 'source_id')
+    change_form_template = 'tm_bot/ordersbot/change_form.html'
+    list_display_links = ('name',)
+    fieldsets = (
+        ('Основное', {
+            'fields': (
+                ('name', 'is_active'),
+                ('city', 'msngr_type'),
+                ('link'),
+                ('frontend_link')
+            )
+        }),
+        ('Админ', {
+            "description": (
+                "Данные админа, для тестовых рассылок. Если ID админа пуст, "
+                "то тестовая промо-рассылка не прийдет."
+            ),
+            'fields': (
+                ('admin_username'),
+                ('admin_id'),
+            )
+        }),
+        ('Привязка к платформам', {
+            "classes": ["collapse"],
+            "description": (
+                "Если бот привязан к платформе-конструктуру ботов, "
+                "то тут вносятся учетные данные с той платформы:<br>"
+                "- API ключ (если необходима верификация API запросов)<br>"
+                "- ID на платформе (прим. Botobot)<br>"
+            ),
+            'fields': (
+                ('api_key'),
+                ('source_id'),
+            )
+        }),
+    )
 
-    # def get_form(self, request, obj=None, **kwargs):
-    # НУЖНО ДЛЯ МАСКИРОВКИ ПОЛЯ С АПИ КЛЮЧЕМ, НЕДОДЕЛАНО
-    #     form = super().get_form(request, obj, **kwargs)
-    #     form.current_user = request.user  # Передаем текущего пользователя в форму
-    #     return form
+    def get_chart_data(self, obj):
+        links = MessengerAccountBot.objects.filter(bot=obj)
+
+        can_write = links.filter(tg_can_write=True).count()
+
+        blocked = links.filter(
+            tg_can_write=False,
+            last_error_code="403_bot_blocked"
+        ).count()
+
+        deactivated = links.filter(
+            tg_can_write=False,
+            last_error_code="403_user_deactivated"
+        ).count()
+
+        chat_not_found = links.filter(
+            tg_can_write=False,
+            last_error_code="400_chat_not_found"
+        ).count()
+
+        unknown = links.filter(tg_can_write__isnull=True).count()
+
+        return {
+            'can_write': can_write,
+            'cannot_write': blocked + deactivated,
+            'chat_not_found': chat_not_found,
+            'unknown': unknown,
+            'total': links.count(),
+        }
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Добавляем данные для диаграммы в контекст."""
+        extra_context = extra_context or {}
+        obj = self.get_object(request, object_id)
+        if obj:
+            extra_context['chart_data'] = self.get_chart_data(obj)
+        return super().change_view(request, object_id, form_url, extra_context)
 
     def has_change_permission(self, request, obj=None):
         return has_city_admin_permissions(
@@ -65,19 +133,48 @@ class OrderInline(TabularInlinePaginated):
     extra = 0  # Не добавлять пустые строки для новых заказов
     per_page = 5
     fields = ['custom_source', 'custom_order_number',
-              'status', 'delivery', 'recipient_address',
+              'status', 'custom_delivery', 'recipient_address',
               'final_amount_with_shipping']
     readonly_fields = ['custom_source', 'custom_order_number',
-                       'status', 'delivery', 'recipient_address',
+                       'status', 'custom_delivery', 'recipient_address',
                        'final_amount_with_shipping']
 
     def custom_source(self, obj):
-        return custom_source(obj)
+        label = custom_source(obj)  # "TM_Bot", "Wolt" и т.п.
+        url = obj.get_admin_url()
+        return format_html("<a href='{}'>{}</a>", url, label)
     custom_source.short_description = 'Источник'
 
     def custom_order_number(self, obj):
         return get_custom_order_number(obj)
     custom_order_number.short_description = '№'
+
+    def custom_delivery(self, obj):
+        return str(obj.delivery)
+    custom_delivery.short_description = 'Доставка'
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class MessengerAccountBotInline(admin.TabularInline):
+    model = MessengerAccountBot
+    extra = 0
+    fields = ("bot", "tg_can_write", "last_login",
+              "last_success_at", "last_error_at", "last_error_code")
+    readonly_fields = (
+        "bot", "last_login",
+        "last_success_at", "last_error_at", "last_error_code")
+    # autocomplete_fields = ("bot",)  # удобно, если ботов много
+
+    # чтобы нельзя было случайно удалять связки (по желанию)
+    can_delete = False
 
 
 @admin.register(MessengerAccount)
@@ -98,28 +195,31 @@ class MessagerAccountAdmin(admin.ModelAdmin):
     get_order_qty.short_description = 'Зак'
 
     """Настройки отображения данных таблицы Message."""
-    list_display = ('msngr_type', 'msngr_id', 'msngr_username',
+    list_display = ('id', 'msngr_type', 'msngr_id', 'msngr_username',
                     'get_msngr_link', 'custom_registered',
                     'created', 'get_order_qty')
-    readonly_fields = ('get_msngr_link', 'created', 'msngr_link',
+    readonly_fields = ('get_msngr_link', 'created',
                        'get_orders_data', 'get_order_qty')
-    list_filter = ('msngr_type', 'subscription', 'registered')
+    list_filter = ('msngr_type', 'subscription', 'registered', 'city',
+                   Bot1WriteFilter, Bot2WriteFilter)
     list_display_links = ('msngr_id',)
     list_per_page = 10
-    search_fields = ('msngr_id', 'msngr_username',
+    search_fields = ('id',
+                     'msngr_id', 'msngr_username',
                      'msngr_first_name', 'msngr_last_name',
                      'msngr_phone')
     actions = (export_tm_accounts_to_excel,)
-    inlines = [OrderInline,]
+    inlines = [MessengerAccountBotInline, OrderInline,]
 
     fieldsets = (
         ('Основное', {
             'fields': (
-                ('msngr_type', 'language', 'created'),
+                ('msngr_type', 'msngr_id'),
                 ('msngr_username', 'get_msngr_link'),
                 ('msngr_first_name', 'msngr_last_name'),
+                ('subscription', 'registered', 'city'),
+                ('language', 'created'),
                 ('notes'),
-                ('subscription', 'registered'),
                 ('get_orders_data'),
             )
         }),
@@ -128,7 +228,6 @@ class MessagerAccountAdmin(admin.ModelAdmin):
             'fields': (
                 ('msngr_phone'),
                 ('msngr_link'),
-                ('msngr_id',),
                 ('tm_chat_id'),
 
             )
@@ -138,7 +237,11 @@ class MessagerAccountAdmin(admin.ModelAdmin):
     def get_msngr_link(self, instance):
         if instance.msngr_link:
             return format_html(instance.msngr_link)
-        return ''
+        return format_html(
+            "<span style='color:#888;'>"
+            "Чат недоступен<br>нет username (Telegram)<br>или телефона (WhatsApp)."
+            "</span>"
+        )
     get_msngr_link.short_description = 'Перейти в чат'
 
     def get_orders_data(self, instance):

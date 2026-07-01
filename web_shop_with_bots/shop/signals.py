@@ -5,7 +5,6 @@ from django.dispatch import receiver
 
 from shop.models import Order, OrderDish
 from shop.services import find_uncomplited_cart_to_complete
-from tm_bot.services import send_message_new_order
 
 
 @receiver(post_save, sender=Order)
@@ -32,11 +31,3 @@ def base_profile_minus_order(sender, instance, **kwargs):
         if instance.is_first_order:
             instance.user.first_web_order = False
         instance.user.save(update_fields=['orders_qty', 'first_web_order'])
-
-
-# @receiver(m2m_changed, sender=Order.dishes.through)
-# def send_message_new_order_admin(sender, instance, action, **kwargs):
-#     """ Отправка сообщения телеграм-ботом в админский чат
-#         о новом заказе на сайте."""
-#     if kwargs['action'] == 'post_add':
-#         send_message_new_order(instance)

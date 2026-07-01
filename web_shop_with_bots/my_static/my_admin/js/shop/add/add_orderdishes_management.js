@@ -175,18 +175,31 @@ document.addEventListener('DOMContentLoaded', function() {
         var unitAmountFields = document.querySelectorAll('.field-unit_amount p');
         var totalAmount = 0;
         var itemsCount = -1;
+        var personsQty = 0;
 
         unitAmountFields.forEach(function(field) {
             var fieldValue = parseFloat(field.textContent);
             if (!isNaN(fieldValue)) {
                 totalAmount += fieldValue;
 
+                var row = field.closest('tr');
+                var qty = 0;
+
                 // Подсчет количества позиций
-                var quantityInput = field.closest('tr').querySelector('.field-quantity input');
+                var quantityInput = row.querySelector('.field-quantity input');
                 if (quantityInput) {
                     var qty = parseInt(quantityInput.value, 10);
                     if (!isNaN(qty) && qty > 0) {
                         itemsCount += qty;
+                    }
+                }
+
+                // Подсчет приборов по признаку Utensils у блюда
+                var dishSelect = row.querySelector('.field-dish select');
+                if (dishSelect && dishSelect.value && qty > 0) {
+                    var dishInfo = dishes[dishSelect.value];
+                    if (dishInfo && Number(dishInfo.Utensils) === 1) {
+                        personsQty += qty;
                     }
                 }
             }
@@ -215,6 +228,12 @@ document.addEventListener('DOMContentLoaded', function() {
         var itemsQtyField = document.querySelector('.fieldBox.field-items_qty .readonly');
         if (itemsQtyField) {
             itemsQtyField.textContent = itemsCount;
+        }
+
+        // Поле количества приборов
+        var personsQtyInput = document.getElementById('id_persons_qty');
+        if (personsQtyInput) {
+            personsQtyInput.value = personsQty;
         }
 
         // Генерируем событие об изменении суммы

@@ -1,3 +1,4 @@
+import threading
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status
@@ -12,6 +13,8 @@ import logging
 # Создаем логгер
 logger = logging.getLogger(__name__)
 
+_exception_store = threading.local()
+
 
 def get_response(response):
     # if settings.DEBUG:
@@ -22,6 +25,8 @@ def get_response(response):
 def custom_exception_handler(exc, context):
     # Проверяем, есть ли атрибут detail в исключении
     # Получаем сообщение об ошибке
+    _exception_store.traceback = traceback.format_exc()
+
     error_message = str(exc)
 
     # Логируем сообщение об ошибке
@@ -35,6 +40,18 @@ def custom_exception_handler(exc, context):
 
         # Если у нас словарь в detail, возвращаем его содержимое
         if isinstance(exc.detail, dict):
+            # # спец-кейс: {'non_field_errors': ['...']}
+            # non_field = exc.detail.get("non_field_errors")
+            # if (isinstance(non_field, list)
+            #         and len(non_field) == 1):
+            #     msg = str(non_field[0])
+            #     response = Response(
+            #         {"message": msg},
+            #         status=status.HTTP_400_BAD_REQUEST
+            #     )
+            #     return get_response(response)
+
+            # # все остальные dict — как раньше
             response = Response({"message": exc.detail},
                                 status=status.HTTP_400_BAD_REQUEST)
             return get_response(response)

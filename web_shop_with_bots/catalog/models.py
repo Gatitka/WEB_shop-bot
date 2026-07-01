@@ -9,6 +9,12 @@ from parler.models import TranslatableModel, TranslatedFields
 from pytils.translit import slugify
 from django.conf import settings
 from delivery_contacts.models import Restaurant
+from PIL import Image
+from io import BytesIO
+from django.core.files.base import ContentFile
+import re
+import os
+import unicodedata
 
 
 class Category(TranslatableModel):
@@ -128,7 +134,7 @@ class Dish(TranslatableModel):
     priority = models.PositiveSmallIntegerField(
         verbose_name='№ п/п',
         validators=[MinValueValidator(1)],
-        blank=True,
+        null=True,
         help_text=
             "Порядковый номер отображения в категории, прим. '01'.\n"
             "Проставится автоматически.",
@@ -169,21 +175,24 @@ class Dish(TranslatableModel):
     final_price = models.DecimalField(
         verbose_name='итог цена, DIN',
         validators=[MinValueValidator(0.01)],
-        help_text='Цена после скидок в DIN. Проставится после сохранения.',
+        help_text=('Цена после скидок в DIN. Проставится после сохранения.\n'
+                   "Показана на сайте."),
         max_digits=8, decimal_places=2,
         default=Decimal('0'),
     )
     final_price_p1 = models.DecimalField(
         verbose_name='цена P1, DIN *',
         validators=[MinValueValidator(0.01)],
-        help_text='Партнер P1 (GLovo/Wolt). Внесите цену в DIN. Формат 00000.00',
+        help_text=('Партнер P1 (GLovo/Wolt). Внесите цену в DIN. Формат 00000.00\n'
+                   "Не рассчитывается автоматически"),
         max_digits=8, decimal_places=2,
         default=Decimal('0'),
     )
     final_price_p2 = models.DecimalField(
         verbose_name='цена P2, DIN *',
         validators=[MinValueValidator(0.01)],
-        help_text='Партнер P2. Внесите цену в DIN. Формат 00000.00',
+        help_text=('Партнер P2. Внесите цену в DIN. Формат 00000.00\n'
+                   "Не рассчитывается автоматически"),
         max_digits=8, decimal_places=2,
         default=Decimal('0'),
     )
@@ -219,29 +228,51 @@ class Dish(TranslatableModel):
         auto_now_add=True
     )
     vegan_icon = models.BooleanField(
-        verbose_name='Иконка веган',
-        default=False,
-        null=True, blank=True,
+        verbose_name='🌿 Иконка веган',
+        default=False
     )
     spicy_icon = models.BooleanField(
-        verbose_name='Иконка острое',
-        default=False,
-        null=True, blank=True,
+        verbose_name='🌶️ Иконка острое',
+        default=False
     )
     utensils = models.PositiveSmallIntegerField(
         verbose_name='приборы',
         help_text="Кол-во приборов в порции.",
-        null=True, blank=True
+        blank=True,
+        default=0
     )
+    includes_standard_set = models.BooleanField(
+        verbose_name="Включает допы",
+        help_text=("Включает стандартный набор (соус, имбирь, васаби)\n"
+                   "Отображается в карточке блюда."),
+        default=True
+    )
+
+    def __str__(self):
+        name = self.safe_translation_getter("short_name", any_language=True) or ""
+        # если вообще нет переводов — покажем только артикул
+        return f"{self.article} {name}".strip()
+
+    class Meta:
+        ordering = ['pk']
+        verbose_name = 'блюдо'
+        verbose_name_plural = 'блюда'
+
     # def clean(self) -> None:
     #     self.short_name = self.short_name.strip().lower()
     #     return super().clean()
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_image = self.__dict__.get('image')
+
     def save(self, *args, **kwargs):
+        # 1. назначаем id по порядку, если новый объект
         if not self.id:
             max_id = Dish.objects.aggregate(Max('id'))['id__max'] or 0
             self.id = max_id + 1
 
+        # 2. рассчитываем цены со скидкой
         if self.discount:
             self.final_price = Decimal(
                 self.price * Decimal(1 - self.discount/100)
@@ -249,7 +280,57 @@ class Dish(TranslatableModel):
             self._price = self.price
         else:
             self.final_price = self.price
+
+        # было ли изменение картинки
+        image_changed = self.image and (self.image != self._original_image)
+
+        # СНАЧАЛА обычное сохранение – чтобы файл попал в media
         super().save(*args, **kwargs)
+
+        # ПОТОМ конвертация
+        if image_changed:
+            new_path = self._convert_image_to_webp()
+            if new_path:
+                # обновляем поле image в БД без рекурсии
+                type(self).objects.filter(pk=self.pk).update(image=new_path)
+                self.image.name = new_path
+
+        # обновляем оригинальное значение
+        self._original_image = self.image
+
+    def _convert_image_to_webp(self, quality: int = 80) -> str | None:
+        if not self.image:
+            return None
+
+        storage = self.image.storage
+        old_path = self.image.name  # уже что-то типа 'menu/dish_images/xxx.jpg'
+
+        if not storage.exists(old_path):
+            return None
+
+        dirname, filename = os.path.split(old_path)
+        stem, ext = os.path.splitext(filename)
+        ext = ext.lower()
+
+        if ext == ".webp":
+            return None  # уже webp, ничего не делаем
+
+        with storage.open(old_path, "rb") as f:
+            img = Image.open(f)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+
+            buffer = BytesIO()
+            img.save(buffer, format="WEBP", quality=quality, method=6)
+            buffer.seek(0)
+
+        new_filename = stem + ".webp"
+        new_path = os.path.join(dirname, new_filename) if dirname else new_filename
+
+        storage.save(new_path, ContentFile(buffer.getvalue()))
+        storage.delete(old_path)
+
+        return new_path
 
     def admin_photo(self):
         if self.image:
@@ -264,13 +345,111 @@ class Dish(TranslatableModel):
     admin_photo.short_description = 'Image'
     admin_photo.allow_tags = True
 
-    def __str__(self):
-        return f'{self.article} {self.short_name}'
+
+class DishCityPrice(models.Model):
+    """Цена блюда для сайта в конкретном городе.
+
+    Здесь храним именно сайтовую цену: базовая цена, скидка и итоговая
+    цена после скидки. Партнерские цены вынесены отдельно, потому что для
+    них не нужны base/discount/final.
+    """
+    dish = models.ForeignKey(
+        Dish,
+        on_delete=models.CASCADE,
+        related_name='city_prices',
+        to_field='article',
+        verbose_name='блюдо',
+    )
+    city = models.CharField(
+        max_length=20,
+        verbose_name='город',
+        choices=settings.CITY_CHOICES,
+        db_index=True,
+    )
+    price = models.DecimalField(
+        verbose_name='базовая цена сайта, DIN',
+        validators=[MinValueValidator(0.01)],
+        max_digits=8,
+        decimal_places=2,
+    )
+    discount = models.DecimalField(
+        verbose_name='скидка сайта, %',
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    final_price = models.DecimalField(
+        verbose_name='финальная цена сайта, DIN',
+        validators=[MinValueValidator(0.01)],
+        max_digits=8,
+        decimal_places=2,
+        blank=True,
+    )
 
     class Meta:
-        ordering = ['pk']
-        verbose_name = 'блюдо'
-        verbose_name_plural = 'блюда'
+        ordering = ('dish', 'city')
+        verbose_name = 'цена блюда'
+        verbose_name_plural = 'цены меню'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['dish', 'city'],
+                name='unique_dish_city_site_price',
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.discount:
+            self.final_price = Decimal(
+                self.price * Decimal(1 - self.discount / 100)
+            ).quantize(Decimal('0.01'))
+        else:
+            self.final_price = self.price
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.dish_id} / {self.city} / site: {self.final_price}'
+
+
+class DishPartnerPrice(models.Model):
+    """Финальная цена блюда для партнера в конкретном городе."""
+    dish = models.ForeignKey(
+        Dish,
+        on_delete=models.CASCADE,
+        related_name='partner_prices',
+        to_field='article',
+        verbose_name='блюдо',
+    )
+    city = models.CharField(
+        max_length=20,
+        verbose_name='город',
+        choices=settings.CITY_CHOICES,
+        db_index=True,
+    )
+    partner_category = models.CharField(
+        max_length=2,
+        choices=settings.PARTNERS_PRICE_CATEGORIES,
+    )
+    final_price = models.DecimalField(
+        verbose_name='финальная цена партнера, DIN',
+        validators=[MinValueValidator(0.01)],
+        max_digits=8,
+        decimal_places=2,
+    )
+
+    class Meta:
+        ordering = ('dish', 'city', 'partner_category')
+        verbose_name = 'цена партнеров'
+        verbose_name_plural = 'цены партнеров'
+        constraints = [
+            models.UniqueConstraint(
+                fields=("dish", "city", "partner_category"),
+                name="unique_partner_price",
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.dish_id} / {self.city} / {self.partner_category}: {self.final_price}'
 
 
 class DishCategory(models.Model):
@@ -287,6 +466,16 @@ class DishCategory(models.Model):
         related_name='dishcategory',
         on_delete=models.PROTECT,
     )
+    dish_priority = models.PositiveSmallIntegerField(
+        verbose_name='№ п/п',
+        validators=[MinValueValidator(1)],
+        blank=True,
+        db_index=True,
+        null=True,
+        help_text=(
+            "Порядковый номер отображения в категории, прим. '01'.\n"
+            "Проставится автоматически."),
+    )
 
     class Meta:
         ordering = ['dish']
@@ -296,8 +485,21 @@ class DishCategory(models.Model):
             models.UniqueConstraint(
                 fields=['dish', 'category'],
                 name='unique_dish_category'
-            )
+            ),
+            models.UniqueConstraint(
+                fields=['category', 'dish_priority'],
+                name='unique_priority_in_category'
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        if not self.dish_priority:
+            from django.db.models import Max
+            db_max = DishCategory.objects.filter(
+                category=self.category
+            ).aggregate(Max("dish_priority"))["dish_priority__max"] or 0
+            self.dish_priority = db_max + 1
+        super().save(*args, **kwargs)
 
 
 class UOM(TranslatableModel):

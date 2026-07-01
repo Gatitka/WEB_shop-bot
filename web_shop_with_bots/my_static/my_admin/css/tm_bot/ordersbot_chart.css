@@ -1,0 +1,116 @@
+/* ── Контейнер ── */
+.bot-chart-widget {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 20px 24px;
+    margin: 16px 0 24px;
+    max-width: 540px;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+    background: #ffffff;
+    color: #2c2c2c;
+}
+
+/* ── SVG сегменты ── */
+.bot-donut-bg { stroke: #eeeeee; }
+
+#seg-can     { stroke: #43A047; }
+#seg-cannot  { stroke: #E53935; }
+#seg-never   { stroke: #FB8C00; }
+#seg-unknown { stroke: #B0BEC5; }
+
+/* ── Легенда ── */
+.bot-chart-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: inherit;
+}
+
+/* ── Таблица ── */
+.bot-chart-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    color: inherit;
+    background: transparent;
+}
+
+.bot-chart-table tbody tr {
+    background: transparent;
+}
+
+.bot-chart-table td {
+    padding: 5px 0;
+    background: transparent;
+    color: inherit;
+}
+
+.bot-chart-table .cell-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.bot-chart-table .cell-num {
+    text-align: right;
+    font-weight: 700;
+    padding-right: 10px;
+    min-width: 44px;
+}
+
+.bot-chart-table .cell-pct {
+    text-align: right;
+    opacity: 0.55;
+    min-width: 48px;
+}
+
+.bot-chart-table tfoot tr {
+    border-top: 2px solid #e0e0e0;
+    background: transparent;
+}
+
+.bot-chart-table tfoot td {
+    padding-top: 7px;
+    font-weight: 700;
+    background: transparent;
+    color: inherit;
+}
+
+/* ── Цветные маркеры ── */
+.dot {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.dot--green  { background: #43A047; }
+.dot--red    { background: #E53935; }
+.dot--orange { background: #FB8C00; }
+.dot--gray   { background: #B0BEC5; }
+
+/* ══ ТЁМНАЯ ТЕМА ══ */
+@media (prefers-color-scheme: dark) {
+    .bot-chart-widget {
+        background: #1e1e2e;
+        border-color: #333350;
+        color: #e0e0e0;
+    }
+
+    .bot-donut-bg { stroke: #2e2e42; }
+
+    #seg-can     { stroke: #66BB6A; }
+    #seg-cannot  { stroke: #EF5350; }
+    #seg-never   { stroke: #FFA726; }
+    #seg-unknown { stroke: #78909C; }
+
+    .bot-chart-table tfoot tr { border-top-color: #333350; }
+
+    .dot--green  { background: #66BB6A; }
+    .dot--red    { background: #EF5350; }
+    .dot--orange { background: #FFA726; }
+    .dot--gray   { background: #78909C; }
+}

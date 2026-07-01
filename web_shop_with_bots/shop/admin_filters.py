@@ -94,3 +94,19 @@ class OrderPeriodFilter(admin.SimpleListFilter):
         elif self.value() == 'future':
             return queryset.filter(execution_date__gt=today)
         return queryset
+
+
+class DiscountedAmountFilter(admin.SimpleListFilter):
+    title = 'Наличие скидки'
+    parameter_name = 'discount_amount'
+
+    def lookups(self, request, model_admin):
+        return (("yes", "есть скидка"), ("no", "нет скидки"))
+
+    def queryset(self, request, queryset):
+        val = self.value()
+        if val == "yes":
+            return queryset.exclude(discount_amount=0)
+        if val == "no":
+            return queryset.filter(discount_amount=0)
+        return queryset

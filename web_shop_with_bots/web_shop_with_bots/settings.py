@@ -188,6 +188,7 @@ DOCKER_COMPOSE_NAME = os.getenv('DOCKER_COMPOSE_NAME')
 
 DEBUG = os.getenv('DEBUG') == 'True'
 TEST_SERVER = os.getenv('TEST_SERVER')
+TEST_IP = os.getenv('TEST_IP')
 SERVER = os.getenv('SERVER')
 
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
@@ -196,6 +197,7 @@ default_allowed_hosts = [
     'localhost',
     '127.0.0.1',
     '[::1]',
+    'carl-hydrometallurgical-destinee.ngrok-free.dev'
 ]
 
 allowed_hosts = default_allowed_hosts.copy()
@@ -203,6 +205,7 @@ allowed_hosts = default_allowed_hosts.copy()
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
         allowed_hosts.append(str(TEST_SERVER))
+        allowed_hosts.append(str(TEST_IP))
     elif SERVER:
         allowed_hosts.append(str(SERVER))
 
@@ -213,6 +216,7 @@ ALLOWED_HOSTS = allowed_hosts
 
 
 default_installed_apps = [
+    'api.apps.ApiConfig',
     'catalog.apps.CatalogConfig',
     'shop.apps.ShopConfig',
     'users.apps.UsersConfig',
@@ -238,7 +242,7 @@ default_installed_apps = [
     'django_filters',
     'parler',   # language
     'django.contrib.gis',
-    # 'django_celery_beat',
+    # 'django_celery_beat',    # планировщик celery задач черзе админку
     'rangefilter',
     'django_summernote',
     'django_admin_inline_paginator',
@@ -308,6 +312,7 @@ DATABASES = {
         'PASSWORD': POSTGRES_PASSWORD,
         'HOST': os.environ.get('DB_HOST'),
         'PORT': os.environ.get('DB_PORT'),
+        'client_encoding': 'UTF8',
     }
 }
 
@@ -362,6 +367,8 @@ REST_FRAMEWORK = {
     'TIME_FORMAT': '%H:%M',
 
     'EXCEPTION_HANDLER': 'api.utils.utils.custom_exception_handler',
+
+    'DEFAULT_THROTTLE_CACHE': 'throttle',
 }
 
 if DEBUG:
@@ -369,7 +376,7 @@ if DEBUG:
         'rest_framework.renderers.JSONRenderer',
     )
 
-if ENVIRONMENT != 'development':
+if ENVIRONMENT == 'development':
     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
         'user': '10000/day', #  Лимит для UserRateThrottle
         'anon': '1000/day',  #  Лимит для AnonRateThrottle
@@ -400,12 +407,11 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
-
-    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
 }
 
-TOKEN_MODEL = None
-BLACKLIST_MODEL = 'yourapp.BlacklistedToken'
+# TOKEN_MODEL = None
+# BLACKLIST_MODEL = 'yourapp.BlacklistedToken'
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.getenv('EMAIL_HOST')
@@ -421,6 +427,25 @@ EMAIL_ADMIN = EMAIL_HOST_USER
 DOMAIN = os.getenv('DOMAIN')
 PROTOCOL = os.getenv('PROTOCOL')
 SITE_NAME = os.getenv('SITE_NAME')
+
+FRONTEND_DOMAIN_DIFFER_FROM_BACKEND = os.getenv(
+        'FRONTEND_DOMAIN_DIFFER_FROM_BACKEND', 'False'
+    ).lower() in ('true', '1', 'yes')
+FRONTEND_DOMAINS = []
+if FRONTEND_DOMAIN_DIFFER_FROM_BACKEND is not None:
+    for i in (1, 2):
+        domain = os.getenv(f'FRONTEND_DOMAIN_{i}')
+        if domain:
+            FRONTEND_DOMAINS.append(domain)
+
+if FRONTEND_DOMAIN_DIFFER_FROM_BACKEND and FRONTEND_DOMAINS:
+    FRONTEND_BASE_URL = FRONTEND_DOMAINS[0]
+
+elif ENVIRONMENT == 'development':
+    FRONTEND_BASE_URL = 'http://localhost:3000'
+
+else:
+    FRONTEND_BASE_URL = f'{PROTOCOL}://{DOMAIN}'
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
@@ -458,25 +483,56 @@ DJOSER = {
 }
 
 # -------------------------------- Redis ----------------------------------
-
+REDIS_CACHE_LOCATION = os.getenv("REDIS_CACHE_LOCATION", "redis://redis:6379/1")
 
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": os.getenv('REDIS_LOCATION', "redis://redis:6379/1")
+        "LOCATION": REDIS_CACHE_LOCATION,
         # "LOCATION": "redis://:redisadmin0@127.0.0.1:6379/1"  #local with pass
         # "LOCATION": "redis://:redisadmin0@redis:6379/1"    #test_server/production with pass
         # "LOCATION": "redis://redis:6379/1"  #backend container for frontend development
+    },
+    "throttle": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "throttle-cache",
+        # отдельный кеш в памяти только для лимитов запросов
     }
 }
-
-# CELERY_BROKER_URL = 'redis://:redisadmin0@redis:6379/0'
-# если применяется пароль к redis, то прописать и тут
 
 PARLER_ENABLE_CACHING = False
 
 CACHE_TIME = int(os.getenv('CACHE_TIME', 0))
 
+# -------------------------------- Celery ----------------------------------
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+# CELERY_BROKER_URL = 'redis://:redisadmin0@redis:6379/0'
+# если применяется пароль к redis, то прописать и тут
+
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_IGNORE_RESULT = True
+
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = 'Europe/Belgrade'
+
+CELERY_TASK_QUEUES = {
+    "orders": {},
+    "notifications": {},
+    "broadcast": {},
+}
+
+CELERY_TASK_ROUTES = {
+    "users.tasks.post_order_user_updates_task": {"queue": "orders"},
+    "tm_bot.tasks.send_order_status_update_task": {"queue": "notifications"},
+    "tm_bot.tasks.send_link_confirmation_message": {"queue": "notifications"},
+    "promos.tasks.send_broadcast_test_task": {"queue": "broadcast"},
+    "promos.tasks.send_broadcast_task": {"queue": "broadcast"},
+}
+
+CELERY_TASK_DEFAULT_QUEUE = "orders"
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 # -------------------------------- DATETIME + OTHER ------------------------------------------
 
 TIME_ZONE = 'Europe/Belgrade'
@@ -498,12 +554,17 @@ FIRST_DAY_OF_WEEK = 1
 
 # -------------------------------- STATIC + MEDIA ------------------------------------------
 
-if ENVIRONMENT != 'development':
-    STATIC_URL = f'{PROTOCOL}://{DOMAIN}/static/'
-    MEDIA_URL = f'{PROTOCOL}://{DOMAIN}/media/'
-else:
+if ENVIRONMENT == 'test_server':
+    STATIC_URL = f'{PROTOCOL}://{TEST_SERVER}/static/'
+    MEDIA_URL = f'{PROTOCOL}://{TEST_SERVER}/media/'
+
+elif ENVIRONMENT == 'development':
     STATIC_URL = '/static/'
     MEDIA_URL = '/media/'
+
+else:
+    STATIC_URL = f'{PROTOCOL}://{DOMAIN}/static/'
+    MEDIA_URL = f'{PROTOCOL}://{DOMAIN}/media/'
 
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'my_static/'),]
 STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
@@ -567,6 +628,7 @@ CORS_ORIGIN_ALLOW_ALL = True
 default_cors_allowed_origins = [
     f"{PROTOCOL}://localhost:3000",
     f"{PROTOCOL}://127.0.0.1",
+    "https://sushi.xxut.ru"
 ]
 
 cors_allowed_origins = default_cors_allowed_origins.copy()
@@ -574,6 +636,9 @@ cors_allowed_origins = default_cors_allowed_origins.copy()
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{TEST_SERVER}")
+        if FRONTEND_DOMAIN_DIFFER_FROM_BACKEND:
+            for domain in FRONTEND_DOMAINS:
+                cors_allowed_origins.append(domain)
     elif SERVER:
         cors_allowed_origins.append(f"{PROTOCOL}://{SERVER}")
 CORS_ALLOWED_ORIGINS = cors_allowed_origins
@@ -599,6 +664,7 @@ CSRF_USE_SESSIONS = True
 default_csrf_trusted_origins = [
     f"{PROTOCOL}://localhost:3000",
     f"{PROTOCOL}://127.0.0.1",
+    "https://sushi.xxut.ru"
 ]
 
 csrf_trusted_origins = default_csrf_trusted_origins.copy()
@@ -607,6 +673,13 @@ csrf_trusted_origins = default_csrf_trusted_origins.copy()
 if TEST_SERVER or SERVER:
     if TEST_SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{TEST_SERVER}"))
+        csrf_trusted_origins.append(str(f"HTTP://{TEST_IP}"))
+        csrf_trusted_origins.append(str(f"HTTPS://{TEST_IP}"))
+        csrf_trusted_origins.append(str(f"HTTP://{TEST_SERVER}"))
+        csrf_trusted_origins.append(str(f"HTTPS://{TEST_SERVER}"))
+        if FRONTEND_DOMAIN_DIFFER_FROM_BACKEND:
+            for domain in FRONTEND_DOMAINS:
+                csrf_trusted_origins.append(domain)
     elif SERVER:
         csrf_trusted_origins.append(str(f"{PROTOCOL}://{SERVER}"))
 CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
@@ -650,9 +723,11 @@ if ENVIRONMENT == 'development' and DEVELOPER == 'backend':
 
 # -------------------------------- SENTRY MISTAKES INFORMATION----------------------------
 
-if ENVIRONMENT in ['test_server', 'production']:
+SENTRY_DSN = os.getenv('SENTRY_DSN')
+
+if ENVIRONMENT in ['test_server', 'production'] and SENTRY_DSN and SENTRY_DSN.lower() != 'none':
     sentry_sdk.init(
-        dsn=os.getenv('SENTRY_DSN'),
+        dsn=SENTRY_DSN,
         integrations=[DjangoIntegration()],
     )
 
@@ -661,8 +736,28 @@ if ENVIRONMENT in ['test_server', 'production']:
 
 ADMIN_BOT_TOKEN = os.getenv('ADMIN_BOT_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
+CHAT_ID1 = os.getenv('CHAT_ID1')   # BR
+CHAT_ID2 = os.getenv('CHAT_ID2')   # NS
 BOTOBOT_API_KEY = os.getenv('BOTOBOT_API_KEY')
-SEND_BOTOBOT_UPDATES = os.getenv('SEND_BOTOBOT_UPDATES')
+SEND_BOTOBOT_UPDATES = os.getenv("SEND_BOTOBOT_UPDATES", "false").lower() == "true"
+
+TELEGRAM_BOT_TOKEN_BG = os.getenv('TELEGRAM_BOT_TOKEN_BG')
+TELEGRAM_BOT_TOKEN_NS = os.getenv('TELEGRAM_BOT_TOKEN_NS')
+
+TELEGRAM_AUTH_BOTS = {
+    "Beograd": TELEGRAM_BOT_TOKEN_BG,
+    "NoviSad": TELEGRAM_BOT_TOKEN_NS,
+}
+
+ADMIN_CHATS = {
+    "Beograd": CHAT_ID1,
+    "NoviSad": CHAT_ID2
+}
+
+TELEGRAM_BOT_TOKEN_TEST = os.getenv('TELEGRAM_BOT_TOKEN_TEST')
+TELEGRAM_AUTH_TEST_BOTS = {
+    "Beograd": TELEGRAM_BOT_TOKEN_TEST,
+}
 
 # -------------------------------- BUSINESS LOGIC SETTINGS  ----------------------------
 
@@ -689,7 +784,8 @@ DISCOUNT_TYPES = [
 
 DELIVERY_CHOICES = (
     ("delivery", "Доставка"),
-    ("takeaway", "Самовывоз")
+    ("takeaway", "Самовывоз"),
+    ("restaurant", "Ресторан")
 )
 
 MAX_DISC_AMOUNT = 25
@@ -757,6 +853,11 @@ PAYMENT_METHODS = [
     ('card', 'card')
 ]
 
+PARTNERS_PRICE_CATEGORIES = [
+    ('P1', 'P1 - Glovo/Wolt'),
+    ('P2', 'P2 - Smoke/Не та дверь/Seal Tea')
+]
+
 SOURCE_TYPES = [
     ('P1-1', 'Glovo'),
     ('P1-2', 'Wolt'),
@@ -777,7 +878,13 @@ ORDER_TYPES = [
     ('P3-1', 'Seal Tea'),
     ('D', 'Доставка'),
     ('T', 'Самовывоз'),
+    ('R', 'Ресторан')
 ]
+
+CITY_EXCLUDED_TYPES = {
+    'Beograd':  {'R'},
+    'Novi Sad': {'P1-2', 'P3-1'},
+}
 
 PARTNERS_LIST = [
     'P1-1', 'P1-2', 'P2-1', 'P2-2', 'P3-1'

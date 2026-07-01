@@ -8,6 +8,7 @@ from delivery_contacts.utils import parce_coordinates
 from shop.models import (Order, OrderGlovoProxy, OrderWoltProxy,
                          OrderSmokeProxy, OrderNeTaDverProxy, OrderSealTeaProxy,
                          DeliveryZone, Delivery, Discount)
+from promos.models import Campaign
 from shop.validators import (validate_delivery_time)
 from phonenumber_field.validators import validate_international_phonenumber
 from users.models import UserAddress
@@ -53,14 +54,16 @@ class FilteredByUserAndCityWidget(Select):
         self.model_class = model_class
 
     def get_context(self, name, value, attrs):
-        self.choices = [(None, '--------')] if self.model_class == Courier else []
+        self.choices = [(None, '--------')] if self.model_class in [Courier, Campaign] else []
 
         if self.is_superuser:
             queryset = self.model_class.objects.all()
         else:
             queryset = self.model_class.objects.filter(city=self.city)
 
-        self.choices += [(obj.id, str(obj) if self.model_class in [Courier, Delivery] else obj.name)
+        self.choices += [(obj.id, str(obj) if self.model_class in [
+                            Courier, Delivery, Campaign
+                         ] else obj.name)
                          for obj in queryset]
         return super().get_context(name, value, attrs)
 
@@ -96,7 +99,7 @@ class OrderAddForm(forms.ModelForm):
     order_type = forms.ChoiceField(
         choices=settings.ORDER_TYPES,
         label='Тип заказа',
-        initial='T'  # Default to Delivery
+        initial='T'  # Default to Takeaway
     )
 
     bot_order = forms.ChoiceField(
@@ -122,7 +125,7 @@ class OrderAddForm(forms.ModelForm):
                   'delivery', 'invoice', 'items_qty', 'discount', 'payment_type',
                   'recipient_name', 'recipient_phone', 'recipient_address',
                   'address_comment', 'delivery_time', 'delivery_zone', 'delivery_cost',
-                  'manual_discount', 'comment', 'coordinates', 'city']  # Только необходимые поля
+                  'manual_discount', 'comment', 'coordinates', 'city', 'persons_qty']  # Только необходимые поля
         widgets = {
             'city': forms.HiddenInput(),  # Использовать скрытое поле
             'coordinates': forms.HiddenInput(),  # Использовать скрытое поле
@@ -149,7 +152,18 @@ class OrderAddForm(forms.ModelForm):
             self.fields['discount'].choices = filtered_discounts
 
         if not user.is_superuser:
+            user_city = user.city
             self.fields['delivery_zone'].queryset = get_filtered_delivery_zones(user)
+            self.fields['campaign'].widget = FilteredByUserAndCityWidget(
+                                                is_superuser=user.is_superuser,
+                                                city=user_city,
+                                                model_class=Campaign)
+            excluded = settings.CITY_EXCLUDED_TYPES.get(user_city, set())
+            self.fields['order_type'].choices = [
+                (code, label)
+                for code, label in settings.ORDER_TYPES
+                if code not in excluded
+            ]
 
         self.fields['manual_discount'].required = False
 
@@ -159,7 +173,7 @@ class OrderAddForm(forms.ModelForm):
         city = self.cleaned_data.get('city') or (self.user.city if hasattr(self.user, 'city') else None)
         bot_order = self.data.get('bot_order')
         # Set source based on order_type
-        if order_type in ['D', 'T']:  # For Delivery or Takeaway
+        if order_type in ['D', 'T', 'R']:  # For Delivery / Takeaway / Restaurant
             if bot_order == 'True' or bot_order is True:
                 self.cleaned_data['source'] = '3'  # Bot order
                 self.instance.source = '3'
@@ -170,8 +184,10 @@ class OrderAddForm(forms.ModelForm):
             # Set delivery type based on order_type
             if order_type == 'D':  # Delivery
                 delivery = Delivery.objects.get(city=city, type='delivery')
-            else:  # Takeaway
+            elif order_type == 'T':  # Takeaway
                 delivery = Delivery.objects.get(city=city, type='takeaway')
+            elif order_type == 'R':  # Restaurant
+                delivery = Delivery.objects.get(city=city, type='restaurant')
 
             self.instance.delivery = delivery
             self.cleaned_data['delivery'] = delivery
@@ -466,16 +482,21 @@ class OrderChangeForm(forms.ModelForm):
             self.fields['process_comment'].widget = forms.HiddenInput()
 
         if not user.is_superuser:
+            user_city = self.instance.city
             # self.fields['created'].widget = forms.HiddenInput()
             self.fields['delivery'].widget = FilteredByUserAndCityWidget(
                 is_superuser=user.is_superuser,
-                city=self.instance.city,
+                city=user_city,
                 model_class=Delivery,
             )
             self.fields['courier'].widget = FilteredByUserAndCityWidget(
-                                                city=self.instance.city,
                                                 is_superuser=user.is_superuser,
+                                                city=user_city,
                                                 model_class=Courier)
+            self.fields['campaign'].widget = FilteredByUserAndCityWidget(
+                                                is_superuser=user.is_superuser,
+                                                city=user_city,
+                                                model_class=Campaign)
             self.fields['delivery_zone'].queryset = get_filtered_delivery_zones(user)
 
         # Исключаем скидки на 1й заказ (1) и на оплату наличными при доставке (3)
@@ -566,7 +587,6 @@ class OrderChangeForm(forms.ModelForm):
             # Проверяем, содержит ли адрес только буквы, цифры и пробелы
             if not re.search(r'\d+', recipient_address):
                 raise forms.ValidationError("Укажите номер дома.")
-
         delivery = self.cleaned_data.get('delivery')
         source = self.data.get('source')
         my_delivery_address = self.data.get('my_delivery_address')
@@ -739,6 +759,7 @@ class OrderChangeForm(forms.ModelForm):
         return process_comment
 
     def clean(self):
+
         cleaned_data = super().clean()
         # Удаляем ошибки валидации для поля my_recipient_address
         if 'my_delivery_address' in self._errors:
@@ -831,7 +852,7 @@ class OrderChangelistForm(forms.ModelForm):
             # Отключаем/фильтруем поле courier.
             # Если самовывоз, то отключаем совсем.
             # Если доставка, то выбираем курьеров по городу или все курьеры, если суперпользователь
-            if self.instance.delivery.type == 'takeaway':
+            if self.instance.delivery.type in ['takeaway', 'restaurant']:
                 self.fields['courier'].widget = forms.HiddenInput()
             else:
                 city = self.instance.city

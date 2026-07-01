@@ -1,0 +1,26 @@
+.custom-tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.tooltip-text {
+    opacity: 0;
+    transition: 0.2s;
+
+    position: absolute;
+    bottom: 130%;
+    left: 50%;
+    transform: translateX(-50%);
+
+    background: #1e1e1e;
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 6px;
+
+    font-size: 12px;
+    width: 220px;
+
+    white-space: pre-line;
+    z-index: 1000;
+    pointer-events: none;
+}

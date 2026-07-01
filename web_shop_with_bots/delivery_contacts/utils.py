@@ -4,12 +4,14 @@ from decimal import Decimal
 import requests
 from django.conf import settings
 from django.core.exceptions import ValidationError
+import re
 
 from web_shop_with_bots.settings import GOOGLE_API_KEY
 
 import logging
 # Создаем логгер
 logger = logging.getLogger(__name__)
+
 
 def receive_responce_from_google(address, city):
     logger.debug(f"Запрос координат для адреса: '{address}', город: '{city}'")
@@ -228,13 +230,12 @@ def parce_coordinates(coordinates):
 
 
 def get_address_comment(address):
+    """ Достает кв, этаж, домофон из объекта UserAddress."""
     flat = address.flat if address.flat is not None else ''
     floor = address.floor if address.floor is not None else ''
     interfon = address.interfon if address.interfon is not None else ''
     return f"flat: {flat}, floor: {floor}, interfon: {interfon}"
 
-
-import re
 
 def parse_address_comment(address_comment):
     """

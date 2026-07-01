@@ -1,5 +1,5 @@
-город;активно;имя
-Beograd;True;Руслан
-Beograd;True;Денис
-Beograd;True;Николай
-Beograd;True;Даниил
+город;активен;имя;мин_оплата_за_выход,DIN
+Beograd;True;Руслан;1000
+Beograd;True;Денис;1500
+Beograd;True;Николай;1000
+Beograd;True;Даниил;1500

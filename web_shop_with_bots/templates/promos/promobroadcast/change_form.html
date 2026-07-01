@@ -1,0 +1,44 @@
+{% extends "admin/change_form.html" %}
+
+{% block content_title %}
+  {{ block.super }}
+
+  {% include "promos/promobroadcast/promobroadcast_faq.html" %}
+
+{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    {% if original and original.status == "sending" %}
+    <meta http-equiv="refresh" content="5">
+    {% endif %}
+    <style>
+        .submit-row input[name="_send_test"],
+        .submit-row input[name="_send_all"] {
+            background: #41907c;  /* бирюзово-зеленый, гармонирует с Django */
+            color: white;
+            border-color: #41907c;
+        }
+        .submit-row input[name="_send_test"]:hover,
+        .submit-row input[name="_send_all"]:hover {
+            background: #357063;  /* темнее при наведении */
+            border-color: #2d5f54;
+        }
+        .submit-row input[name="_send_test"]:active,
+        .submit-row input[name="_send_all"]:active {
+            background: #2d5f54;
+        }
+        /* Делаем отключенные кнопки визуально отличимыми */
+        input[type="submit"]:disabled {
+            background: #d4d4d4 !important;
+            border-color: #bcbcbc !important;
+            color: #777 !important;
+            cursor: not-allowed !important;
+            opacity: 0.8;
+        }
+    </style>
+{% endblock %}
+
+{% block submit_buttons_bottom %}
+    {% include "promos/promobroadcast/submit_row.html" %}
+{% endblock %}

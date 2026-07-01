@@ -1,0 +1,25 @@
+details.admin-faq {
+    margin: 10px 0 18px;
+    padding: 10px 14px;
+
+    border: 1px solid var(--hairline-color);
+    border-radius: 8px;
+
+    background: var(--body-bg);
+}
+
+details.admin-faq > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.admin-faq__content {
+    margin-top: 8px;
+}
+
+.admin-faq-warning {
+    margin-top: 10px;
+
+    color: #ff9d9d;
+    font-weight: 600;
+}

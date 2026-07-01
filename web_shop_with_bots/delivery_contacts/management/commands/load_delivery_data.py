@@ -29,7 +29,7 @@ class Command(BaseCommand):
             open_time="11:00",
             close_time="22:00",
             phone="+381 61 481 3011",
-            city='Novi Sad',
+            city='NoviSad',
             is_active=True,
             is_default=True,
             image=None
@@ -88,7 +88,7 @@ class Command(BaseCommand):
 
         delivery3, delivery3_created = Delivery.objects.get_or_create(
             type='delivery',
-            city='Novi Sad',
+            city='NoviSad',
             is_active=True,
             image=None,
             min_time=time(11, 30),
@@ -119,7 +119,7 @@ class Command(BaseCommand):
 
         delivery4, delivery4_created = Delivery.objects.get_or_create(
             type='takeaway',
-            city='Novi Sad',
+            city='NoviSad',
             discount='10.00',
             is_active=True,
             min_time=time(11, 0),

@@ -1,0 +1,77 @@
+{% extends "admin/change_form.html" %}
+{% load i18n static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    {% if chart_data and chart_data.total > 0 %}
+        <link rel="stylesheet" href="{% static 'my_admin/css/tm_bot/ordersbot_chart.css' %}">
+        <script src="{% static 'my_admin/js/tm_bot/ordersbot_chart.js' %}" defer></script>
+    {% endif %}
+{% endblock %}
+
+{% block content_title %}
+    {{ block.super }}
+
+    {% if chart_data and chart_data.total > 0 %}
+    <div class="bot-chart-widget">
+
+        <div style="flex-shrink: 0;">
+            <svg width="150" height="150" viewBox="0 0 150 150">
+                <circle class="bot-donut-bg" cx="75" cy="75" r="55" fill="none" stroke-width="28"/>
+                <circle id="seg-unknown" cx="75" cy="75" r="55" fill="none" stroke-width="28"
+                        stroke-dasharray="0 346" stroke-dashoffset="0" style="transition: stroke-dasharray .4s;"/>
+                <circle id="seg-never"   cx="75" cy="75" r="55" fill="none" stroke-width="28"
+                        stroke-dasharray="0 346" stroke-dashoffset="0" style="transition: stroke-dasharray .4s;"/>
+                <circle id="seg-cannot"  cx="75" cy="75" r="55" fill="none" stroke-width="28"
+                        stroke-dasharray="0 346" stroke-dashoffset="0" style="transition: stroke-dasharray .4s;"/>
+                <circle id="seg-can"     cx="75" cy="75" r="55" fill="none" stroke-width="28"
+                        stroke-dasharray="0 346" stroke-dashoffset="0" style="transition: stroke-dasharray .4s;"/>
+                <g id="donut-data"
+                    data-can="{{ chart_data.can_write }}"
+                    data-cannot="{{ chart_data.cannot_write }}"
+                    data-never="{{ chart_data.chat_not_found }}"
+                    data-unknown="{{ chart_data.unknown }}"
+                    data-total="{{ chart_data.total }}">
+                </g>
+            </svg>
+        </div>
+
+        <div style="flex: 1;">
+            <div class="bot-chart-title">📊 Статистика доставки сообщений</div>
+
+            <table class="bot-chart-table">
+                <tbody>
+                    <tr>
+                        <td class="cell-label"><span class="dot dot--green"></span>Может писать</td>
+                        <td class="cell-num">{{ chart_data.can_write }}</td>
+                        <td class="cell-pct" id="pct-can">—</td>
+                    </tr>
+                    <tr>
+                        <td class="cell-label"><span class="dot dot--red"></span>Бот не может писать</td>
+                        <td class="cell-num">{{ chart_data.cannot_write }}</td>
+                        <td class="cell-pct" id="pct-cannot">—</td>
+                    </tr>
+                    <tr>
+                        <td class="cell-label"><span class="dot dot--orange"></span>Чат не найден</td>
+                        <td class="cell-num">{{ chart_data.chat_not_found }}</td>
+                        <td class="cell-pct" id="pct-never">—</td>
+                    </tr>
+                    <tr>
+                        <td class="cell-label"><span class="dot dot--gray"></span>Статус не проверен</td>
+                        <td class="cell-num">{{ chart_data.unknown }}</td>
+                        <td class="cell-pct" id="pct-unknown">—</td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td>Всего</td>
+                        <td class="cell-num">{{ chart_data.total }}</td>
+                        <td class="cell-pct">100%</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+    </div>
+    {% endif %}
+{% endblock %}

@@ -3,12 +3,17 @@
 document.addEventListener("DOMContentLoaded", function () {
     var orderTypeField = document.getElementById("id_order_type");
     var manualDiscountField = document.querySelector(".form-row.field-manual_discount");
-    var dependentFields = document.querySelector(".form-row.field-bot_order.field-delivery_time");
+    // var dependentFields = document.querySelector(".form-row.field-bot_order.field-delivery_time");
+    var botOrderField = document.querySelector(".fieldBox.field-bot_order");
+    var deliveryTimeField = document.querySelector(".fieldBox.field-delivery_time");
+    var campaignField = document.querySelector(".fieldBox.field-campaign");
     var amountField = document.querySelector('.fieldBox.field-amount');
     var finalAmountField = document.querySelector('.fieldBox.field-final_amount_with_shipping');
     const botOrderNoRadio = document.getElementById('id_bot_order_0');
     const botOrderYesRadio = document.getElementById('id_bot_order_1');
     const sourceIdField = document.querySelector('.fieldBox.field-source_id');
+    var userIdField = document.querySelector(".fieldBox.field-user");
+    var msngrAccountField = document.querySelector(".fieldBox.field-msngr_account");
     var contactFieldset = null;
     var commentFieldset = null;
     var deliveryFieldset = null;
@@ -27,9 +32,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function toggleFields() {
         var selectedValue = orderTypeField.value;
-        if (["T", "D"].includes(selectedValue)) {
+        if (["T", "D", "R"].includes(selectedValue)) {
             manualDiscountField.style.display = "block";
-            dependentFields.style.display = "block";
+            if (deliveryTimeField) deliveryTimeField.style.display = "block";
+            if (campaignField) campaignField.style.display = "block";
+
+            if (selectedValue === "R") {
+                botOrderField.style.display = "none";
+                sourceIdField.style.display = "none";
+
+            } else {
+                botOrderField.style.display = "block";
+            }
+
             amountField.style.display = "block";
             finalAmountField.style.display = "block";
             if (contactFieldset) contactFieldset.style.display = "block";
@@ -41,7 +56,9 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
             // Для партнёрских источников
             manualDiscountField.style.display = "none";
-            dependentFields.style.display = "none";
+            botOrderField.style.display = "none";
+            deliveryTimeField.style.display = "none";
+            if (campaignField) campaignField.style.display = "none";
             // Показываем amount и скрываем final_amount_with_shipping
             amountField.style.display = "none";
             finalAmountField.style.display = "block";
@@ -52,7 +69,7 @@ document.addEventListener("DOMContentLoaded", function () {
             sourceIdField.required = true;
 
             // Если выбран Smoke, устанавливаем invoice в "Нет"
-            if (selectedValue === 'P2-1') {
+            if (selectedValue === 'P2-1' || selectedValue === 'P2-2') {
                 const invoiceYesRadio = document.getElementById('id_invoice_0'); // "Да"
                 const invoiceNoRadio = document.getElementById('id_invoice_1'); // "Нет"
                 if (invoiceNoRadio) {
@@ -98,15 +115,20 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (isBotOrder) {
                     sourceIdField.style.display = 'block';
                     sourceIdField.required = true;
+                    userIdField.style.display = 'none';
+                    msngrAccountField.style.display = 'block';
                 } else {
                     sourceIdField.style.display = 'none';
                     sourceIdField.required = false;
                     sourceIdField.value = '';
+                    userIdField.style.display = 'block';
+                    msngrAccountField.style.display = 'none';
                 }
             } else if (['P1-1', 'P1-2', 'P2-1', 'P2-2', 'P3-1'].includes(selectedOrderType)) {
                 // Always show source_id for partner orders
                 sourceIdRow.style.display = 'block';
-                sourceIdField.required = true;
+                // sourceIdField.required = true;
+                sourceIdField.required = false;
             } else {
                 // Default case
                 sourceIdRow.style.display = 'none';

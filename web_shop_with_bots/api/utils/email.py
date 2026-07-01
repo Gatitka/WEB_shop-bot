@@ -157,3 +157,7 @@ class MyUsernameChangedConfirmationEmail(MyBaseEmailMessage):
 
         context["logo_url"] = "http://example.com/path/to/your/logo.png"
         return context
+
+
+class MyTelegramReconnectEmail(MyBaseEmailMessage):
+    template_name = "email/my_telegram_reconnect.html"

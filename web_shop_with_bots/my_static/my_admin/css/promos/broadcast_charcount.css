@@ -1,0 +1,10 @@
+.promo-char-counter {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: 0.9;
+}
+
+.promo-char-counter.over-limit {
+    color: #f97373; /* красноватый */
+    font-weight: 600;
+}

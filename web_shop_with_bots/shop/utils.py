@@ -84,18 +84,24 @@ def get_first_order_true(obj):
 
 
 def split_and_get_comment(input_string):
-    # Разделение строки по подстроке "comment from user:"
-    parts = input_string.split(",  comment from user:")
+    if not input_string:
+        return None, None
 
-    # Если подстрока найдена
-    if len(parts) > 1:
-        # Получение всех символов до подстроки
-        address_comment = parts[0].strip()
-        comment = parts[1].strip()
-    else:
-        address_comment, comment = None, None
+    marker = "comment from user:"
 
-    return address_comment, comment
+    if marker not in input_string:
+        return input_string.strip() or None, None
+
+    address_part, comment = input_string.split(marker, 1)
+
+    address_part = address_part.strip()
+    comment = comment.strip()
+
+    # убрать хвостовую запятую, если было:
+    # flat: ..., floor: ..., interfon: ..., comment from user:...
+    address_part = address_part.rstrip(",").strip()
+
+    return address_part or None, comment or None
 
 
 # 'flat: 5, floor: 5, interfon: 5,  comment from user:5\\57'

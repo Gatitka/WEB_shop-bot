@@ -11,7 +11,7 @@ from catalog.models import Dish
 from delivery_contacts.models import (Delivery, DeliveryZone,
                                       Restaurant, Courier)
 from delivery_contacts.utils import get_delivery_cost
-from promos.models import Promocode
+from promos.models import Promocode, Campaign
 from promos.services import get_promocode_discount_amount
 from shop.utils import get_first_order_true, get_next_item_id, get_execution_date
 from users.models import BaseProfile, UserAddress
@@ -28,6 +28,8 @@ User = get_user_model()
 import logging
 
 logger = logging.getLogger(__name__)
+
+MAX_PERSONS_QTY = 150
 
 
 class Order(models.Model):
@@ -157,8 +159,9 @@ class Order(models.Model):
     )
     persons_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во приборов *',
-        validators=[MaxValueValidator(100)],
-        null=True, blank=True
+        validators=[MaxValueValidator(MAX_PERSONS_QTY)],
+        blank=True,
+        default=0
     )
 
     amount = models.DecimalField(
@@ -286,6 +289,8 @@ class Order(models.Model):
         help_text="Кем создан заказ (клиент / админ).",
         null=True, blank=True,
     )
+    # варианты 1 или 2
+
     source_id = models.CharField(
         'ID источника',
         max_length=20,
@@ -323,6 +328,14 @@ class Order(models.Model):
         related_name='orders',
         blank=True, null=True
     )
+    campaign = models.ForeignKey(
+        Campaign,
+        on_delete=models.PROTECT,
+        verbose_name='Рекл. кампания',
+        related_name='orders',
+        blank=True, null=True
+    )
+
 
     class Meta:
         ordering = ['-execution_date', '-order_number']
@@ -340,7 +353,8 @@ class Order(models.Model):
                        ("can_delete_order_rest_1", "Can delete order rest 1"),
                        ("can_create_order_rest_2", "Can create order rest 2"),
                        ("can_change_order_rest_2", "Can change order rest 2"),
-                       ("can_delete_order_rest_2", "Can delete order rest 2")
+                       ("can_delete_order_rest_2", "Can delete order rest 2"),
+                       ("view_superuser_report", "Can view superuser_report"),
                        ]
 
     def __str__(self):
@@ -420,7 +434,8 @@ class Order(models.Model):
 
     def calculate_amount_with_shipping(self, free_delivery=False):
         """
-        Рассчитывает final_amount с учетом скидки от промокода.
+        Рассчитывает amount с учетом доставки.
+        (если тип заказа - доставка)
         """
         if self.delivery.type == 'delivery':
 
@@ -492,8 +507,6 @@ class Order(models.Model):
 
         itemsqty = self.orderdishes.aggregate(qty=Sum('quantity'))
         self.items_qty = itemsqty['qty'] if itemsqty['qty'] is not None else 0
-        if self.persons_qty != self.items_qty:
-            self.persons_qty = self.items_qty
 
         super(Order, self).save(*args, **kwargs)
         # далее есть сигнал на сохранение актуальной корзины пользователя,
@@ -528,12 +541,11 @@ class Order(models.Model):
             return reverse('admin:shop_ordernetadverproxy_change', args=[self.pk])
         return reverse('admin:shop_order_change', args=[self.pk])
 
-    def transit_all_msngr_orders_to_base_profile(self, user):
+    def transit_all_msngr_orders_to_base_profile(self, user: BaseProfile):
         msngr_account = self.msngr_account
         updated_orders_count = Order.objects.filter(
             msngr_account=msngr_account,
             source='3',
-            user=None
         ).update(user=user)
 
         # Обновляем количество заказов у пользователя
@@ -631,11 +643,11 @@ class OrderDish(models.Model):
         blank=True,
         max_digits=8, decimal_places=2
     )
-    dish_article = models.PositiveSmallIntegerField(
+    dish_article = models.PositiveIntegerField(
         verbose_name='Арт. блюда/БД',
         null=True, blank=True,
     )
-    order_number = models.PositiveSmallIntegerField(
+    order_number = models.PositiveIntegerField(
         verbose_name='# заказа/БД',
         null=True, blank=True,
     )
@@ -671,7 +683,7 @@ class OrderDish(models.Model):
                 ).aggregate(ta=Sum('unit_amount'))['ta']
         self.order.amount = total_amount if total_amount is not None else 0
         self.order.save(update_fields=[
-            'delivery_cost', 'items_qty', 'persons_qty',
+            'delivery_cost', 'items_qty',
             'amount', 'amount_with_shipping',
             'promocode_disc_amount', 'discount_amount',
             'discount', 'discount_amount',
@@ -921,7 +933,7 @@ def get_discount(user, payment, delivery, source, amount, language, discount,
         # во всех остальных случаях скидка остается той же, что и задана
         order_details['amount'] = amount
         discounts = Discount.objects.filter(is_active=True)
-        max_discount, max_discount_am = select_discount_api(discounts,
+        max_discount, max_discount_am = select_discount_api(source, discounts,
                                                             order_details)
     elif is_admin_mode is True:
         # сохраняем ту скидку, что указана без перевыбора
@@ -977,13 +989,14 @@ def check_payment(source, delivery, payment, language):
     return False
 
 
-def select_discount_api(discounts, order_details):
+def select_discount_api(source, discounts, order_details):
     max_discount = [None, Decimal(0)]
     amount = order_details['amount']
     for discount in discounts:
         discount_am = Decimal(0)
 
-        if discount.type == 1 and order_details['auth_first_order']:
+        if (discount.type == 1 and order_details['auth_first_order']
+                and source == '4'): # скидка только на 1й заказ сайта
             discount_am = discount.calculate_discount(amount)
 
         elif discount.type == 2 and order_details['takeaway']:
@@ -1160,12 +1173,12 @@ class CartDish(models.Model):
         blank=True,
         max_digits=7, decimal_places=2
     )
-    dish_article = models.PositiveSmallIntegerField(
+    dish_article = models.PositiveIntegerField(
         verbose_name='Запись блюда в БД',
         help_text="Подтянется автоматически.",
         null=True, blank=True,
     )
-    cart_number = models.PositiveSmallIntegerField(
+    cart_number = models.PositiveIntegerField(
         verbose_name='Запись корзины в БД',
         help_text="Подтянется автоматически.",
         null=True, blank=True,

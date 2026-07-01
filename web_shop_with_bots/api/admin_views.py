@@ -1,23 +1,33 @@
-from django.contrib.admin.views.decorators import staff_member_required
-from shop.models import Order, OrderDish
-from django.utils import timezone
-from django.db.models import Sum, Count, F, Q
 import datetime
+from copy import copy
+from datetime import datetime, timedelta
+from django.template.response import TemplateResponse
+from django.conf import settings
+from django.contrib import messages, admin
+from django.contrib.admin.views.decorators import staff_member_required
+from django.db.models import Sum, Count, F, Q, Prefetch
+from django.http import HttpResponseRedirect, JsonResponse
+from django.shortcuts import redirect, render
+from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.urls import reverse
+from django.views import View
+from django.views.generic import TemplateView
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from django.utils.decorators import method_decorator
 from rest_framework.response import Response
-from django.conf import settings
-from django.db.models import Prefetch
-from django.views.generic import TemplateView
+
+from catalog.forms import DishPricesUploadForm
+from catalog.admin_utils.excell import (export_prices_to_excel,
+                                        import_prices_from_excel,
+                                        ExcelImportError)
+
 from delivery_contacts.models import Courier, Restaurant
-from django.http import HttpResponseRedirect, JsonResponse
 from shop.admin_reports import get_report_data
-from django.views import View
-from django.shortcuts import get_object_or_404
-from django.urls import reverse
-import uuid
-from datetime import datetime, timedelta
+from shop.models import Order, OrderDish
+from shop.reports import excel as xls_reports
+from shop.reports.report_page_forms import AdminXlsReportForm
+
 
 import logging.config
 
@@ -236,14 +246,18 @@ def get_receipt_data(order_id):
             'persons_qty': int(order.persons_qty),
             'source_data': get_source_display(order)
         }
-
+        logger.info('\nRECEIPT_DATA printed:\n%s', receipt_data)
         return Response(receipt_data)
     except Order.DoesNotExist:
+        logger.error('Order %s not found.', order_id)
         return Response({'error': 'Order not found'}, status=404)
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        return Response({'error': str(e), 'details': error_details}, status=500)
+        logger.error('ORDER %s RECEIPT PRINTING FAILED. \nError: %s \nOrder: %s',
+                     order_id, str(e), order)
+        return Response({'error': str(e), 'details': error_details},
+                        status=500)
 
 
 def get_source_display(order):
@@ -446,7 +460,7 @@ class AdminReportView(TemplateView):
     @method_decorator(staff_member_required)
     def dispatch(self, request, *args, **kwargs):
         # Check if user is superuser
-        if not request.user.is_superuser:
+        if not request.user.has_perm("shop.view_superuser_report"):
             return HttpResponseRedirect('/admin/shop/order/')
         return super().dispatch(request, *args, **kwargs)
 
@@ -503,50 +517,182 @@ class AdminReportView(TemplateView):
 
     def get_restaurant_data(self, start_date, end_date):
         """Get restaurant-related data aggregated by city and restaurant"""
-        orders = Order.objects.filter(
-                    execution_date__gte=start_date,
-                    execution_date__lt=end_date,
-                ).exclude(
-                    status='CND'
-                ).select_related(
-                        'delivery',
-                        'delivery_zone',
-                        'courier')
+        user = self.request.user
 
-        # Prepare result structure
+        # 1. Сначала определяем доступные рестораны
+        if user.is_superuser:
+            restaurants = Restaurant.objects.all()
+        else:
+            user_restaurant = getattr(user, 'restaurant', None)
+            if not user_restaurant:
+                return {}
+
+            restaurants = Restaurant.objects.filter(pk=user_restaurant.pk)
+
+        # 2. Из них получаем доступные города
+        allowed_city_codes = list(
+            restaurants.values_list('city', flat=True).distinct()
+        )
+        city_name_map = dict(settings.CITY_CHOICES)
+
+        if not allowed_city_codes:
+            return {}
+
+        # 3. Сразу формируем orders только по доступным ресторанам/городам
+        orders = (
+            Order.objects.filter(
+                execution_date__gte=start_date,
+                execution_date__lt=end_date,
+                restaurant__in=restaurants,
+            )
+            .exclude(status='CND')
+            .select_related('delivery', 'delivery_zone', 'courier', 'restaurant')
+        )
+
         restaurants_data = {}
 
-        # Process all cities
-        for city_code, city_name in settings.CITY_CHOICES:
+        # 4. Идём только по разрешённым городам
+        for city_code in allowed_city_codes:
             city_orders = orders.filter(city=city_code)
 
-            # Skip cities with no orders
             if not city_orders.exists():
                 continue
 
-            # Initialize city data
             city_data = {
-                'name': city_name,
+                'name': city_name_map.get(city_code, city_code),
                 'restaurants': {}
             }
 
-            # Get all restaurants in this city
-            restaurants = Restaurant.objects.filter(city=city_code)
+            city_restaurants = restaurants.filter(city=city_code)
 
-            # Process each restaurant
-            for restaurant in restaurants:
+            for restaurant in city_restaurants:
                 restaurant_orders = city_orders.filter(restaurant=restaurant)
 
-                # Skip restaurants with no orders
                 if not restaurant_orders.exists():
                     continue
 
-                restaurant_data_item = get_report_data(restaurant_orders)
-                # Add restaurant data to the city
-                city_data['restaurants'][restaurant.id] = restaurant_data_item
+                city_data['restaurants'][restaurant.id] = {
+                    "name": restaurant.address,
+                    "data": get_report_data(restaurant_orders)
+                }
 
-            # Only add cities with restaurants that have data
             if city_data['restaurants']:
                 restaurants_data[city_code] = city_data
 
         return restaurants_data
+
+
+@method_decorator(staff_member_required, name='dispatch')
+class AdminXlsReportView(View):
+    template_name = 'admin/xls_report.html'
+    form_class = AdminXlsReportForm
+    page_title = 'Скачать отчет по заказам'
+
+    def get(self, request, *args, **kwargs):
+        form = self.form_class(initial={'period': AdminXlsReportForm.PERIOD_TODAY})
+        return TemplateResponse(request, self.template_name, self._get_context(request, form))
+
+    def post(self, request, *args, **kwargs):
+        form = self.form_class(request.POST)
+        if not form.is_valid():
+            return TemplateResponse(request, self.template_name, self._get_context(request, form))
+
+        export_request = self._build_export_request(request, form.cleaned_data)
+        report_type = form.cleaned_data['report_type']
+
+        if report_type == AdminXlsReportForm.REPORT_FULL:
+            return xls_reports.export_full_orders_to_excel(None, export_request, None)
+        return xls_reports.export_orders_to_excel(None, export_request, None)
+
+    def _get_context(self, request, form):
+        from shop.models import Order
+        return {
+            **admin.site.each_context(request),
+            'opts': Order._meta,
+            'form': form,
+            'back_url': reverse('admin:shop_order_changelist'),
+        }
+
+    def _build_export_request(self, request, cleaned_data):
+        export_request = copy(request)
+        params = request.GET.copy()
+        params.clear()
+
+        date_from = cleaned_data.get('date_from')
+        date_to = cleaned_data.get('date_to')
+        period = cleaned_data.get('period')
+
+        if date_from and date_to:
+            params['execution_date__range__gte'] = date_from.strftime('%d.%m.%Y')
+            params['execution_date__range__lte'] = date_to.strftime('%d.%m.%Y')
+        else:
+            params['order_period'] = period
+
+        export_request.GET = params
+        return export_request
+
+
+class AdminDishPriceXlsDownloadView(View):
+
+    @method_decorator(staff_member_required)
+    def get(self, request):
+        return export_prices_to_excel(request)
+
+
+class AdminDishPriceXlsUploadView(View):
+    @method_decorator(staff_member_required)
+    def get(self, request):
+        form = DishPricesUploadForm()
+        return render(
+            request,
+            "catalog/dish/upload_prices.html",
+            {"form": form},
+        )
+
+    @method_decorator(staff_member_required)
+    def post(self, request):
+        form = DishPricesUploadForm(request.POST, request.FILES)
+
+        if not form.is_valid():
+            return render(
+                request,
+                "catalog/dish/upload_prices.html",
+                {"form": form},
+            )
+
+        try:
+            result = import_prices_from_excel(form.cleaned_data["file"])
+
+            messages.success(
+                request,
+                (
+                    f"Цены загружены. "
+                    f"Сайт: создано {result.created_site}, обновлено {result.updated_site}. "
+                    f"Партнёры: создано {result.created_partner}, обновлено {result.updated_partner}. "
+                    f"Пропущено строк: {result.skipped}."
+                ),
+            )
+
+            # Показываем построчные ошибки (битые ячейки, неполные данные и т.п.),
+            # если они есть — раньше такие строки либо валили весь импорт,
+            # либо молча игнорировались.
+            if result.errors:
+                for err in result.errors[:10]:
+                    messages.warning(
+                        request,
+                        f"Строка {err.row} (артикул {err.article}, город {err.city}): {err.message}",
+                    )
+                if len(result.errors) > 10:
+                    messages.warning(
+                        request,
+                        f"...и ещё {len(result.errors) - 10} строк с ошибками.",
+                    )
+
+        except ExcelImportError as e:
+            # Критическая ошибка структуры файла (неизвестный город, нет нужных колонок) —
+            # импорт не выполнялся вовсе.
+            messages.error(request, f"Ошибка загрузки цен: {e}")
+        except Exception as e:
+            messages.error(request, f"Непредвиденная ошибка при загрузке цен: {e}")
+
+        return redirect("admin:catalog_dish_changelist")

@@ -14,9 +14,13 @@ def get_report_data(orders_list):
     delivery_orders = []
     takeaway_orders = []
     partners_orders = []
+    restaurant_orders = []
     for order in orders_list:
         if order.delivery.type == 'delivery':
             delivery_orders.append(order)
+        if order.delivery.type == 'restaurant':
+            takeaway_orders.append(order)
+            restaurant_orders.append(order)
         elif order.delivery.type == 'takeaway':
             takeaway_orders.append(order)
             if order.source in settings.PARTNERS_LIST:
@@ -25,15 +29,16 @@ def get_report_data(orders_list):
     # Calculate the total discounted amount and total receipts
     total_amount = sum(order.final_amount_with_shipping for order in orders_list)
     total_qty = orders_list.count()
+    total_discounts_amount = sum(order.discount_amount for order in orders_list)
     total_receipts = sum(order.invoice for order in orders_list)
 
-    total_nocash = (sum(order.final_amount_with_shipping for order in orders_list if order.source != 'P2-2' and order.payment_type == 'cash' and order.invoice is False)
-                    + sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-2'))    # не та дверь платит налом без чека
+    total_nocash = (sum(order.final_amount_with_shipping for order in orders_list if order.source != 'P2-2' and order.payment_type == 'cash' and order.invoice is False))
+                    # + sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-2'))    # не та дверь платит налом без чека
     total_gotovina = sum(order.final_amount_with_shipping for order in orders_list if order.payment_type == 'cash' and order.invoice is True)
     _takeaway_gotovina = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type == 'cash' and order.invoice is True)
     # Calculate total takeaways
-    takeaway_nocash = (sum(order.final_amount_with_shipping for order in takeaway_orders if order.source != 'P2-2' and order.payment_type == 'cash' and order.invoice is False)
-                       + sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-2'))    # не та дверь платит налом без чека
+    takeaway_nocash = (sum(order.final_amount_with_shipping for order in takeaway_orders if order.source != 'P2-2' and order.payment_type == 'cash' and order.invoice is False))
+                      # + sum(order.final_amount_with_shipping for order in partners_orders if order.source == 'P2-2'))    # не та дверь платит налом без чека
     takeaway_gotovina = total_gotovina
     takeaway_card = sum(order.final_amount_with_shipping for order in takeaway_orders if order.payment_type in ['card', 'card_on_delivery'])
 
@@ -46,11 +51,16 @@ def get_report_data(orders_list):
             partners[partner_name] += order.final_amount_with_shipping
         else:
             partners[partner_name] = order.final_amount_with_shipping
+    if 'Не та дверь' in partners:
+        partners['Ne_ta_dver'] = partners.pop('Не та дверь')
+
+    restaurant_am = sum(order.final_amount_with_shipping for order in restaurant_orders)
 
     total_smoke = partners.get('Smoke', Decimal('0'))
+    total_ne_ta = partners.get('Ne_ta_dver', Decimal('0'))
     total_curiers_show = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash')
     total_curiers = sum(order.final_amount_with_shipping for order in delivery_orders if order.payment_type == 'cash' and order.invoice is True)
-    total_terminal = total_amount - total_nocash - total_smoke      #   - total_curiers
+    total_terminal = total_amount - total_nocash - total_smoke - total_ne_ta
 
     curiers = get_couriers_data(delivery_orders)
 
@@ -66,9 +76,11 @@ def get_report_data(orders_list):
         'total_terminal': total_terminal,
         #'total_receipts': total_receipts,
         'partners': partners,
+        'restaurant_am': restaurant_am,
         'couriers': curiers,
         'total_cash': total_cash,
         'drugo_bezgotovinsko': drugo_bezgotovinsko,
+        'total_discounts_amount': total_discounts_amount,
     }
 
     return report
@@ -196,33 +208,57 @@ def get_bezgotovinsko_report_total(curiers, partners):
 
 
 def get_range_period(request):
-    start_date_data = request.GET.get('execution_date__gte')
-    if start_date_data is not None:
-        start_date = datetime.strptime(start_date_data,
-                                       '%Y-%m-%d %H:%M:%S%z')
-    else:
-        start_date_data = request.GET.get('execution_date__range__gte')
-        if start_date_data is not None:
-            start_date = datetime.strptime(start_date_data,
-                                           '%d.%m.%Y')
-    start_pref = 'gte'
+    start_date = end_date = None
+    start_pref = end_pref = None
 
+    start_date_data = request.GET.get('execution_date__gte')
     end_date_data = request.GET.get('execution_date__lt')
+
+    if start_date_data is not None:
+        start_date = datetime.strptime(start_date_data, '%Y-%m-%d %H:%M:%S%z')
+        start_pref = 'gte'
+
     if end_date_data is not None:
-        end_date = datetime.strptime(end_date_data,
-                                     '%Y-%m-%d %H:%M:%S%z')
+        end_date = datetime.strptime(end_date_data, '%Y-%m-%d %H:%M:%S%z')
         end_pref = 'lt'
-    else:
+
+    if start_date is None and end_date is None:
+        start_date_data = request.GET.get('execution_date__range__gte')
         end_date_data = request.GET.get('execution_date__range__lte')
-        if end_date_data is not None:
-            end_date = (datetime.strptime(end_date_data,
-                                          '%d.%m.%Y')
-                        + timedelta(days=1) - timedelta(seconds=1))
+
+        if start_date_data is not None and end_date_data is not None:
+            start_date = datetime.strptime(start_date_data, '%d.%m.%Y')
+            end_date = datetime.strptime(end_date_data, '%d.%m.%Y')
+            start_pref = 'gte'
             end_pref = 'lte'
 
-    if (start_date_data is None
-            and end_date_data is None):
-        start_date, start_pref, end_date, end_pref = None, None, None, None
+    # если диапазон дат не выбран — смотрим quick filter
+    if start_date is None and end_date is None:
+        order_period = request.GET.get('order_period')
+        today = timezone.localdate()
+
+        if order_period == 'today':
+            start_date = today
+            end_date = today
+            start_pref = 'gte'
+            end_pref = 'lte'
+        elif order_period == 'yesterday':
+            d = today - timedelta(days=1)
+            start_date = d
+            end_date = d
+            start_pref = 'gte'
+            end_pref = 'lte'
+        elif order_period == 'tomorrow':
+            d = today + timedelta(days=1)
+            start_date = d
+            end_date = d
+            start_pref = 'gte'
+            end_pref = 'lte'
+        elif order_period == 'future':
+            start_date = today + timedelta(days=1)
+            end_date = None
+            start_pref = 'gte'
+            end_pref = None
 
     return start_date, start_pref, end_date, end_pref
 
@@ -387,7 +423,8 @@ def export_orders_to_excel(modeladmin, request, queryset):
     ws.cell(row=1, column=1).value = first_row
 
     # Заголовки столбцов
-    ws.append(['Заказ',
+    ws.append(['Дата', 'Время',
+               'Заказ',
                'Адрес',
                'Сумма',
                'N',
@@ -402,6 +439,8 @@ def export_orders_to_excel(modeladmin, request, queryset):
     for order in queryset:
         if order.delivery.type == 'delivery':
             address = order.recipient_address
+        elif order.delivery.type == 'restaurant':
+            address = 'ресторан'
         else:
             if order.source in ['1', '3', '4']:
                 address = 'самовывоз'
@@ -426,7 +465,8 @@ def export_orders_to_excel(modeladmin, request, queryset):
         courier = str(order.courier) if order.courier is not None else ""
 
         ws.append(
-            [
+            [   order.created.astimezone(None).strftime('%d-%m-%Y'),
+                order.created.astimezone(None).strftime('%H:%M'),
                 order.order_number,
                 address,
                 order.final_amount_with_shipping,

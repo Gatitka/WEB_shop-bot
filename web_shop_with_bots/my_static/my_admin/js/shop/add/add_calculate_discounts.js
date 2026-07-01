@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Изменение типа заказа
     if (orderTypeField) {
-        orderTypeField.addEventListener('change', handleDiscountChange());
+        orderTypeField.addEventListener('change', handleDiscountChange);
     }
 
     // Отслеживаем изменения в полях стоимости доставки

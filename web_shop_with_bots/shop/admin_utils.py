@@ -1,7 +1,7 @@
 """Функции, необходимые для отображения админки"""
 
 from shop.models import Order
-from shop.admin_reports import get_report_data
+from shop.reports.summary import get_report_data
 from delivery_contacts.models import DeliveryZone
 from delivery_contacts.utils import get_google_api_key
 from django.utils import timezone
@@ -10,6 +10,7 @@ from catalog.models import Category, DishCategory
 import re
 from django.utils.html import format_html
 from shop.utils import get_flag
+from decimal import Decimal, ROUND_HALF_UP
 
 
 def my_get_object(model, object_id, source=None):
@@ -150,7 +151,8 @@ def get_menu_data():
                 float(dish.final_price),     # основная цена
                 float(dish.final_price_p1),  # цена для партнера P1
                 float(dish.final_price_p2)   # цена для партнера P2
-            ]
+            ],
+            "Utensils": dish.utensils
         }
 
     # Удаляем категории без блюд
@@ -327,17 +329,48 @@ def get_info(obj):
 
         elif obj.delivery.type == 'takeaway':
             return 'самовывоз'
+        elif obj.delivery.type == 'restaurant':
+            return 'ресторан'
     else:
         return obj.get_source_display()
 
 
+# def get_custom_total(obj):
+#     if (obj.process_comment or
+#             obj.delivery_zone and obj.delivery_zone.name == 'уточнить'):
+#         return format_html(
+#             '<span style="color:red;">{}</span>',
+#             obj.final_amount_with_shipping)
+#     return obj.final_amount_with_shipping
+
 def get_custom_total(obj):
-    if (obj.process_comment or
-            obj.delivery_zone and obj.delivery_zone.name == 'уточнить'):
+    # красный стиль включается, если заказ с вопросами
+    style = ''
+    if (obj.process_comment or (obj.delivery_zone and obj.delivery_zone.name == 'уточнить')):
+        style = 'color:red;'
+
+    # считаем tooltip, если есть скидка и есть база для процента
+    tooltip = ''
+    if obj.discount_amount and obj.discount_amount != 0 and obj.amount_with_shipping:
+        # процент от суммы "с учетом доставки"
+        percent = (Decimal(obj.discount_amount) / Decimal(obj.amount_with_shipping)) * Decimal('100')
+        percent = percent.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        tooltip = f'Скидка: {obj.discount_amount} DIN ({percent}%)'
+
+    # если есть tooltip — кладём его в title, иначе просто значение
+    if tooltip:
         return format_html(
-            '<span style="color:red;">{}</span>',
-            obj.final_amount_with_shipping)
-    return obj.final_amount_with_shipping
+            '<span style="{}" title="{}">{}<br>🔻</span>',
+            style,
+            tooltip,
+            obj.final_amount_with_shipping,
+            "%"
+        )
+    return format_html(
+        '<span style="{}">{}</span>',
+        style,
+        obj.final_amount_with_shipping,
+    )
 
 
 def get_note(obj):
@@ -345,7 +378,8 @@ def get_note(obj):
     В форме списка заказов формирует колонку ПРИМЕЧАНИЕ.
     В случае партнерского заказа показывает его id в системе источнике.
     """
-    if obj.source in ['3'] + settings.PARTNERS_LIST:
+    # if obj.source in ['3'] + settings.PARTNERS_LIST:   при ботобот наглядно проверялось есть ли ID заказа
+    if obj.source in settings.PARTNERS_LIST:
         source = obj.get_source_display()
         source_id = f'{obj.source_id}' if obj.source_id is not None else ''
         if obj.source_id:
@@ -385,11 +419,22 @@ def get_contacts(obj):
         if obj.is_first_order:
             name = f'{lang}🥇👤 {obj.recipient_name}'
         if obj.user.messenger_account:
-            msngr_link = format_html(obj.user.messenger_account.msngr_link)
-
+            if obj.user.messenger_account.msngr_link:
+                msngr_link = format_html(obj.user.messenger_account.msngr_link)
+            msngr_link = format_html("<span style='color:#888;'>"
+                                     "Чат недоступен")
+        else:
+            msngr_link = format_html("<span style='color:#888;'>"
+                                     "нет мессенджера")
     else:
         if obj.msngr_account:
-            msngr_link = format_html(obj.msngr_account.msngr_link)
+            if obj.msngr_account.msngr_link:
+                msngr_link = format_html(obj.msngr_account.msngr_link)
+            msngr_link = format_html("<span style='color:#888;'>"
+                                     "Чат недоступен")
+        else:
+            msngr_link = format_html("<span style='color:#888;'>"
+                                     "нет мессенджера")
 
     return format_html('{}<br>{}<br>{}',
                        name,
