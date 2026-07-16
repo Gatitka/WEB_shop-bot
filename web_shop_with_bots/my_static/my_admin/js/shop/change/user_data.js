@@ -9,7 +9,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateUserFields() {
         const userId = userField.value;
         if (userId) {
-            fetch(`/api/v1/get_user_data/?user_id=${userId}`)
+            // Город заказа - чтобы "мои адреса" показывали только адреса
+            // того же города, что и сам заказ. getOrderCity() отдает
+            // отображаемое название ("Novi Sad"), приводим к виду БД
+            // ("NoviSad") - как и для calculate_delivery.
+            const city = (getOrderCity() || '').replace(' ', '');
+            const cityParam = city ? `&city=${encodeURIComponent(city)}` : '';
+
+            fetch(`/api/v1/get_user_data/?user_id=${userId}${cityParam}`)
                 .then(response => response.json())
                 .then(data => {
                     recipientNameField.value = recipientNameField.value || data.recipient_name || '';
@@ -91,15 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const addressComment = selectedOption.getAttribute('data-address_comment');
-        if (addressComment) {
-            // Устанавливаем значение скрытого поля с данными адреса
-            const addressCommentInput = document.querySelector('#id_address_comment');
-            addressCommentInput.value = addressComment;
-        } else {
-            // Если комментарий к адресу не указан, очищаем скрытое поле с комментарием
-            const addressCommentInput = document.querySelector('#id_address_comment');
-            addressCommentInput.value = '';
-        }
+        const addressCommentInput = document.querySelector('#id_address_comment');
+        addressCommentInput.value = addressComment || '';
+        addressCommentInput.dispatchEvent(new Event('change'));
 
         const recipientAddressInput = document.querySelector('#id_recipient_address');
         // Получаем только адрес из выбранного варианта

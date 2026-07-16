@@ -757,11 +757,12 @@ class DishMenuSerializer(TranslatableModelSerializer):
 
     units_in_set_uom = UOMSerializer(read_only=True)
 
+    price = serializers.SerializerMethodField()
+
     class Meta:
         fields = ('article',
                   'translations',
-                  'category',
-                  'price', 'final_price',
+                  'category', 'price',
                   'spicy_icon', 'vegan_icon',
                   'image',
                   'weight_volume', 'weight_volume_uom',
@@ -770,17 +771,21 @@ class DishMenuSerializer(TranslatableModelSerializer):
                   'utensils', 'includes_standard_set'
                   )
         model = Dish
-        read_only_fields = ('article',
-                            'translations',
-                            'category',
-                            'price', 'final_price',
-                            'spicy_icon', 'vegan_icon',
-                            'image',
-                            'weight_volume', 'weight_volume_uom',
-                            'units_in_set', 'units_in_set_uom',
-                            'is_in_shopping_cart',
-                            'utensils', 'includes_standard_set'
-                            )
+        read_only_fields = fields
+
+    def get_price(self, obj):
+        prices = getattr(obj, "prefetched_city_prices", None)
+
+        if prices is None:
+            prices = obj.city_prices.all()
+
+        return {
+            item.city: {
+                "price": item.price,
+                "final_price": item.final_price,
+            }
+            for item in prices
+        }
 
     def get_is_in_shopping_cart(self, dish: Dish) -> bool:
         """Получает булевое значение, если авторизованный пользователь имеет
@@ -817,48 +822,6 @@ class DishMenuSerializer(TranslatableModelSerializer):
             if "msngr_text" in translation:
                 del translation["msngr_text"]
         return rep
-
-
-class NEWDishMenuSerializer(TranslatableModelSerializer):
-    category = CategorySerializer(many=True, read_only=True)
-    translations = TranslatedFieldsField(shared_model=Dish, read_only=True)
-    weight_volume_uom = UOMSerializer(read_only=True)
-    units_in_set_uom = UOMSerializer(read_only=True)
-
-    price = serializers.SerializerMethodField()
-
-    class Meta:
-        fields = (
-            "article",
-            "translations",
-            "category",
-            "price",
-            "spicy_icon",
-            "vegan_icon",
-            "image",
-            "weight_volume",
-            "weight_volume_uom",
-            "units_in_set",
-            "units_in_set_uom",
-            "utensils",
-            "includes_standard_set",
-        )
-        model = Dish
-        read_only_fields = fields
-
-    def get_price(self, obj):
-        prices = getattr(obj, "prefetched_city_prices", None)
-
-        if prices is None:
-            prices = obj.city_prices.all()
-
-        return {
-            item.city: {
-                "price": item.price,
-                "final_price": item.final_price,
-            }
-            for item in prices
-        }
 
 
 # ---------------- РЕСТОРАНЫ + ДОСТАВКА + ПРОМО новости --------------------
@@ -1437,8 +1400,11 @@ class BaseOrderSerializer(serializers.ModelSerializer):
         cart = self.validated_data.get('cart', None)
         # получаем общую сумму товаров
         self.validated_data['amount'] = get_amount(
-                                            cart,
-                                            self.validated_data['orderdishes'])
+            cart,
+            self.validated_data['orderdishes'],
+            city=self.validated_data.get('city'),
+            source=self.validated_data.get('source'),
+        )
 
         # получаем стоимость доставки
         if self.delivery.type == 'delivery':

@@ -310,6 +310,11 @@ def import_prices_from_excel(file) -> ImportResult:
     result.updated_partner = len(partner_to_update)
     result.created_partner = len(partner_to_create)
 
+    # после загрузки новых цен инвалидируем кэш
+    if site_to_create or site_to_update or partner_to_create or partner_to_update:
+        from api.utils.core_cache import invalidate_menu_cache
+        invalidate_menu_cache()
+
     return result
 
 

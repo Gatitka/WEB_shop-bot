@@ -1,4 +1,4 @@
-// Создает кэши для цен (fetchedPrices) и скидок (fetchedDiscounts)
+// Создает кэши для цен (fetchedPrices) и скидок (discounts)
 // Загружает скидки через API при загрузке страницы
 // При выборе товара запрашивает цену через API, кэширует полученную цену в fetchedPrices
 // Пересчитывает суммы строки и общую сумму заказа.
@@ -25,71 +25,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const currentDomain = getCurrentDomain();
 
-    var fetchedDiscounts = {}; // Объект для хранения полученных скидок
+    // Загружаем данные категорий и блюд, переданные Django
+    const dishesElement = document.getElementById('dishes-data');
+    const dishes = dishesElement ? JSON.parse(dishesElement.textContent) : {};
 
-    // Функция для выполнения запроса к эндпоинту и сохранения данных о скидке
-    function fetchDiscounts() {
-        let discountsApiUrl; // URL вашего API эндпоинта
-        if (currentDomain === '127.0.0.1') {
-                discountsApiUrl = `http://${currentDomain}:8000/api/v1/get_discounts/`;
-            } else {
-                discountsApiUrl = `https://${currentDomain}/api/v1/get_discounts/`;
-            }
+    console.log('Загруженные блюда:', dishes);
 
-        fetch(discountsApiUrl)
-            .then(response => response.json())
-            .then(data => {
-                fetchedDiscounts = data;
-                console.log('Discounts fetched:', fetchedDiscounts);
-            })
-            .catch(error => {
-                console.error('Error fetching discounts:', error);
-            });
-    }
+    const discountsElement = document.getElementById('discounts-data');
+    const discounts = discountsElement ? JSON.parse(discountsElement.textContent) : {};
 
-    // Вызываем функцию для получения данных о скидке при загрузке страницы
-    fetchDiscounts();
-
-    // Создаем объект для хранения уже полученных цен
-    var fetchedPrices = {};
-
-    // Добавляем функцию для получения цен для выбранных блюд при загрузке страницы
-    function fetchPricesForSelectedDishes() {
-        var dishSelects = document.querySelectorAll('.field-dish select');
-        dishSelects.forEach(function(select) {
-            var dishId = select.value;
-            console.log('dishId:', dishId);
-            // Проверяем, выбрано ли блюдо перед выполнением запроса цены
-            if (dishId) {
-                var unitPriceField = select.closest('tr').querySelector('.field-unit_price p');
-                fetchAndUpdatePrice(dishId, unitPriceField);
-            }
-        });
-    }
-
-    // Вызываем функцию при загрузке страницы
-    fetchPricesForSelectedDishes();
-
-    // Обработчик изменения source для пересчета цен
-    document.getElementById('id_source').addEventListener('change', function() {
-        document.querySelectorAll('.field-dish select').forEach(function(select) {
-            if (select.value) {
-                var unitPriceField = select.closest('tr').querySelector('.field-unit_price p');
-                fetchAndUpdatePrice(select.value, unitPriceField);
-            }
-        });
-    });
+    console.log('Загруженные скидки:', discounts);
 
     // Обработчик события изменения значения выпадающего списка блюда
     document.addEventListener('change', function(event) {
         if (event.target && event.target.closest('.field-dish select')) {
             var dishId = event.target.value;
-            var unitPriceField = event.target.closest('tr').querySelector('.field-unit_price p');
+            var row = event.target.closest('tr');
+            var unitPriceField = row.querySelector('.field-unit_price p');
 
-            // Логирование для проверки
-            console.log('Change event fired for dish selection.');
-            console.log('dishId:', dishId);
-            // Выполняем AJAX-запрос для получения цены блюда
+            if (!dishId || !unitPriceField) {
+                return;
+            }
+
             fetchAndUpdatePrice(dishId, unitPriceField);
         }
     });
@@ -232,20 +189,36 @@ document.addEventListener('DOMContentLoaded', function() {
         document.dispatchEvent(event);
     }
 
+    function normalizeCity(value) {
+        return (value || '').replace(/\s+/g, '').toLowerCase();
+    }
     // Функция выбора цены в зависимости от источника заказа
-    function getSourcePrice(response, source) {
-        if (['P1-1', 'P1-2'].includes(source)) {
-            return response.price_p1;
+    function getDishPrice(dishInfo, orderType, city) {
+        const prices = dishInfo.Prices || {};
+
+        const cityKey = Object.keys(prices).find(
+            key => normalizeCity(key) === normalizeCity(city)
+        );
+
+        const cityPrices = cityKey ? prices[cityKey] : null;
+        if (!cityPrices) return 0;
+
+        if (['P1-1', 'P1-2'].includes(orderType) && cityPrices.P1 != null) {
+            return cityPrices.P1;
         }
-        if (['P2-1', 'P2-2'].includes(source)) {
-            return response.price_p2;
+
+        if (['P2-1', 'P2-2'].includes(orderType) && cityPrices.P2 != null) {
+            return cityPrices.P2;
         }
-        return response.price;
+
+        return cityPrices.site ?? 0;
     }
 
     // Функция для выполнения AJAX-запроса и обновления цены блюда
     function fetchAndUpdatePrice(dishId, unitPriceField) {
-        const source = document.getElementById('id_source').value;
+        const orderType = document.getElementById('id_order_type').value;
+        const cityField = document.querySelector('.fieldBox.field-city .readonly');
+        const city = cityField ? cityField.textContent.trim() : '';
 
         // Формируем URL в зависимости от текущего домена
         var currentDomain = window.location.hostname;
@@ -257,11 +230,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Проверяем, была ли уже получена цена для данного блюда
-        if (fetchedPrices[dishId]) {
+        if (dishes[dishId]) {
             // Если цена уже получена, обновляем только поле с ценой
-            const price = getSourcePrice(fetchedPrices[dishId], source)
+            const price = getDishPrice(dishes[dishId], orderType, city)
 
-            unitPriceField.innerHTML = price;
+            unitPriceField.innerHTML = price.toFixed(2);
             calculateAmount(unitPriceField);
         } else {
             var xhr = new XMLHttpRequest();
@@ -272,10 +245,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
                     var response = JSON.parse(xhr.responseText);
                     // Сохраняем полученную цену
-                    fetchedPrices[dishId] = response;
-                    const price = getSourcePrice(response, source);
-                    unitPriceField.innerHTML = price;
+                    fetchedPrices[dishId] = response.Prices;
+                    const price = getDishPrice({ Prices: response.Prices }, orderType, city);
+                    unitPriceField.innerHTML = price.toFixed(2);
                     calculateAmount(unitPriceField);
+
+                    console.log(`Цена для блюда ${dishId} получена через API: ${price}`);
                 }
             };
             xhr.send();
@@ -493,8 +468,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Рассчитываем скидку по выбранному типу
         var discountAmount = 0;
-        if (discountSelectValue && fetchedDiscounts[discountSelectValue]) {
-            var discount = fetchedDiscounts[discountSelectValue];
+        if (discountSelectValue && discounts[discountSelectValue]) {
+            var discount = discounts[discountSelectValue];
 
             if (discount.discount_perc) {
                 discountAmount = baseAmount * (discount.discount_perc / 100);
@@ -579,5 +554,25 @@ document.addEventListener('DOMContentLoaded', function() {
             calculateFinalAmount();
         });
     }
+
+    function restorePricesAfterValidationError() {
+        if (!window.orderAdminHasErrors) return;
+
+        document.querySelectorAll('.field-dish select').forEach(function(select) {
+            if (!select.value) return;
+
+            const row = select.closest('tr');
+            const unitPriceField = row.querySelector('.field-unit_price p');
+            if (!unitPriceField) return;
+
+            const currentPrice = parseFloat(unitPriceField.textContent || '0');
+            if (!currentPrice) {
+                fetchAndUpdatePrice(select.value, unitPriceField);
+            }
+        });
+    }
+    setTimeout(function() {
+        restorePricesAfterValidationError();
+    }, 300);
 
 })

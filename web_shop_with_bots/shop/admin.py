@@ -55,25 +55,28 @@ class OrderDishInline(admin.TabularInline):
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == 'dish':
-            kwargs['queryset'] = Dish.objects.all().prefetch_related('translations')
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
-    # def formfield_for_foreignkey(self, db_field, request, **kwargs):
-    #     if db_field.name == 'dish':
-    #         qs = Dish.objects.all().prefetch_related('translations')
-    #         return forms.ModelChoiceField(queryset=qs)
-    #     return super().formfield_for_foreignkey(db_field, request, **kwargs)
-    # def formfield_for_foreignkey(self, db_field, request, **kwargs):
-    #     if db_field.name == 'dish':
-    #         # This explicitly creates a proper ModelChoiceField
-    #         qs = Dish.objects.all().prefetch_related('translations')
-    #         kwargs['queryset'] = qs
-    #     return super().formfield_for_foreignkey(db_field, request, **kwargs)
+            if not hasattr(request, '_dish_fk_cache'):
+                dishes = list(
+                    Dish.objects.filter(is_active=True).prefetch_related('translations')
+                )
+                request._dish_fk_cache = {
+                    'pks': [d.pk for d in dishes],
+                    'labels': {d.pk: str(d) for d in dishes},
+                }
 
-    # def save_formset(self, request, form, formset, change):
-    #     instances = formset.save(commit=False)
-    #     for instance in instances:
-    #         instance.save()  # Передаем флаг в каждый экземпляр
-    #     formset.save_m2m()
+            field = super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+            # лёгкий queryset без prefetch — переводы больше не нужны здесь
+            field.queryset = Dish.objects.filter(
+                pk__in=request._dish_fk_cache['pks']
+            ).only('article')
+
+            # подписи — из готового словаря, а не через str(dish) → без похода за переводами
+            labels = request._dish_fk_cache['labels']
+            field.label_from_instance = lambda obj, labels=labels: labels.get(obj.pk, obj.pk)
+
+            return field
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 class CustomChangeList(ChangeList):
@@ -156,7 +159,8 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
                        # 'orderdishes_inline',
                        'get_user_data',
                        'get_delivery_type',
-                       'get_delivery_cost'
+                       'get_delivery_cost',
+                       'city'
                        ]
     list_filter = (('execution_date', DateRangeFilterBuilder()),
                    admin_filters.OrderPeriodFilter,
@@ -180,6 +184,13 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
     add_form_template = 'shop/order/add_form.html'
     change_form_template = 'shop/order/change_form.html'
     change_list_template = 'shop/order/change_list.html'
+
+    class Media:
+        css = {
+            "all": (
+                "my_admin/css/shop/discount_display.css",
+            )
+        }
 
     def get_form(self, request, obj=None, **kwargs):
         """
@@ -205,8 +216,9 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
                 }),
                 ('Сумма заказа', {
                     'fields': (
-                        ('amount', 'final_amount_with_shipping', 'items_qty', 'persons_qty'),
-                        ('manual_discount')
+                        ('amount', 'final_amount_with_shipping'),
+                        ('manual_discount'),
+                        ('items_qty', 'persons_qty')
                     )
                 }),
                 ('Контактная информация', {
@@ -223,6 +235,7 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
                     "classes": ["collapse"],
                     'fields': (
                         ('recipient_address', 'coordinates', 'address_comment'),
+                        ('flat', 'floor', 'interfon'),
                         ('delivery_cost', 'delivery_zone', ),
                     )
                 }),
@@ -251,9 +264,8 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
                 "classes": ["collapse"],
                 'fields': (
                     ('status', 'language'),
-                    ('source', 'source_id'),
+                    ('order_type', 'payment_type', 'invoice', 'source_id'),
                     ('city', 'restaurant'),
-                    ('delivery', 'payment_type', 'invoice'),
                     ('delivery_time', 'campaign'),
                 )
             }),
@@ -274,6 +286,7 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
                 "classes": delivery_collapse_class,
                 'fields': (
                     ('recipient_address', 'coordinates', 'address_comment'),
+                    ('flat', 'floor', 'interfon'),
                     ('my_delivery_address', 'my_address_coordinates',
                         'my_address_comments'),
                     ('calculate_delivery_button', 'auto_delivery_zone',
@@ -379,8 +392,12 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
 
             extra_context = admin_utils.get_changelist_extra_context(request, extra_context)
 
-            return super(OrderAdmin, self).changelist_view(
+            response = super(OrderAdmin, self).changelist_view(
                 request, extra_context=extra_context)
+            response["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response["Pragma"] = "no-cache"
+            return response
+
         except Exception as e:
             from django.contrib import messages
             from django.http import HttpResponseRedirect
@@ -424,17 +441,13 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
         if obj and obj.origin in ['1', '4']:
             self.form.base_fields['recipient_name'].required = True
             self.form.base_fields['recipient_phone'].required = True
-        self.form.base_fields['delivery'].required = True
 
         return fields
 
     def formfield_for_dbfield(self, db_field, **kwargs):
         formfield = super().formfield_for_dbfield(db_field, **kwargs)
 
-        if db_field.name == 'delivery':
-            formfield.required = True
-
-        elif (db_field.name == 'auto_delivery_zone'
+        if (db_field.name == 'auto_delivery_zone'
                 or db_field.name == 'auto_delivery_cost'):
 
             kwargs['widget'] = admin.widgets.AdminTextInputWidget(
@@ -484,6 +497,11 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
         # try:
         #     logger.info(f'Order save_model: ID={obj.pk}, change={change}, USER:{request.user}')
         # 1) если user не выбран, но есть msngr_account — подтянуть профиль
+        print("FORM IS VALID:", form.is_valid())
+        print("FORM ERRORS:", form.errors)
+        print("FORM NON FIELD ERRORS:", form.non_field_errors())
+        print("CLEANED DATA KEYS:", getattr(form, "cleaned_data", {}).keys())
+        print("ORDER:", obj.pk, obj.city, obj.restaurant, obj.delivery, obj.source)
         if obj.source in ['3', '4'] and obj.msngr_account and not obj.user_id:
             profile = getattr(obj.msngr_account, 'profile', None)
             if profile is not None:
@@ -559,7 +577,7 @@ class OrderAdmin(ValidationLoggingMixin, admin.ModelAdmin):
                 return '-'
 
     get_msngr_link.allow_tags = True
-    get_msngr_link.short_description = 'Чат'
+    get_msngr_link.short_description = '💬'    #'Чат'
 
     def get_user_data(self, instance):
         if instance.user and instance.msngr_account is None:
@@ -604,7 +622,8 @@ class BaseOrderProxyAdmin(ValidationLoggingMixin, admin.ModelAdmin):
     list_display = ('custom_order_number', 'custom_total', 'note', 'invoice', 'status')
     list_editable = ['status', 'invoice']
     list_display_links = ('custom_order_number',)
-    readonly_fields = ['items_qty', 'amount', 'created', 'order_number', 'final_amount_with_shipping']
+    readonly_fields = ['items_qty', 'amount', 'created', 'order_number',
+                       'final_amount_with_shipping', 'city']
     list_filter = (('execution_date', DateRangeFilterBuilder()),
                    admin_filters.OrderPeriodFilter,
                    admin_filters.InvoiceFilter,
@@ -654,7 +673,10 @@ class BaseOrderProxyAdmin(ValidationLoggingMixin, admin.ModelAdmin):
             extra_context,
             source=self.source_code
         )
-        return super().changelist_view(request, extra_context=extra_context)
+        response = super().changelist_view(request, extra_context=extra_context)
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response["Pragma"] = "no-cache"
+        return response
 
     def has_change_permission(self, request, obj=None):
         if request.user.is_superuser:
@@ -677,7 +699,7 @@ class BaseOrderProxyAdmin(ValidationLoggingMixin, admin.ModelAdmin):
             return [
                 ('Данные заказа', {
                     'fields': (
-                        ('source_id', 'order_type', 'invoice', 'payment_type'),
+                        ('source_id', 'order_type', 'invoice', 'payment_type', 'city'),
                         ('final_amount_with_shipping', 'items_qty')
                     )
                 }),
@@ -687,7 +709,7 @@ class BaseOrderProxyAdmin(ValidationLoggingMixin, admin.ModelAdmin):
             ('Данные заказа', {
                     'fields': (
                         ('status'),
-                        ('source_id', 'order_type', 'invoice', 'payment_type'),
+                        ('source_id', 'order_type', 'invoice', 'payment_type', 'city'),
                         ('final_amount_with_shipping', 'items_qty')
                     )
                 }),
@@ -696,7 +718,9 @@ class BaseOrderProxyAdmin(ValidationLoggingMixin, admin.ModelAdmin):
     def add_view(self, request, form_url="", extra_context=None):
         # Добавляем меню в контекст
         extra_context = extra_context or {}
-        extra_context = admin_utils.get_addchange_extra_context(request, extra_context)
+        extra_context = admin_utils.get_addchange_extra_context(
+                request, extra_context, 'partner'
+            )
 
         return super().add_view(request, form_url, extra_context=extra_context)
 
@@ -705,7 +729,7 @@ class BaseOrderProxyAdmin(ValidationLoggingMixin, admin.ModelAdmin):
         try:
             extra_context = extra_context or {}
             extra_context = admin_utils.get_addchange_extra_context(
-                request, extra_context, 'all'
+                request, extra_context, 'partner'
             )
             return super().change_view(request, object_id, form_url, extra_context=extra_context)
 

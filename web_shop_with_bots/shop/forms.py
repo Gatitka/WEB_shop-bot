@@ -4,7 +4,7 @@ from django import forms
 
 from delivery_contacts.models import Delivery, Courier, Restaurant
 from delivery_contacts.services import get_delivery_zone
-from delivery_contacts.utils import parce_coordinates
+from delivery_contacts.utils import parce_coordinates, parse_address_comment
 from shop.models import (Order, OrderGlovoProxy, OrderWoltProxy,
                          OrderSmokeProxy, OrderNeTaDverProxy, OrderSealTeaProxy,
                          DeliveryZone, Delivery, Discount)
@@ -21,6 +21,17 @@ import logging
 
 
 #logger = logging.getLogger(__name__)
+
+
+def build_address_comment(flat, floor, interfon):
+    """
+    Собирает строку address_comment из отдельных полей формы.
+    Формат совпадает с delivery_contacts.utils.get_address_comment /
+    parse_address_comment, чтобы парсинг оставался единым для всего проекта.
+    """
+    return (f"flat: {(flat or '').strip()}, "
+            f"floor: {(floor or '').strip()}, "
+            f"interfon: {(interfon or '').strip()}")
 
 
 def url_params_from_lookup_dict(lookups):
@@ -110,6 +121,18 @@ class OrderAddForm(forms.ModelForm):
         required=False
     )
 
+    flat = forms.CharField(
+        label='Кв./офис', max_length=20, required=False,
+        widget=forms.TextInput(attrs={'size': '6', 'placeholder': 'кв./офис'}))
+
+    floor = forms.CharField(
+        label='Этаж', max_length=20, required=False,
+        widget=forms.TextInput(attrs={'size': '6', 'placeholder': 'этаж'}))
+
+    interfon = forms.CharField(
+        label='Домофон', max_length=20, required=False,
+        widget=forms.TextInput(attrs={'size': '10', 'placeholder': 'домофон'}))
+
     # error_message = forms.CharField(
     #     label='ошибка',
     #     widget=forms.TextInput(
@@ -126,9 +149,10 @@ class OrderAddForm(forms.ModelForm):
                   'recipient_name', 'recipient_phone', 'recipient_address',
                   'address_comment', 'delivery_time', 'delivery_zone', 'delivery_cost',
                   'manual_discount', 'comment', 'coordinates', 'city', 'persons_qty']  # Только необходимые поля
+
         widgets = {
-            'city': forms.HiddenInput(),  # Использовать скрытое поле
             'coordinates': forms.HiddenInput(),  # Использовать скрытое поле
+            'address_comment': forms.HiddenInput(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -139,8 +163,8 @@ class OrderAddForm(forms.ModelForm):
         # if self.instance.pk is None and not user.is_superuser:
         #     set_admin_data(self, user)
         if self.instance.pk is None and user and not user.is_superuser and hasattr(user, 'city') and user.city:
-            self.fields['city'].initial = user.city
-            self.initial['city'] = user.city  # Также устанавливаем в initial
+            self.initial['city'] = user.city
+            self.instance.city = user.city
 
         # Исключаем скидки на 1й заказ (1) и на оплату наличными при доставке (3)
         if 'discount' in self.fields:
@@ -166,6 +190,16 @@ class OrderAddForm(forms.ModelForm):
             ]
 
         self.fields['manual_discount'].required = False
+
+        # Разбиваем address_comment на 3 поля для удобства ввода.
+        # initial выставляем ТОЛЬКО для незаполненной (обычный GET) формы —
+        # при повторном показе после ошибки валидации Django сам подставит
+        # то, что админ уже ввёл в flat/floor/interfon, из POST.
+        if not self.is_bound:
+            parsed = parse_address_comment(self.instance.address_comment)
+            self.fields['flat'].initial = parsed['flat']
+            self.fields['floor'].initial = parsed['floor']
+            self.fields['interfon'].initial = parsed['interfon']
 
     def clean_order_type(self):
         """Process the order_type field to determine delivery type and order_type"""
@@ -284,6 +318,17 @@ class OrderAddForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+
+        # разбираем/собираем адрес
+        address_comment = build_address_comment(
+            cleaned_data.get('flat'),
+            cleaned_data.get('floor'),
+            cleaned_data.get('interfon'),
+        )
+        cleaned_data['address_comment'] = address_comment
+        self.instance.address_comment = address_comment
+
+        # прочее
         if not cleaned_data.get('city') and hasattr(self.user, 'city') and self.user.city:
             cleaned_data['city'] = self.user.city
             self.instance.city = self.user.city
@@ -435,26 +480,18 @@ class OrderChangeForm(forms.ModelForm):
         initial=True  # Устанавливаем дефолтное значение как 'Да'
     )
 
-    # flat = forms.CharField(
-    #            label='Квартира',
-    #            max_length=20,
-    #            required=False,
-    #            widget=forms.TextInput(attrs={'size': '2',
-    #                                          'autocomplete': 'on'}))
+    flat = forms.CharField(
+        label='Кв./офис', max_length=20, required=False,
+        widget=forms.TextInput(attrs={'size': '6', 'placeholder': 'кв./офис'}))
 
-    # floor = forms.CharField(
-    #            label='Этаж',
-    #            max_length=20,
-    #            required=False,
-    #            widget=forms.TextInput(attrs={'size': '2',
-    #                                          'autocomplete': 'on'}))
+    floor = forms.CharField(
+        label='Этаж', max_length=20, required=False,
+        widget=forms.TextInput(attrs={'size': '6', 'placeholder': 'этаж'}))
 
-    # interfon = forms.CharField(
-    #            label='Домофон',
-    #            max_length=20,
-    #            required=False,
-    #            widget=forms.TextInput(attrs={'size': '5',
-    #                                          'autocomplete': 'on'}))
+    interfon = forms.CharField(
+        label='Домофон', max_length=20, required=False,
+        widget=forms.TextInput(attrs={'size': '10', 'placeholder': 'домофон'}))
+
     # user = forms.CharField(
     #     required=False,
     #     widget=ForeignKeyRawIdWidget(
@@ -462,12 +499,23 @@ class OrderChangeForm(forms.ModelForm):
     #         admin.site)
     # )
 
+    order_type = forms.ChoiceField(
+        choices=settings.INTERNAL_TYPES,
+        label='Тип заказа',
+        required=True
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         user = self.user
 
+        # включаем кастомные поля, выключаем некоторые
         model_fields = {f.name: f for f in Order._meta.fields}
+        excluded_auto_fields = {'city', 'delivery', 'source'}
+
         for field_name, field in model_fields.items():
+            if field_name in excluded_auto_fields:
+                continue
             if field_name not in self.fields:
                 formfield = field.formfield()
                 if formfield:
@@ -481,14 +529,13 @@ class OrderChangeForm(forms.ModelForm):
         if self.instance is None or self.instance.process_comment is None:
             self.fields['process_comment'].widget = forms.HiddenInput()
 
+        # установить значение order_type
+        self._arrange_order_type_field()
+
         if not user.is_superuser:
             user_city = self.instance.city
             # self.fields['created'].widget = forms.HiddenInput()
-            self.fields['delivery'].widget = FilteredByUserAndCityWidget(
-                is_superuser=user.is_superuser,
-                city=user_city,
-                model_class=Delivery,
-            )
+
             self.fields['courier'].widget = FilteredByUserAndCityWidget(
                                                 is_superuser=user.is_superuser,
                                                 city=user_city,
@@ -514,7 +561,8 @@ class OrderChangeForm(forms.ModelForm):
             user = self.initial['user']
         # при создании нового заказа и ошибке это пусто
         if user:
-            user_addresses = UserAddress.objects.filter(base_profile=user)
+            user_addresses = UserAddress.objects.filter(base_profile=user,
+                                                        city=self.instance.city)
             choices = [(address.id,
                         (f"{address.address}, кв. {address.flat}, "
                          f"этаж {address.floor}, домофон {address.interfon}")
@@ -541,9 +589,36 @@ class OrderChangeForm(forms.ModelForm):
             self.fields[
                 'my_address_comments'].initial = my_address_comments_json
 
+        # Разбиваем address_comment на 3 поля для удобства ввода.
+        # initial выставляем ТОЛЬКО для незаполненной (обычный GET) формы —
+        # при повторном показе после ошибки валидации Django сам подставит
+        # то, что админ уже ввёл в flat/floor/interfon, из POST.
+        if not self.is_bound:
+            parsed = parse_address_comment(self.instance.address_comment)
+            self.fields['flat'].initial = parsed['flat']
+            self.fields['floor'].initial = parsed['floor']
+            self.fields['interfon'].initial = parsed['interfon']
+
+    def _arrange_order_type_field(self):
+        if self.instance and self.instance.pk:
+            if self.instance.delivery and self.instance.delivery.type == 'delivery':
+                self.fields['order_type'].initial = 'D'
+                self.initial['order_type'] = 'D'
+            elif self.instance.delivery and self.instance.delivery.type == 'takeaway':
+                self.fields['order_type'].initial = 'T'
+                self.initial['order_type'] = 'T'
+            elif self.instance.delivery and self.instance.delivery.type == 'restaurant':
+                self.fields['order_type'].initial = 'R'
+                self.initial['order_type'] = 'R'
+
     class Meta:
         model = Order
         fields = '__all__'
+        widgets = {
+            'address_comment': forms.HiddenInput(),
+            'recipient_name': forms.TextInput(attrs={'style': 'width: 250px;'}),
+            'recipient_phone': forms.TextInput(attrs={'style': 'width: 150px;'}),  # в 2 раза короче имени
+        }
 
     def get_form(self, request, obj=None, **kwargs):
         """
@@ -587,12 +662,12 @@ class OrderChangeForm(forms.ModelForm):
             # Проверяем, содержит ли адрес только буквы, цифры и пробелы
             if not re.search(r'\d+', recipient_address):
                 raise forms.ValidationError("Укажите номер дома.")
-        delivery = self.cleaned_data.get('delivery')
+        order_type = self.cleaned_data.get('order_type')
         source = self.data.get('source')
         my_delivery_address = self.data.get('my_delivery_address')
         coordinates = self.data.get('coordinates')
 
-        if (delivery is not None and delivery.type == 'delivery'
+        if (order_type is not None and order_type == 'D'
                 and source in ['1', '3', '4']):
 
             if my_delivery_address not in [None, '']:
@@ -732,12 +807,13 @@ class OrderChangeForm(forms.ModelForm):
         return delivery_time
 
     def clean_restaurant(self):
-        restaurant = self.data.get('restaurant')
-        city = self.data.get('city')
-        restaurant = Restaurant.objects.get(id=restaurant)
-        if restaurant.city != city:
+        restaurant = self.cleaned_data.get('restaurant') or self.instance.restaurant
+        city = self.instance.city
+
+        if restaurant and restaurant.city != city:
             raise forms.ValidationError(
-                "Проверьте соответствие полей Город и Ресторан.")
+                "Проверьте соответствие полей Город и Ресторан."
+            )
 
         return restaurant
 
@@ -759,14 +835,50 @@ class OrderChangeForm(forms.ModelForm):
         return process_comment
 
     def clean(self):
-
         cleaned_data = super().clean()
+
+        address_comment = build_address_comment(
+            cleaned_data.get('flat'),
+            cleaned_data.get('floor'),
+            cleaned_data.get('interfon'),
+        )
+        cleaned_data['address_comment'] = address_comment
+        self.instance.address_comment = address_comment
+
+        # город неизменяем
+        cleaned_data['city'] = self.instance.city
+        self.instance.city = self.instance.city
+
+        # обрабатываем order_type
+        order_type = cleaned_data.get('order_type')
+        city = self.instance.city
+
+        if order_type in ['D', 'T', 'R']:
+            cleaned_data['source'] = self.instance.source
+            self.instance.source = self.instance.source
+
+            if order_type == 'D':
+                delivery = Delivery.objects.get(city=city, type='delivery')
+            elif order_type == 'T':
+                delivery = Delivery.objects.get(city=city, type='takeaway')
+            else:
+                delivery = Delivery.objects.get(city=city, type='restaurant')
+
+            cleaned_data['delivery'] = delivery
+            self.instance.delivery = delivery
+
+        else:
+            cleaned_data['source'] = order_type
+            self.instance.source = order_type
+
+            delivery = Delivery.objects.get(city=city, type='takeaway')
+            cleaned_data['delivery'] = delivery
+            self.instance.delivery = delivery
+
         # Удаляем ошибки валидации для поля my_recipient_address
         if 'my_delivery_address' in self._errors:
             del self._errors['my_delivery_address']
             cleaned_data['my_delivery_address'] = self.my_delivery_address
-        if not self.user.is_superuser and cleaned_data['restaurant'] != self.user.restaurant:
-            raise forms.ValidationError("You cannot edit orders from other restaurants.")
 
         return cleaned_data
 
@@ -894,18 +1006,25 @@ class BasePartnerOrderForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        user = self.user
+
+        # Устанавливаем значение по умолчанию для города и ресторана
+        # if self.instance.pk is None and not user.is_superuser:
+        #     set_admin_data(self, user)
+        if self.instance.pk is None and user and not user.is_superuser and hasattr(user, 'city') and user.city:
+            self.initial['city'] = user.city
+            self.instance.city = user.city
+
         order_type = self.get_source_code()
         self.fields['order_type'].widget = forms.HiddenInput()
         self.fields['order_type'].initial = self.get_source_code()
 
-        if order_type == 'P2-1':
+        if self.instance.pk is None and order_type == 'P2-1':
             self.fields['invoice'].initial = False
-        # Заказы Smoke по умолчанию без чека
+        # НОВЫЕ Заказы Smoke по умолчанию без чека
 
         if self.instance.pk is None and not self.user.is_superuser:
             set_admin_data(self, self.user)
-
-
 
 
     def clean(self):

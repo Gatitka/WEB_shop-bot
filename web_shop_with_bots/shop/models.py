@@ -7,7 +7,7 @@ from django.core.validators import (MaxValueValidator,
 from django.db import models
 from django.db.models import Sum, F
 from phonenumber_field.modelfields import PhoneNumberField
-from catalog.models import Dish
+from catalog.models import Dish, DishCityPrice, DishPartnerPrice
 from delivery_contacts.models import (Delivery, DeliveryZone,
                                       Restaurant, Courier)
 from delivery_contacts.utils import get_delivery_cost
@@ -84,7 +84,7 @@ class Order(models.Model):
         blank=True, null=True
     )
     recipient_phone = models.CharField(
-        verbose_name='телефон получателя',
+        verbose_name='☎',    #'телефон получателя',
         max_length=128,
         help_text="Внесите телефон, прим. '+38212345678'.",
         blank=True, null=True
@@ -169,11 +169,9 @@ class Order(models.Model):
         blank=True,
         max_digits=8, decimal_places=2,
         verbose_name='сумма заказа до скидки, DIN',
-        help_text="Посчитается автоматически.",
     )
     amount_with_shipping = models.DecimalField(
         verbose_name='Сумма заказа с учетом доставки, DIN',
-        help_text="Посчитается автоматически.",
         default=0,
         blank=True,
         max_digits=8, decimal_places=2
@@ -215,14 +213,12 @@ class Order(models.Model):
 
     discounted_amount = models.DecimalField(
         verbose_name='Сумма заказа после скидок, DIN',
-        help_text="Посчитается автоматически.",
         default=0,
         blank=True,
         max_digits=8, decimal_places=2
     )
     final_amount_with_shipping = models.DecimalField(
         verbose_name='Сумма заказа с учетом скидок и доставки, DIN',
-        help_text="Посчитается автоматически.",
         default=0,
         blank=True,
         max_digits=8, decimal_places=2
@@ -257,7 +253,6 @@ class Order(models.Model):
     )
     items_qty = models.PositiveSmallIntegerField(
         verbose_name='Кол-во ед-ц заказа, шт',
-        help_text="Посчитается автоматически.",
         default=0,
         blank=True,
     )
@@ -364,6 +359,23 @@ class Order(models.Model):
             return order_info + " /       ПЕРВЫЙ ЗАКАЗ"
         return order_info
 
+    @property
+    def total_discount_amount_calc(self):
+        """Метод рассчета итоговой скидки в DIN, чтобы не заводить отдельную колонку"""
+        return (
+            (self.discount_amount or Decimal(0))
+            + (self.promocode_disc_amount or Decimal(0))
+            + (self.manual_discount or Decimal(0))
+        )
+
+    @property
+    def discount_percent(self):
+        """Метод рассчета скидки в %, чтобы не заводить отдельную колонку"""
+        base = self.amount_with_shipping
+        if not base:
+            return Decimal(0)
+        return (self.total_discount_amount_calc / base * 100).quantize(Decimal('0.01'))
+
     def select_promocode_vs_discount(self, promocode_disc_am,
                                      max_discount, max_discount_amount):
         result = promocode_vs_discount(promocode_disc_am,
@@ -414,12 +426,6 @@ class Order(models.Model):
             # если задана ручная скидка, то это скорее всего админ сохраняет
             # и обычная скидка стирается, а ручная скидка становится основной
             if self.manual_discount > 0:
-                # если скидка %
-                # self.discount_amount = Decimal(
-                #                         self.amount_with_shipping
-                #                         * self.manual_discount / 100
-                #                     ).quantize(Decimal('0.01'))
-                # если скидка DIN
                 self.discount_amount = self.manual_discount
 
                 self.total_discount_amount = self.discount_amount
@@ -666,44 +672,62 @@ class OrderDish(models.Model):
     def save(self, *args, **kwargs):
         self.dish_article = self.dish.pk
         self.order_number = self.order.pk
-        if self.order.source in ['P1-1', 'P1-2']:
-            self.unit_amount = self.dish.final_price_p1 * self.quantity
-            self.unit_price = self.dish.final_price_p1
-        elif self.order.source in ['P2-1', 'P2-2']:
-            self.unit_amount = self.dish.final_price_p2 * self.quantity
-            self.unit_price = self.dish.final_price_p2
-        else:
-            self.unit_amount = self.dish.final_price * self.quantity
-            self.unit_price = self.dish.final_price
+
+        self.unit_price = self.get_unit_price()
+        self.unit_amount = (
+            Decimal(self.unit_price) * Decimal(self.quantity)
+        ).quantize(Decimal("0.01"))
 
         super(OrderDish, self).save(*args, **kwargs)
 
+        self.update_order_amount()
+
+    def get_unit_price(self):
+        return self.dish.resolve_price(self.order.city, self.order.source)
+
+    def update_order_amount(self):
         total_amount = OrderDish.objects.filter(
             order=self.order
-                ).aggregate(ta=Sum('unit_amount'))['ta']
-        self.order.amount = total_amount if total_amount is not None else 0
+        ).aggregate(
+            ta=Sum("unit_amount")
+        )["ta"]
+
+        self.order.amount = total_amount if total_amount is not None else Decimal("0.00")
         self.order.save(update_fields=[
-            'delivery_cost', 'items_qty',
-            'amount', 'amount_with_shipping',
-            'promocode_disc_amount', 'discount_amount',
-            'discount', 'discount_amount',
-            'discounted_amount', 'final_amount_with_shipping',
-            ])
+            "delivery_cost",
+            "items_qty",
+            "amount",
+            "amount_with_shipping",
+            "promocode_disc_amount",
+            "discount_amount",
+            "discount",
+            "discounted_amount",
+            "final_amount_with_shipping",
+        ])
 
     def delete(self, *args, **kwargs):
-        super(OrderDish, self).delete()
-        total_amount = OrderDish.objects.filter(
-            order=self.order
-                ).aggregate(ta=Sum('unit_amount'))['ta']
+        order = self.order
 
-        self.order.amount = total_amount if total_amount is not None else 0
-        self.order.save(update_fields=[
-            'amount',
-            'discounted_amount',
-            'final_amount_with_shipping',
-            'delivery_cost',
-            'items_qty',
-            ])
+        super(OrderDish, self).delete()
+
+        total_amount = OrderDish.objects.filter(
+            order=order
+        ).aggregate(
+            ta=Sum("unit_amount")
+        )["ta"]
+
+        order.amount = total_amount if total_amount is not None else Decimal("0.00")
+        order.save(update_fields=[
+            "amount",
+            "discounted_amount",
+            "final_amount_with_shipping",
+            "delivery_cost",
+            "items_qty",
+            "amount_with_shipping",
+            "promocode_disc_amount",
+            "discount_amount",
+            "discount",
+        ])
 
     @staticmethod
     def create_orderdishes_from_cartdishes(order,
@@ -798,7 +822,7 @@ class Discount(models.Model):
             return self.discount_am
 
 
-def get_amount(cart=None, items=None):
+def get_amount(cart=None, items=None, city=None, source=None):
     if cart:
         return cart.amount
 
@@ -806,8 +830,11 @@ def get_amount(cart=None, items=None):
         amount = Decimal(0)
         for item in items:
             dish = item['dish']
-            amount += Decimal(dish.final_price * item['quantity'])
+            price = dish.resolve_price(city, source) if city else dish.final_price
+            amount += Decimal(price * item['quantity'])
         return amount
+
+    return Decimal(0)
 
 
 def get_promocode_results(amount, promocode=None,
@@ -1049,7 +1076,6 @@ class ShoppingCart(models.Model):
     )
     amount = models.DecimalField(
         verbose_name='Сумма, DIN',
-        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=10, decimal_places=2
@@ -1068,7 +1094,6 @@ class ShoppingCart(models.Model):
     )
     discounted_amount = models.DecimalField(
         verbose_name='Итог сумма, DIN',
-        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=10, decimal_places=2
@@ -1078,7 +1103,6 @@ class ShoppingCart(models.Model):
         verbose_name='Кол-во порций, шт',
         default=0,
         blank=True,
-        help_text="Посчитается автоматически.",
     )
 
     class Meta:
@@ -1168,7 +1192,6 @@ class CartDish(models.Model):
     )
     amount = models.DecimalField(
         verbose_name='Стоимость всей позиции, DIN.',
-        help_text="Посчитается автоматически.",
         default=0.00,
         blank=True,
         max_digits=7, decimal_places=2

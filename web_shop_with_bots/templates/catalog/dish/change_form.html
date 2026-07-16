@@ -1,0 +1,33 @@
+{% extends "admin/parler/change_form.html" %}
+
+{% block content %}
+  {% include "catalog/dish/includes/form_tabs.html" %}
+
+  {% if price_matrix_warning %}
+    <div class="dish-admin-warning">
+      <div class="dish-admin-warning__title">
+        ⚠ {{ price_matrix_warning.title }}
+      </div>
+
+      <div class="dish-admin-warning__text">
+        {{ price_matrix_warning.text }}
+      </div>
+
+      {% if price_matrix_warning.items %}
+        <ul class="dish-admin-warning__list">
+          {% for item in price_matrix_warning.items %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      <div class="dish-admin-warning__actions">
+        <a href="{{ price_matrix_warning.matrix_url }}" class="button">
+          Перейти в матрицу цен
+        </a>
+      </div>
+    </div>
+  {% endif %}
+
+  {{ block.super }}
+{% endblock %}

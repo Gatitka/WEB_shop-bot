@@ -709,6 +709,10 @@ class Banner(models.Model):
                 name='unique_banner_priority_per_city',
             ),
         ]
+        permissions = [
+            ("edit_banners_Beograd", "Can ADD/CHANGE/DELETE banners Beograd"),
+            ("edit_banners_NoviSad", "Can  NoviSad"),
+        ]
 
     def __str__(self):
         return f'[{self.city}] #{self.priority} {self.title}'

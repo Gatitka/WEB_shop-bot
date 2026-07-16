@@ -3,23 +3,17 @@
 {% load i18n admin_urls static admin_modify %}
 
 {% block content %}
-    <div class="changelist-form-container" style="display: flex; align-items: flex-start;">
-        <div style="flex-grow: 1;">
-        </div>
-
-        <!-- Блок с кнопками справа от таблицы -->
-        <div class="choices-orderslist" style="display: flex; flex-direction: column; gap: 10px; margin-left: 20px;">
-            {% if not user.is_superuser %}
-                <!-- Кнопка для текущих заказов -->
-                <a href="{{ request.path }}" class="button" style="width: auto; white-space: nowrap; text-align: center;">{% trans 'Мои заказы' %}</a>
-            {% endif %}
-
-            {% if not user.is_superuser %}
-                <!-- Кнопка для всех заказов с параметром view=all_orders -->
-                <a href="{{ request.path }}?view=all_orders" class="button" style="width: auto; white-space: nowrap; text-align: center;">{% trans 'Все заказы' %}</a>
-            {% endif %}
+    {% if not user.is_superuser %}
+    <div class="changelist-form-container" style="position: relative;">
+        <!-- Кнопки в правом верхнем углу — как в общем списке заказов (shop/order/change_list.html) -->
+        <div style="position: absolute; right: 0; top: -40px;">
+            <a href="{{ request.path }}" class="button" style="margin-right: 10px;">{% trans 'Мои заказы' %}</a>
+            <a href="{{ request.path }}?view=all_orders" class="button">{% trans 'Все заказы' %}</a>
         </div>
     </div>
+    {% endif %}
+
+    <div id="filters-toggle" class="button" title="Свернуть/развернуть фильтры"></div>
 
 {{ block.super }}
 {% endblock %}
@@ -116,14 +110,20 @@
 
     #save-action-button {
         background: #417690;
-        padding: 10px 15px;
+        padding: 10px 18px;
+        min-height: 38px;
+        min-width: 110px;
         border: none;
         border-radius: 4px;
         color: #fff;
         cursor: pointer;
-        font-weight: normal;
+        font-weight: 400;
         font-size: 13px;
+        line-height: 18px;
         font-family: "Roboto", "Lucida Grande", Verdana, Arial, sans-serif;
+        box-sizing: border-box;
+        appearance: none;
+        -webkit-appearance: none;
     }
 
     #save-action-button:hover {
@@ -138,6 +138,21 @@
     .smoke-input::-webkit-outer-spin-button {
         display: none; /* Убираем стрелки в Chrome и Safari */
         margin: 0;
+    }
+
+    .actions {
+        display: flex !important;
+        align-items: center;
+        gap: 6px;              /* расстояние между select и кнопкой */
+    }
+
+    .actions select {
+        margin-right: 0 !important;
+    }
+
+    .actions button,
+    .actions input[type="submit"] {
+        margin-left: 0 !important;
     }
 </style>
 {% endblock %}

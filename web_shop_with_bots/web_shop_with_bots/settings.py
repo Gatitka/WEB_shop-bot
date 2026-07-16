@@ -197,7 +197,6 @@ default_allowed_hosts = [
     'localhost',
     '127.0.0.1',
     '[::1]',
-    'carl-hydrometallurgical-destinee.ngrok-free.dev'
 ]
 
 allowed_hosts = default_allowed_hosts.copy()
@@ -858,28 +857,29 @@ PARTNERS_PRICE_CATEGORIES = [
     ('P2', 'P2 - Smoke/Не та дверь/Seal Tea')
 ]
 
-SOURCE_TYPES = [
+PARTNER_TYPES = [
     ('P1-1', 'Glovo'),
     ('P1-2', 'Wolt'),
     ('P2-1', 'Smoke'),
     ('P2-2', 'Не та дверь'),
     ('P3-1', 'Seal Tea'),
+]
+
+INTERNAL_TYPES = [
+    ('D', 'Доставка'),
+    ('T', 'Самовывоз'),
+    ('R', 'Ресторан')
+]
+
+ORDER_TYPES = PARTNER_TYPES + INTERNAL_TYPES
+
+SOURCE_TYPES = PARTNER_TYPES + [
     ('1', 'внутренний'),
     # ('2', 'ресторан'),
     ('3', 'TM_Bot'),
     ('4', 'сайт'),
 ]
 
-ORDER_TYPES = [
-    ('P1-1', 'Glovo'),
-    ('P1-2', 'Wolt'),
-    ('P2-1', 'Smoke'),
-    ('P2-2', 'Не та дверь'),
-    ('P3-1', 'Seal Tea'),
-    ('D', 'Доставка'),
-    ('T', 'Самовывоз'),
-    ('R', 'Ресторан')
-]
 
 CITY_EXCLUDED_TYPES = {
     'Beograd':  {'R'},

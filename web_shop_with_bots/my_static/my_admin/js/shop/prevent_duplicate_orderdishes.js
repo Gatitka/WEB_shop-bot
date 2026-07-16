@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Очищаем поле цены
         const unitPriceField = row.querySelector('.field-unit_price p');
         if (unitPriceField) {
-            unitPriceField.textContent = '0.00 ₽';  // Или можно оставить пустым ''
+            unitPriceField.textContent = '0.00';  // Или можно оставить пустым ''
         }
 
         // Очищаем поле суммы

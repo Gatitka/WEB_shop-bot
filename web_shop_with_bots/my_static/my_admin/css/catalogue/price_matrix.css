@@ -1,0 +1,69 @@
+.price-matrix-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.price-matrix-table th,
+.price-matrix-table td {
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.price-matrix-table .matrix-dish-col {
+    width: 260px;
+    text-align: left;
+}
+
+.price-matrix-table th.matrix-dish-col {
+    text-align: center;
+}
+
+.price-matrix-table .matrix-price-col {
+    width: 52px;
+}
+
+.matrix-city-head {
+    text-align: center !important;
+    font-weight: 700;
+    border-left: 2px solid rgba(255, 255, 255, 0.14);
+}
+
+.price-site {
+    background: rgba(80, 120, 150, 0.18);
+}
+
+.price-p1 {
+    background: rgba(80, 150, 90, 0.16);
+}
+
+.price-p2 {
+    background: rgba(190, 140, 60, 0.16);
+}
+
+.price-city-variant {
+    font-weight: 700;
+    color: #f3fbff;
+    background-image: linear-gradient(
+        rgba(255, 255, 255, 0.10),
+        rgba(255, 255, 255, 0.10)
+    );
+}
+
+.price-matrix-table th.matrix-head-center {
+    text-align: center;
+    vertical-align: middle;
+}
+
+.inline-group input.readonly-price-field {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 2px 5px;
+    cursor: default;
+}
+
+.inline-group input.readonly-price-field:focus {
+    outline: none;
+    box-shadow: none;
+}

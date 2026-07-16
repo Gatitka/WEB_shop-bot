@@ -2,24 +2,19 @@
 {% load static %}
 {% load i18n admin_urls static admin_modify %}
 
+{% block content %}
+  {% include "catalog/dish/includes/list_tabs.html" %}
+  {{ block.super }}
+{% endblock %}
+
 {% block object-tools %}
 <ul class="object-tools">
-
-    <li>
-        <a href="{{ xls_download_url }}" class="viewlink">
-            ↓ Скачать цены
-        </a>
-    </li>
-
-    <li>
-        <a href="{{ xls_load_url }}" class="viewlink">
-            ↑ Загрузить цены
-        </a>
-    </li>
+    {% if show_price_xls_buttons %}
+      {% include "catalog/dish/includes/price_xls_buttons.html" %}
+    {% endif %}
 
     {% block object-tools-items %}
         {{ block.super }}
     {% endblock %}
-
 </ul>
 {% endblock %}

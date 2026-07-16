@@ -204,6 +204,9 @@
 .custom-add-button:hover {
     background: var(--button-hover-bg);
 }
+.fieldBox.field-city {
+    display: none !important;
+}
     </style>
 {% endblock %}
 
@@ -213,14 +216,36 @@
     {{ categories|json_script:"categories-data" }}
     {{ dishes|json_script:"dishes-data" }}
     {{ delivery_zones|json_script:"delivery_zones-data" }}
+    {{ discounts|json_script:"discounts-data" }}
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="{% static 'my_admin/js/shop/add/toggle_order_fields.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/add/add_orderdishes_management.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/discount_utils.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/add/add_calculate_discounts.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/delivery_utils.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/address_comment_split.js' %}"></script>
+    <script src="{% static 'my_admin/js/shop/add/add_calculate_delivery.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/add/add_calculate_delivery.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/address_autocomplete.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/prevent_duplicate_orderdishes.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/inline.js' %}"></script>
 
+    <script>
+        window.orderAdminHasErrors = false;
+    </script>
+
+    {% if adminform.form.errors %}
+    <script>
+        window.orderAdminHasErrors = true;
+    </script>
+    {% endif %}
+
+    {% for inline_admin_formset in inline_admin_formsets %}
+        {% if inline_admin_formset.formset.errors or inline_admin_formset.formset.non_form_errors %}
+            <script>
+                window.orderAdminHasErrors = true;
+            </script>
+        {% endif %}
+    {% endfor %}
 {% endblock %}

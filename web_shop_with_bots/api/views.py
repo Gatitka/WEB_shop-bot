@@ -1,3 +1,4 @@
+from collections import defaultdict
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.admin.views.decorators import staff_member_required
@@ -387,19 +388,15 @@ class MenuViewSet(mixins.ListModelMixin,
             ),
             to_attr="prefetched_city_prices",
         ),
-    ).order_by('category__priority', 'priority'))
+    ).order_by('category__priority'))
 
     http_method_names = ['get',]
 
     @cache_response(
         lambda self, request, *args, **kwargs:
-        f"menu2_{request.get_full_path()}"
+        f"menu_{request.get_full_path()}"
     )
     def list(self, request, *args, **kwargs):
-        # cache_key = f"menu2_{request.get_full_path()}"
-        # cached = cache.get(cache_key)
-        # if cached is not None:
-        #     return Response(cached)
 
         qs = self.filter_queryset(self.get_queryset())
         context = {'request': request}
@@ -465,7 +462,7 @@ class MenuViewSet(mixins.ListModelMixin,
                 unique_qs.append(dish)
                 seen_ids.add(dish.id)
 
-        menu_list = srlz.NEWDishMenuSerializer(
+        menu_list = srlz.DishMenuSerializer(
             unique_qs,
             many=True,
             context=context
@@ -1049,22 +1046,25 @@ class UserDataAPIView(APIView):
         logger.info(f'/get_user_data/ '
                     f'REQUEST: {request} USER:{request.user}')
         user_id = request.GET.get('user_id')
+        city = request.GET.get('city', '')
+        city = city.replace(' ', '') if city else city
         try:
             user = BaseProfile.objects.select_related(
                 'messenger_account'
             ).prefetch_related(
                 'addresses'
             ).get(id=int(user_id))
-            # Проверяем, является ли текущий пользователь владельцем
-            # запрашиваемого профиля или админом
+
             if user != request.user.base_profile and not request.user.is_admin:
                 logger.info(f'У вас нет прав на доступ к этому профилю')
                 return JsonResponse(
-                    {'error':
-                     'У вас нет прав на доступ к этому профилю'},
+                    {'error': 'У вас нет прав на доступ к этому профилю'},
                     status=403)
 
             my_addresses = user.addresses.all()
+            if city:
+                my_addresses = my_addresses.filter(city=city)
+
             my_addresses_data = []
             if my_addresses:
                 for address in my_addresses:
@@ -1143,6 +1143,10 @@ def calculate_delivery(request):
     recipient_address = data.get('recipient_address', '')
     amount = data.get('amount', '')
     city = data.get('city', '')
+    # Убираем пробелы: readonly-поле города на фронте показывает отображаемое
+    # название ("Novi Sad"), а в БД город хранится без пробела ("NoviSad") -
+    # без этого Delivery.objects.get(city=city, ...) ниже падает с DoesNotExist.
+    city = city.replace(' ', '') if city else city
     delivery = data.get('delivery', '')
     coordinates = data.get('coordinates', '')
 
@@ -1227,29 +1231,20 @@ def get_dish_price(request):
     logger.info(f'/get_dish_price/ '
                 f'REQUEST: {request} USER:{request.user}')
     if request.method == 'GET':
-        # Проверяем, что запрос является AJAX-запросом
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            # Получаем данные из GET запроса
             dish_id = request.GET.get('dish_id', None)
 
-            if dish_id is not None:
-                try:
-                    dish = Dish.objects.get(article=dish_id,
-                                            is_active=True)
-                    unit_price = dish.final_price
-                    final_price_p1 = dish.final_price_p1
-                    final_price_p2 = dish.final_price_p2
-                    # Получаем актуальную цену блюда
-                    return JsonResponse({'price': unit_price,
-                                         'price_p1': final_price_p1,
-                                         'price_p2': final_price_p2
-                                         })
-                except Dish.DoesNotExist:
-                    return JsonResponse({'error': 'Dish not found'},
-                                        status=404)
-            else:
+            if dish_id is None:
                 return JsonResponse({'error': 'Dish ID is not provided'},
                                     status=400)
+
+            try:
+                dish = Dish.objects.get(article=dish_id, is_active=True)
+            except Dish.DoesNotExist:
+                return JsonResponse({'error': 'Dish not found'},
+                                    status=404)
+
+            return JsonResponse({'Prices': dish.get_all_prices()})
 
     return JsonResponse({'error': 'Invalid request method'}, status=400)
 
@@ -1526,124 +1521,6 @@ class SubscriptionAPIView(APIView):
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-
-class Menu2ViewSet(mixins.ListModelMixin,
-                   viewsets.GenericViewSet):
-    """
-    Новый формат меню для фронта:
-    - categories: категории с переводами, приоритетом и списком article
-    - menu_list: полный список блюд в текущем формате /menu
-    """
-    permission_classes = [AllowAny]
-    filter_backends = (DjangoFilterBackend,)
-    filterset_class = CategoryFilter
-
-    queryset = Dish.objects.filter(
-        is_active=True,
-        category__is_active=True
-    ).select_related(
-        'units_in_set_uom',
-        'weight_volume_uom',
-    ).prefetch_related(
-        'translations',
-        'category__translations',
-        'units_in_set_uom__translations',
-        'weight_volume_uom__translations',
-        Prefetch(
-            'dishcategory',
-            queryset=DishCategory.objects.select_related('category')
-        ),
-    ).order_by('category__priority', 'dishcategory__dish_priority')
-
-    http_method_names = ['get']
-
-    @cache_response(
-        lambda self, request, *args, **kwargs:
-        f"menu2_{request.get_full_path()}"
-    )
-    def list(self, request, *args, **kwargs):
-        # cache_key = f"menu2_{request.get_full_path()}"
-        # cached = cache.get(cache_key)
-        # if cached is not None:
-        #     return Response(cached)
-
-        qs = self.filter_queryset(self.get_queryset())
-        context = {'request': request}
-
-        categories_map = {}
-        seen_pairs = set()
-
-        for dish in qs:
-            for dc in dish.dishcategory.all():
-                category = dc.category
-
-                if not category.is_active:
-                    continue
-
-                slug = category.slug
-                pair_key = (slug, dish.article)
-
-                if pair_key in seen_pairs:
-                    continue
-                seen_pairs.add(pair_key)
-
-                if slug not in categories_map:
-                    category_translations = {}
-                    for tr in category.translations.all():
-                        category_translations[tr.language_code] = {
-                            k: v for k, v in {
-                                'name': getattr(tr, 'name', None),
-                                'description': getattr(tr, 'description', None),
-                                'messenger_name': getattr(tr, 'messenger_name', None),
-                            }.items() if v is not None
-                        }
-                        category_translations[tr.language_code].pop('messenger_name', None)
-
-                    categories_map[slug] = {
-                        'slug': slug,
-                        'translations': category_translations,
-                        'articles': [],
-                        'priority': category.priority,
-                    }
-
-                categories_map[slug]['articles'].append({
-                    'article': dish.article,
-                    'dish_priority': dc.dish_priority if dc.dish_priority is not None else 999999
-                })
-
-        categories = list(categories_map.values())
-
-        categories.sort(
-            key=lambda item: item['priority'] if item['priority'] is not None else 999999
-        )
-
-        for category in categories:
-            category['articles'] = [
-                item['article']
-                for item in sorted(category['articles'], key=lambda x: x['dish_priority'])
-            ]
-
-        # menu_list = текущий /menu
-        unique_qs = []
-        seen_ids = set()
-        for dish in qs:
-            if dish.id not in seen_ids:
-                unique_qs.append(dish)
-                seen_ids.add(dish.id)
-
-        menu_list = srlz.DishMenuSerializer(
-            unique_qs,
-            many=True,
-            context=context
-        ).data
-
-        response_data = {
-            'categories': categories,
-            'menu_list': menu_list,
-        }
-        # cache.set(cache_key, response_data, settings.CACHE_TIME)
-        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class BannerViewSet(viewsets.ReadOnlyModelViewSet):

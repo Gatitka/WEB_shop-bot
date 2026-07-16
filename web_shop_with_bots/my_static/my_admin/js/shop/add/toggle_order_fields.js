@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const botOrderNoRadio = document.getElementById('id_bot_order_0');
     const botOrderYesRadio = document.getElementById('id_bot_order_1');
     const sourceIdField = document.querySelector('.fieldBox.field-source_id');
+    const sourceIdInput = document.getElementById('id_source_id');
     var userIdField = document.querySelector(".fieldBox.field-user");
     var msngrAccountField = document.querySelector(".fieldBox.field-msngr_account");
     var contactFieldset = null;
@@ -66,7 +67,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (commentFieldset) commentFieldset.style.display = "none";
             if (deliveryFieldset) deliveryFieldset.style.display = "none";
             sourceIdField.style.display = 'block';
-            sourceIdField.required = true;
+            if (sourceIdInput) sourceIdInput.required = true;
 
             // Если выбран Smoke, устанавливаем invoice в "Нет"
             if (selectedValue === 'P2-1' || selectedValue === 'P2-2') {
@@ -114,25 +115,27 @@ document.addEventListener("DOMContentLoaded", function () {
                 // For internal orders, show source_id only if it's a bot order
                 if (isBotOrder) {
                     sourceIdField.style.display = 'block';
-                    sourceIdField.required = true;
+                    if (sourceIdInput) sourceIdInput.required = true;
                     userIdField.style.display = 'none';
                     msngrAccountField.style.display = 'block';
                 } else {
                     sourceIdField.style.display = 'none';
-                    sourceIdField.required = false;
-                    sourceIdField.value = '';
+                    if (sourceIdInput) {
+                        sourceIdInput.required = false;
+                        sourceIdInput.value = '';
+                    }
                     userIdField.style.display = 'block';
                     msngrAccountField.style.display = 'none';
                 }
             } else if (['P1-1', 'P1-2', 'P2-1', 'P2-2', 'P3-1'].includes(selectedOrderType)) {
                 // Always show source_id for partner orders
-                sourceIdRow.style.display = 'block';
-                // sourceIdField.required = true;
-                sourceIdField.required = false;
+                sourceIdField.style.display = 'block';
+                // if (sourceIdInput) sourceIdInput.required = true;
+                if (sourceIdInput) sourceIdInput.required = false;
             } else {
                 // Default case
-                sourceIdRow.style.display = 'none';
-                sourceIdField.required = false;
+                sourceIdField.style.display = 'none';
+                if (sourceIdInput) sourceIdInput.required = false;
             }
         }
     }

@@ -1,6 +1,7 @@
+from collections import defaultdict
 from decimal import Decimal
-
 from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Max
 from django.utils.safestring import mark_safe
@@ -131,15 +132,16 @@ class Dish(TranslatableModel):
         primary_key=True,
         db_index=True,
     )
-    priority = models.PositiveSmallIntegerField(
-        verbose_name='№ п/п',
-        validators=[MinValueValidator(1)],
-        null=True,
-        help_text=
-            "Порядковый номер отображения в категории, прим. '01'.\n"
-            "Проставится автоматически.",
-        db_index=True
-    )
+    # priority = models.PositiveSmallIntegerField(
+    #     verbose_name='№ п/п',
+    #     validators=[MinValueValidator(1)],
+    #     null=True,
+    #     help_text=
+    #         "Порядковый номер отображения в категории, прим. '01'.\n"
+    #         "Проставится автоматически.",
+    #     db_index=True
+    # )  # перенесено в модел DishCategory
+
     is_active = models.BooleanField(
         verbose_name='активен',
         default=False,
@@ -158,44 +160,44 @@ class Dish(TranslatableModel):
         help_text='Выберите категории блюда.',
         db_index=True,
     )
-    price = models.DecimalField(
-        verbose_name='цена, DIN *',
-        validators=[MinValueValidator(0.01)],
-        help_text='Внесите цену в DIN. Формат 00000.00',
-        max_digits=7, decimal_places=2,
-        default=Decimal('0'),
-    )
-    discount = models.DecimalField(
-        verbose_name='скидка, %',
-        default=None,
-        null=True, blank=True,
-        help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
-        max_digits=6, decimal_places=2
-    )
-    final_price = models.DecimalField(
-        verbose_name='итог цена, DIN',
-        validators=[MinValueValidator(0.01)],
-        help_text=('Цена после скидок в DIN. Проставится после сохранения.\n'
-                   "Показана на сайте."),
-        max_digits=8, decimal_places=2,
-        default=Decimal('0'),
-    )
-    final_price_p1 = models.DecimalField(
-        verbose_name='цена P1, DIN *',
-        validators=[MinValueValidator(0.01)],
-        help_text=('Партнер P1 (GLovo/Wolt). Внесите цену в DIN. Формат 00000.00\n'
-                   "Не рассчитывается автоматически"),
-        max_digits=8, decimal_places=2,
-        default=Decimal('0'),
-    )
-    final_price_p2 = models.DecimalField(
-        verbose_name='цена P2, DIN *',
-        validators=[MinValueValidator(0.01)],
-        help_text=('Партнер P2. Внесите цену в DIN. Формат 00000.00\n'
-                   "Не рассчитывается автоматически"),
-        max_digits=8, decimal_places=2,
-        default=Decimal('0'),
-    )
+    # price = models.DecimalField(
+    #     verbose_name='цена, DIN *',
+    #     validators=[MinValueValidator(0.01)],
+    #     help_text='Внесите цену в DIN. Формат 00000.00',
+    #     max_digits=7, decimal_places=2,
+    #     default=Decimal('0'),
+    # )   #   перенесено в модель DishCityPrice
+    # discount = models.DecimalField(
+    #     verbose_name='скидка, %',
+    #     default=None,
+    #     null=True, blank=True,
+    #     help_text="Внесите скидку, прим. для 10% внесите '10,00'.",
+    #     max_digits=6, decimal_places=2
+    # )
+    # final_price = models.DecimalField(
+    #     verbose_name='итог цена, DIN',
+    #     validators=[MinValueValidator(0.01)],
+    #     help_text=('Цена после скидок в DIN. Проставится после сохранения.\n'
+    #                "Показана на сайте."),
+    #     max_digits=8, decimal_places=2,
+    #     default=Decimal('0'),
+    # )   #  перенесено в модель DishCityPrice
+    # final_price_p1 = models.DecimalField(
+    #     verbose_name='цена P1, DIN *',
+    #     validators=[MinValueValidator(0.01)],
+    #     help_text=('Партнер P1 (GLovo/Wolt). Внесите цену в DIN. Формат 00000.00\n'
+    #                "Не рассчитывается автоматически"),
+    #     max_digits=8, decimal_places=2,
+    #     default=Decimal('0'),
+    # )   #  перенесено в модель DishPartenrPrice
+    # final_price_p2 = models.DecimalField(
+    #     verbose_name='цена P2, DIN *',
+    #     validators=[MinValueValidator(0.01)],
+    #     help_text=('Партнер P2. Внесите цену в DIN. Формат 00000.00\n'
+    #                "Не рассчитывается автоматически"),
+    #     max_digits=8, decimal_places=2,
+    #     default=Decimal('0'),
+    # )    #  перенесено в модель DishPartenrPrice
     weight_volume = models.CharField(
         max_length=10,
         default=1,
@@ -272,15 +274,6 @@ class Dish(TranslatableModel):
             max_id = Dish.objects.aggregate(Max('id'))['id__max'] or 0
             self.id = max_id + 1
 
-        # 2. рассчитываем цены со скидкой
-        if self.discount:
-            self.final_price = Decimal(
-                self.price * Decimal(1 - self.discount/100)
-            )
-            self._price = self.price
-        else:
-            self.final_price = self.price
-
         # было ли изменение картинки
         image_changed = self.image and (self.image != self._original_image)
 
@@ -332,6 +325,101 @@ class Dish(TranslatableModel):
 
         return new_path
 
+    def get_city_price(self, city):
+        for cp in self.city_prices.all():
+            if cp.city == city:
+                return cp
+        return None
+
+    def get_partner_price(self, city, partner_category):
+        for pp in self.partner_prices.all():
+            if pp.city == city and pp.partner_category == partner_category:
+                return pp
+        return None
+
+    def get_all_prices(self):
+        """
+        Возвращает все цены блюда по всем городам и партнёрам одним махом:
+        {city: {"site": x, "P1": x, "P2": x}}
+        Ключи партнёров присутствуют только если цена реально задана.
+        """
+        prices = defaultdict(dict)
+
+        for city_price in self.city_prices.all():
+            prices[city_price.city]["site"] = (
+                float(city_price.final_price)
+                if city_price.final_price is not None else None
+            )
+
+        for partner_price in self.partner_prices.all():
+            prices[partner_price.city][partner_price.partner_category] = (
+                float(partner_price.final_price)
+                if partner_price.final_price is not None else None
+            )
+
+        return dict(prices)
+
+    def resolve_price(self, city, source=None):
+        """
+        Единая точка расчёта актуальной цены блюда.
+        Используется и при сохранении заказа (OrderDish), и в pre_checkout (get_amount).
+        """
+        if source in ["P1-1", "P1-2"]:
+            price_obj = self.get_partner_price(city, "P1")
+            return price_obj.final_price if price_obj else self.final_price_p1
+
+        if source in ["P2-1", "P2-2"]:
+            price_obj = self.get_partner_price(city, "P2")
+            return price_obj.final_price if price_obj else self.final_price_p2
+
+        price_obj = self.get_city_price(city)
+        return price_obj.final_price if price_obj else self.final_price
+
+    def get_price_matrix_activation_errors(self):
+        errors = []
+
+        city_prices = {cp.city: cp for cp in self.city_prices.all()}
+        partner_prices = {
+            (pp.city, pp.partner_category): pp for pp in self.partner_prices.all()
+        }
+
+        for city, _ in settings.CITY_CHOICES:
+            city_price = city_prices.get(city)
+
+            if not city_price:
+                errors.append(f"{city}: нет цены сайта")
+            elif not city_price.price or city_price.price <= Decimal("0"):
+                errors.append(f"{city}: цена сайта пустая или 0")
+
+            for partner_category, _ in settings.PARTNERS_PRICE_CATEGORIES:
+                partner_price = partner_prices.get((city, partner_category))
+
+                if not partner_price:
+                    errors.append(f"{city} / {partner_category}: нет цены партнёра")
+                elif not partner_price.final_price or partner_price.final_price <= Decimal("0"):
+                    errors.append(
+                        f"{city} / {partner_category}: цена партнёра пустая или 0"
+                    )
+
+        return errors
+
+    def validate_price_matrix_for_activation(self):
+        errors = self.get_price_matrix_activation_errors()
+
+        if errors:
+            raise ValidationError({
+                "is_active": (
+                    "Нельзя активировать блюдо, пока не заполнена матрица цен: "
+                    + "; ".join(errors)
+                )
+            })
+
+    def clean(self):
+        super().clean()
+
+        if self.is_active:
+            self.validate_price_matrix_for_activation()
+
     def admin_photo(self):
         if self.image:
             return mark_safe(
@@ -344,6 +432,13 @@ class Dish(TranslatableModel):
 
     admin_photo.short_description = 'Image'
     admin_photo.allow_tags = True
+
+
+class DishPriceMatrixProxy(Dish):
+    class Meta:
+        proxy = True
+        verbose_name = "матрица цен"
+        verbose_name_plural = "матрица цен"
 
 
 class DishCityPrice(models.Model):
@@ -371,6 +466,8 @@ class DishCityPrice(models.Model):
         validators=[MinValueValidator(0.01)],
         max_digits=8,
         decimal_places=2,
+        null=True,
+        blank=True,
     )
     discount = models.DecimalField(
         verbose_name='скидка сайта, %',
@@ -385,6 +482,7 @@ class DishCityPrice(models.Model):
         max_digits=8,
         decimal_places=2,
         blank=True,
+        null=True,
     )
 
     class Meta:
@@ -397,6 +495,22 @@ class DishCityPrice(models.Model):
                 name='unique_dish_city_site_price',
             )
         ]
+        permissions = [
+            ("change_citydishprice_Beograd", "Can change city dish price Beograd"),
+            ("change_citydishprice_NoviSad", "Can change city dish price NoviSad"),
+        ]
+
+    def clean(self):
+        super().clean()
+
+        if self.dish and self.dish.is_active:
+            if self.price is None or self.price <= Decimal("0"):
+                raise ValidationError({
+                    "price": (
+                        "У активного блюда цена сайта не может быть пустой или 0. "
+                        "Сначала деактивируйте блюдо."
+                    )
+                })
 
     def save(self, *args, **kwargs):
         if self.discount:
@@ -435,6 +549,8 @@ class DishPartnerPrice(models.Model):
         validators=[MinValueValidator(0.01)],
         max_digits=8,
         decimal_places=2,
+        null=True,
+        blank=True
     )
 
     class Meta:
@@ -447,6 +563,22 @@ class DishPartnerPrice(models.Model):
                 name="unique_partner_price",
             )
         ]
+        permissions = [
+            ("change_partnerdishprice_Beograd", "Can change partner dish price Beograd"),
+            ("change_partnerdishprice_NoviSad", "Can change partner dish price NoviSad"),
+        ]
+
+    def clean(self):
+        super().clean()
+
+        if self.dish and self.dish.is_active:
+            if self.final_price is None or self.final_price <= Decimal("0"):
+                raise ValidationError({
+                    "final_price": (
+                        "У активного блюда цена партнёра не может быть пустой или 0. "
+                        "Сначала деактивируйте блюдо."
+                    )
+                })
 
     def __str__(self):
         return f'{self.dish_id} / {self.city} / {self.partner_category}: {self.final_price}'

@@ -26,12 +26,14 @@ from api.utils.core_cache import (
     CONTACTS_DELIVERY_CACHE_KEY,
     DELIVERY_ZONES_CACHE_KEY,
     PROMONEWS_CACHE_KEY,
+    BANNERS_CACHE_KEY,
     TAKEAWAY_CONDITIONS_CACHE_KEY,
     DELIVERY_CONDITIONS_CACHE_KEY,
     MENU_CACHE_KEYS,
     invalidate_cache_for_model,
 )
-from catalog.models import Dish, Category, DishCategory
+from catalog.models import (Dish, Category, DishCategory,
+                            DishPartnerPrice, DishCityPrice)
 from delivery_contacts.models import Restaurant, Delivery, DeliveryZone
 from promos.models import PromoNews
 from tm_bot.models import OrdersBot
@@ -61,6 +63,7 @@ class CacheInvalidationTests(TestCase):
             CONTACTS_DELIVERY_CACHE_KEY,
             DELIVERY_ZONES_CACHE_KEY,
             PROMONEWS_CACHE_KEY,
+            BANNERS_CACHE_KEY,
             TAKEAWAY_CONDITIONS_CACHE_KEY,
             DELIVERY_CONDITIONS_CACHE_KEY,
         ]
@@ -85,6 +88,7 @@ class CacheInvalidationTests(TestCase):
             *MENU_CACHE_KEYS,
             TAKEAWAY_CONDITIONS_CACHE_KEY,
             DELIVERY_CONDITIONS_CACHE_KEY,
+            BANNERS_CACHE_KEY,
         )
 
     def test_category_invalidates_menu_and_order_conditions(self):
@@ -96,6 +100,7 @@ class CacheInvalidationTests(TestCase):
             *MENU_CACHE_KEYS,
             TAKEAWAY_CONDITIONS_CACHE_KEY,
             DELIVERY_CONDITIONS_CACHE_KEY,
+            BANNERS_CACHE_KEY,
         )
 
     def test_dishcategory_invalidates_menu_and_order_conditions(self):
@@ -107,6 +112,7 @@ class CacheInvalidationTests(TestCase):
             *MENU_CACHE_KEYS,
             TAKEAWAY_CONDITIONS_CACHE_KEY,
             DELIVERY_CONDITIONS_CACHE_KEY,
+            BANNERS_CACHE_KEY,
         )
 
     def test_restaurant_invalidates_contacts_and_order_conditions(self):
@@ -186,4 +192,28 @@ class CacheInvalidationTests(TestCase):
             *MENU_CACHE_KEYS,
             TAKEAWAY_CONDITIONS_CACHE_KEY,
             DELIVERY_CONDITIONS_CACHE_KEY,
+        )
+
+    def test_dish_city_price_invalidates_menu(self):
+        self._fill_all_cache_keys()
+
+        invalidate_cache_for_model(DishCityPrice)
+
+        self._assert_deleted(
+            *MENU_CACHE_KEYS,
+            TAKEAWAY_CONDITIONS_CACHE_KEY,
+            DELIVERY_CONDITIONS_CACHE_KEY,
+            BANNERS_CACHE_KEY,
+        )
+
+    def test_dish_partner_price_invalidates_menu(self):
+        self._fill_all_cache_keys()
+
+        invalidate_cache_for_model(DishPartnerPrice)
+
+        self._assert_deleted(
+            *MENU_CACHE_KEYS,
+            TAKEAWAY_CONDITIONS_CACHE_KEY,
+            DELIVERY_CONDITIONS_CACHE_KEY,
+            BANNERS_CACHE_KEY,
         )

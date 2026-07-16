@@ -13,3 +13,10 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
 });
+
+window.addEventListener('pageshow', function (event) {
+    if (event.persisted) {
+        // Страница восстановлена из bfcache — данные могли устареть
+        location.reload();
+    }
+});

@@ -15,7 +15,7 @@ elif settings.ENVIRONMENT == 'production':
 # Создание роутеров для разных разделов API
 menu_router = router_type
 menu_router.register(r'menu', views.MenuViewSet, basename='menu')
-menu_router.register(r'menu2', views.Menu2ViewSet, basename='menu2')
+# menu_router.register(r'menu2', views.Menu2ViewSet, basename='menu2')
 
 cart_router = router_type
 cart_router.register(r'shopping_cart', views.ShoppingCartViewSet,

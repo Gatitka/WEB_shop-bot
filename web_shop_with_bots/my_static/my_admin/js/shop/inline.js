@@ -1,5 +1,5 @@
 const $ = django.jQuery;
-	
+
 document.addEventListener("DOMContentLoaded", function () {
 	const options = {
 		prefix: "orderdishes",
@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
 	const maxForms = $("#id_" + options.prefix + "-MAX_NUM_FORMS").prop("autocomplete", "off");
 	const minForms = $("#id_" + options.prefix + "-MIN_NUM_FORMS").prop("autocomplete", "off");
 	let selectedDishes = {};
-	
+
 	 const updateElementIndex = function(el, prefix, ndx) {
 		const id_regex = new RegExp("(" + prefix + "-(\\d+|__prefix__))");
 		const replacement = prefix + "-" + ndx;
@@ -29,7 +29,7 @@ document.addEventListener("DOMContentLoaded", function () {
 			el.name = el.name.replace(id_regex, replacement);
 		}
 	};
-	
+
 	function removeEmptySelectedRows() {
 		document.querySelectorAll("table tbody tr.dynamic-orderdishes").forEach(row => {
 			let select = row.querySelector("td.field-dish select");
@@ -40,15 +40,15 @@ document.addEventListener("DOMContentLoaded", function () {
 		});
 	}
 
-		
+
     function replaceButton() {
 		removeEmptySelectedRows();
-		
+
 		const addRowRow = document.querySelector("tr.add-row");
         if (addRowRow) {
             addRowRow.remove();
         }
-		
+
         if (document.querySelector(".custom-add-button")) {
             return;
         }
@@ -117,7 +117,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const dishesElement = document.getElementById("dishes-data");
     const dishes = dishesElement ? JSON.parse(dishesElement.textContent) : {};
-    
+
     function loadCategories() {
         const categoriesList = document.getElementById("categories-list");
         categoriesList.innerHTML = "";
@@ -142,23 +142,42 @@ document.addEventListener("DOMContentLoaded", function () {
 			let siblings = listElement.children;
 			Array.from(siblings).forEach(sibling => sibling.classList.remove("select-category"));
 			e.target.classList.add("select-category");
-		}		
-		
+		}
+
 		loadDishes(category.Dishes);
 	}
-	
-	function getDishPrice(dishInfo, source) {
-        if (['P1-1', 'P1-2'].includes(source)) {
-            return dishInfo.Price[1]; // Цена P1
-        }
-        if (['P2-1', 'P2-2'].includes(source)) {
-            return dishInfo.Price[2]; // Цена P2
-        }
-        return dishInfo.Price[0]; // Обычная цена
+
+	function getPartnerCategory(source) {
+		if (['P1-1', 'P1-2'].includes(source)) return 'P1';
+		if (['P2-1', 'P2-2'].includes(source)) return 'P2';
+		return null; // T, D, R, P3-1 и т.д. — используем цену сайта
+	}
+
+	function normalizeCity(value) {
+        return (value || '').replace(/\s+/g, '').toLowerCase();
     }
 
-    function loadDishes(dishIds) {		
+	function getDishPrice(dishInfo, source, city) {
+		const prices = dishInfo.Prices || {};
+
+        const cityKey = Object.keys(prices).find(
+            key => normalizeCity(key) === normalizeCity(city)
+        );
+
+        const cityPrices = cityKey ? prices[cityKey] : null;
+		if (!cityPrices) return 0;
+
+		const partnerCategory = getPartnerCategory(source);
+		if (partnerCategory && cityPrices[partnerCategory] != null) {
+			return cityPrices[partnerCategory];
+		}
+		return cityPrices.site ?? 0;
+	}
+
+    function loadDishes(dishIds) {
 		const source = document.getElementById('id_order_type').value;
+		const cityField = document.querySelector('.fieldBox.field-city .readonly');
+        const city = cityField ? cityField.textContent.trim() : '';
         const dishesList = document.getElementById("dishes-list");
         dishesList.innerHTML = "";
 
@@ -166,7 +185,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!dishes[dishId]) return;
 
             const dish = dishes[dishId];
-            const price = dish.Price.length > 0 ? getDishPrice(dish, source) : 0;
+            const price = getDishPrice(dish, source, city);
 
             const dishItem = document.createElement("div");
             dishItem.className = "dish-item";
@@ -205,8 +224,8 @@ document.addEventListener("DOMContentLoaded", function () {
 				parentEl.classList.remove("select-dish");
 			}
         }
-		
-		
+
+
         updateQuantity(dishId);
     }
 
@@ -222,19 +241,21 @@ document.addEventListener("DOMContentLoaded", function () {
     function updateTotalPrice() {
         let total = 0;
 		const source = document.getElementById('id_order_type').value;
+		const cityField = document.querySelector('.fieldBox.field-city .readonly');
+        const city = cityField ? cityField.textContent.trim() : '';
         Object.keys(selectedDishes).forEach((dishId) => {
             if (dishes[dishId]) {
 				const dish = dishes[dishId];
-				const price = dish.Price.length > 0 ? getDishPrice(dish, source) : 0;
+				const price = getDishPrice(dish, source, city);
                 total += selectedDishes[dishId] * (price);
             }
         });
         document.getElementById("total-price").textContent = `Итого: ${total}`;
     }
-	
-	window.addSelectedDishes = function () {	
+
+	window.addSelectedDishes = function () {
 		removeEmptySelectedRows();
-		
+
         Object.keys(selectedDishes).forEach((dishId, idx) => {
             const quantity = selectedDishes[dishId];
             if (quantity > 0) {
@@ -242,14 +263,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 addDishToTable(dishId, quantity, idx);
             }
         });
-				
+
 		// Генерируем событие об изменении заказа
         const event = new CustomEvent('selectedDishesChanged', {});
         document.dispatchEvent(event);
 
         closeModal();
     };
-	
+
 	function round(value, decimals = 2) {
 		return Number(Math.round(value + 'e' + decimals) + 'e-' + decimals);
 	}
@@ -259,7 +280,9 @@ document.addEventListener("DOMContentLoaded", function () {
 		if (!dishData) return;
 
 		const source = document.getElementById('id_order_type').value;
-		const price = dishData.Price.length > 0 ? getDishPrice(dishData, source) : 0;
+		const cityField = document.querySelector('.fieldBox.field-city .readonly');
+        const city = cityField ? cityField.textContent.trim() : '';
+		const price = getDishPrice(dishData, source, city);
 		const total = round(price * quantity);
 
 		row.find("select[name$='-dish']").val(dishId).change();
@@ -271,6 +294,8 @@ document.addEventListener("DOMContentLoaded", function () {
 	function addDishToTable(dishId, quantity) {
 		const selects = document.querySelectorAll(".dynamic-orderdishes .field-dish select");
 		const source = document.getElementById('id_order_type').value;
+		const cityField = document.querySelector('.fieldBox.field-city .readonly');
+        const city = cityField ? cityField.textContent.trim() : '';
 
 		for (let s of selects) {
 			console.log("existing dish val", s.value);
@@ -278,7 +303,7 @@ document.addEventListener("DOMContentLoaded", function () {
 				const dishData = dishes[dishId];
 				if (!dishData) return;
 
-				const price = dishData.Price.length > 0 ? getDishPrice(dishData, source) : 0;
+				const price = getDishPrice(dishData, source, city);
 				const currentRow = $(s).closest('tr');
 
 				if (currentRow.length) {
@@ -319,7 +344,7 @@ document.addEventListener("DOMContentLoaded", function () {
 		}
 		$(document).trigger('formset:added', [row, options.prefix]);
 	}
-	
+
 	function addInlineDeleteButton(row) {
 		if (row.is("tr")) {
 			// If the forms are laid out in table rows, insert

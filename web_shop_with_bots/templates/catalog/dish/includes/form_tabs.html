@@ -1,0 +1,9 @@
+{% if admin_tabs %}
+  <div class="dish-admin-tabs">
+    {% for tab in admin_tabs %}
+      <a href="{{ tab.url }}" class="{% if tab.active %}active{% endif %}">
+        {{ tab.title }}
+      </a>
+    {% endfor %}
+  </div>
+{% endif %}

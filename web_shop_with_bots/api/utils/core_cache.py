@@ -10,7 +10,6 @@ DELIVERY_CONDITIONS_CACHE_KEY = "create_order_delivery_conditions"
 
 MENU_CACHE_KEYS = [
     "menu_/api/v1/menu/",
-    "menu2_/api/v1/menu2/",
 ]
 
 
@@ -47,19 +46,19 @@ def invalidate_orders_conditions_cache():
 
 def invalidate_cache_for_model(model):
     """ Тригерится, когда изменения модели через Actions."""
-    from catalog.models import Dish, Category, DishCategory
+    from catalog.models import (Dish, Category, DishCategory,
+                                DishCityPrice, DishPartnerPrice)
     from delivery_contacts.models import Restaurant, Delivery, DeliveryZone
     from tm_bot.models import OrdersBot
     from promos.models import Banner, PromoNews
 
-    if model in [Dish, Category, DishCategory]:
+    if model in [Dish, Category, DishCategory, DishCityPrice, DishPartnerPrice]:
         invalidate_menu_cache()
         invalidate_orders_conditions_cache()
         invalidate_banners_cache()
 
     elif model in [Restaurant, Delivery, OrdersBot]:
         invalidate_contacts_cache()
-        invalidate_orders_conditions_cache()
 
     elif model == DeliveryZone:
         invalidate_delivery_zones_cache()

@@ -6,6 +6,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const orderTypeField = document.getElementById('id_order_type');
     const manualDiscountInput = document.getElementById('id_manual_discount');
 
+    // discounts (данные скидок) и константа TAKEAWAY_DISCOUNT_TYPE,
+    // findActiveDiscountByType(), calcDiscountAmount()
+    // теперь берутся из discount_utils.js (подключается раньше этого файла)
+
     // Поля для сумм
     const amountField = document.querySelector('.fieldBox.field-amount .readonly');
     const deliveryCostInput = document.getElementById('id_delivery_cost');
@@ -25,21 +29,17 @@ document.addEventListener('DOMContentLoaded', function() {
         return ["P1-1", "P1-2", "P2-1", "P2-2", "P3-1"].includes(orderType);
     }
 
-    // Функция для установки ручной скидки
-    function setManualDiscount(value) {
+    // Функция для установки ручной скидки (значение в DIN, уже посчитанное)
+    function setManualDiscount(amountDin) {
         if (manualDiscountInput) {
-            // Получаем значение ручной скидки в процентах
-            const manualDiscountValue = getBaseAmount() * value / 100;
-            console.log('Ручная скидка (DIN):', manualDiscountValue);
-
-            manualDiscountInput.value = manualDiscountValue;
-            console.log(`Установлена ручная скидка: ${value}%`);
+            manualDiscountInput.value = amountDin;
+            console.log('Установлена ручная скидка (DIN):', amountDin);
         }
     }
 
     // Функция сброса скидки на 0
     function resetDiscount() {
-        setManualDiscount("0");
+        setManualDiscount(0);
     }
 
     // Функция получения стоимости доставки
@@ -112,11 +112,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const orderType = orderTypeField.value;
         console.log('Изменен тип заказа:', orderType);
 
-        // Если тип T (самовывоз), устанавливаем скидку 10%
+        // Если тип T (самовывоз), подставляем актуальную скидку из Discount(type=2)
         if (orderType === 'T') {
-            // Устанавливаем 10% только если поле пустое или равно 0
-            setManualDiscount("10");
-            console.log('Установлена скидка 10% для самовывоза ');
+            const takeawayDiscount = findActiveDiscountByType(discounts, TAKEAWAY_DISCOUNT_TYPE);
+            if (takeawayDiscount) {
+                const discountAmount = calcDiscountAmount(takeawayDiscount, getBaseAmount());
+                setManualDiscount(discountAmount);
+                console.log('Установлена скидка за самовывоз:', takeawayDiscount.title, '->', discountAmount, 'DIN');
+            } else {
+                resetDiscount();
+                console.log('Скидка за самовывоз сейчас неактивна/не настроена (Discount type=2)');
+            }
         }
         // Для других типов (включая D - доставку) обнуляем скидку
         else {

@@ -218,4 +218,22 @@
     <script src="{% static 'my_admin/js/shop/prevent_duplicate_orderdishes.js' %}"></script>
     <script src="{% static 'my_admin/js/shop/inline.js' %}"></script>
 
+    <script>
+        window.orderAdminHasErrors = false;
+    </script>
+
+    {% if adminform.form.errors %}
+    <script>
+        window.orderAdminHasErrors = true;
+    </script>
+    {% endif %}
+
+    {% for inline_admin_formset in inline_admin_formsets %}
+        {% if inline_admin_formset.formset.errors or inline_admin_formset.formset.non_form_errors %}
+            <script>
+                window.orderAdminHasErrors = true;
+            </script>
+        {% endif %}
+    {% endfor %}
+
 {% endblock %}

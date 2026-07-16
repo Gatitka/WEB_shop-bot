@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Вызываем функцию при загрузке страницы
-    fetchPricesForSelectedDishes();
+    // fetchPricesForSelectedDishes();
 
     // Обработчик изменения order_type для пересчета цен
     document.getElementById('id_order_type').addEventListener('change', function() {
@@ -243,42 +243,51 @@ document.addEventListener('DOMContentLoaded', function() {
         document.dispatchEvent(event);
     }
 
-    // Получение цены блюда в зависимости от источника заказа
-    function getDishPrice(dishInfo, orderType) {
-        if (['P1-1', 'P1-2'].includes(orderType)) {
-            return dishInfo.Price[1]; // Цена P1
+    function normalizeCity(value) {
+        return (value || '').replace(/\s+/g, '').toLowerCase();
+    }
+    // Функция выбора цены в зависимости от источника заказа
+    function getDishPrice(dishInfo, orderType, city) {
+        const prices = dishInfo.Prices || {};
+
+        const cityKey = Object.keys(prices).find(
+            key => normalizeCity(key) === normalizeCity(city)
+        );
+
+        const cityPrices = cityKey ? prices[cityKey] : null;
+        if (!cityPrices) return 0;
+
+        if (['P1-1', 'P1-2'].includes(orderType) && cityPrices.P1 != null) {
+            return cityPrices.P1;
         }
-        if (['P2-1', 'P2-2'].includes(orderType)) {
-            return dishInfo.Price[2]; // Цена P2
+
+        if (['P2-1', 'P2-2'].includes(orderType) && cityPrices.P2 != null) {
+            return cityPrices.P2;
         }
-        return dishInfo.Price[0]; // Обычная цена
+
+        return cityPrices.site ?? 0;
     }
 
     // Получение структуры цен для API-ответа из локальных данных блюда
-    function getDishPriceObject(dishInfo) {
+    function getDishPriceObject(dishInfo, city) {
+        const cityPrices = dishInfo.Prices ? dishInfo.Prices[city] : null;
         return {
-            price: dishInfo.Price[0],
-            price_p1: dishInfo.Price[1],
-            price_p2: dishInfo.Price[2]
+            price: cityPrices?.site ?? 0,
+            price_p1: cityPrices?.P1 ?? 0,
+            price_p2: cityPrices?.P2 ?? 0,
         };
     }
 
     // Функция для получения и обновления цены блюда
     function fetchAndUpdatePrice(dishId, unitPriceField) {
         const orderType = document.getElementById('id_order_type').value;
+        const cityField = document.querySelector('.fieldBox.field-city .readonly');
+        const city = cityField ? cityField.textContent.trim() : '';
 
-        // Проверяем, есть ли блюдо в локальных данных
         if (dishes && dishes[dishId]) {
-            // Получаем данные из локального хранилища
             const dishInfo = dishes[dishId];
+            const price = getDishPrice(dishInfo, orderType, city);
 
-            // Получаем цену в зависимости от источника
-            const price = getDishPrice(dishInfo, orderType);
-
-            // Обновляем кэш цен для возможного использования в других частях кода
-            fetchedPrices[dishId] = getDishPriceObject(dishInfo);
-
-            // Обновляем UI
             unitPriceField.innerHTML = price.toFixed(2);
             calculateAmount(unitPriceField);
 
@@ -286,31 +295,20 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Если блюда нет в локальных данных, проверяем кэш
+        // Если блюда нет в локальных данных — смотрим кэш всех цен по этому блюду
         if (fetchedPrices[dishId]) {
-            // Если цена уже получена, обновляем только поле с ценой
-            const priceData = fetchedPrices[dishId];
-            let price = 0;
+            const price = getDishPrice({ Prices: fetchedPrices[dishId] }, orderType, city);
 
-            if (['P1-1', 'P1-2'].includes(orderType)) {
-                price = priceData.price_p1;
-            } else if (['P2-1', 'P2-2'].includes(orderType)) {
-                price = priceData.price_p2;
-            } else {
-                price = priceData.price;
-            }
-
-            unitPriceField.innerHTML = price;
+            unitPriceField.innerHTML = price.toFixed(2);
             calculateAmount(unitPriceField);
 
             console.log(`Цена для блюда ${dishId} получена из кэша: ${price}`);
             return;
         }
 
-        // Если блюда нет ни в локальных данных, ни в кэше, запрашиваем через API
-        console.log(`Запрос цены для блюда ${dishId} через API`);
+        // Запрашиваем сразу все цены блюда по всем городам/партнёрам — один раз
+        console.log(`Запрос цен для блюда ${dishId} через API`);
 
-        // Формируем URL в зависимости от текущего домена
         var fetchPriceUrl;
         if (currentDomain === '127.0.0.1') {
             fetchPriceUrl = `http://${currentDomain}:8000/api/v1/get_dish_price/?dish_id=`;
@@ -325,19 +323,11 @@ document.addEventListener('DOMContentLoaded', function() {
         xhr.onreadystatechange = function() {
             if (xhr.readyState == 4 && xhr.status == 200) {
                 var response = JSON.parse(xhr.responseText);
-                // Сохраняем полученную цену
-                fetchedPrices[dishId] = response;
+                fetchedPrices[dishId] = response.Prices; // кэш на всё блюдо разом, без city/order_type в URL
 
-                let price = 0;
-                if (['P1-1', 'P1-2'].includes(orderType)) {
-                    price = response.price_p1;
-                } else if (['P2-1', 'P2-2'].includes(orderType)) {
-                    price = response.price_p2;
-                } else {
-                    price = response.price;
-                }
+                const price = getDishPrice({ Prices: response.Prices }, orderType, city);
 
-                unitPriceField.innerHTML = price;
+                unitPriceField.innerHTML = price.toFixed(2);
                 calculateAmount(unitPriceField);
 
                 console.log(`Цена для блюда ${dishId} получена через API: ${price}`);
@@ -345,4 +335,35 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         xhr.send();
     }
+
+    function recalcAllSelectedDishes() {
+        document.querySelectorAll('.field-dish select').forEach(function(select) {
+            if (select.value) {
+                var unitPriceField = select.closest('tr').querySelector('.field-unit_price p');
+                fetchAndUpdatePrice(select.value, unitPriceField);
+            }
+        });
+    }
+
+    document.getElementById('id_order_type').addEventListener('change', recalcAllSelectedDishes);
+
+    function restorePricesAfterValidationError() {
+        if (!window.orderAdminHasErrors) return;
+
+        document.querySelectorAll('.field-dish select').forEach(function(select) {
+            if (!select.value) return;
+
+            const row = select.closest('tr');
+            const unitPriceField = row.querySelector('.field-unit_price p');
+            if (!unitPriceField) return;
+
+            const currentPrice = parseFloat(unitPriceField.textContent || '0');
+            if (!currentPrice) {
+                fetchAndUpdatePrice(select.value, unitPriceField);
+            }
+        });
+    }
+    setTimeout(function() {
+        restorePricesAfterValidationError();
+    }, 300);
 });

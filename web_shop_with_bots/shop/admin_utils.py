@@ -1,16 +1,20 @@
 """Функции, необходимые для отображения админки"""
 
-from shop.models import Order
+
+from collections import defaultdict
+from shop.models import Order, Discount
 from shop.reports.summary import get_report_data
 from delivery_contacts.models import DeliveryZone
 from delivery_contacts.utils import get_google_api_key
 from django.utils import timezone
 from django.conf import settings
-from catalog.models import Category, DishCategory
+from catalog.models import (Category, DishCategory,
+                            Dish, DishCityPrice, DishPartnerPrice)
 import re
 from django.utils.html import format_html
 from shop.utils import get_flag
 from decimal import Decimal, ROUND_HALF_UP
+
 
 
 def my_get_object(model, object_id, source=None):
@@ -64,98 +68,91 @@ def my_get_queryset(request, qs):
 def get_menu_data():
     """
     Формирует оптимизированные данные меню: словарь категорий и словарь блюд.
-
-    Returns:
-        tuple: (categories, dishes) где:
-            - categories: словарь категорий {id: {Image, Name, Dishes[]}}
-            - dishes: словарь блюд {id: {Name, Image, Price[]}}
     """
-    # Язык, который мы хотим использовать
     language_code = 'ru'
 
-    # Получаем активные категории с переводами отсортированные
-    # по приоритетности, чтобы Допы были в конце списка
     categories_queryset = Category.objects.filter(
             is_active=True
         ).prefetch_related(
             'translations'
         ).order_by('priority')
 
-    # Подгружаем связи между категориями и блюдами с предзагрузкой данных о блюдах
-    dish_categories = DishCategory.objects.select_related('dish', 'category').prefetch_related(
-        'dish__translations'
-    )
-
-    # Создаем результирующие словари
     categories = {}
-    dishes = {}
-
-    # Заполняем словарь категорий
     for category in categories_queryset:
-        # Пытаемся получить перевод на русском
         category_name = None
         for translation in category.translations.all():
             if translation.language_code == language_code and translation.name:
                 category_name = translation.name
                 break
 
-        # Если русского перевода нет, берем первый доступный
         if not category_name and category.translations.exists():
             category_name = category.translations.first().name
 
-        # Если вообще нет переводов, используем ID
         if not category_name:
             category_name = f"Категория {category.id}"
 
         categories[category.id] = {
-            "Image": "",  # У категорий нет изображений в модели
+            "Image": "",
             "Name": category_name,
-            "Dishes": []  # Заполним позже
+            "Dishes": []
         }
 
-    # Заполняем словарь блюд и связи категория-блюдо
-    for relation in dish_categories:
-        dish = relation.dish
-        category_id = relation.category_id
+    # --- Шаг 1: связи категория → артикул блюда, без создания объектов Dish ---
+    dish_category_pairs = DishCategory.objects.filter(
+        category_id__in=categories.keys(),
+        dish__is_active=True,
+    ).values_list('category_id', 'dish_id')  # dish_id тут = article (to_field='article')
 
-        # Пропускаем, если категория не активна
-        if category_id not in categories:
-            continue
+    dish_articles = set()
+    for category_id, dish_article in dish_category_pairs:
+        categories[category_id]["Dishes"].append(dish_article)
+        dish_articles.add(dish_article)
 
-        # Добавляем ID блюда в список блюд категории
-        categories[category_id]["Dishes"].append(dish.article)
+    # --- Шаг 2: сами блюда — ровно один объект на артикул, а не на пару категория-блюдо ---
+    dishes_queryset = Dish.objects.filter(
+        article__in=dish_articles
+    ).prefetch_related('translations')
 
-        # Если блюдо уже добавлено в словарь блюд, пропускаем
-        if dish.article in dishes:
-            continue
+    # --- Цены: 2 плоских запроса, только по нужным блюдам ---
+    prices_by_dish = defaultdict(dict)  # {article: {city: {"site": x, "P1": x, "P2": x}}}
 
-        # Пытаемся получить перевод на русском
+    city_prices = DishCityPrice.objects.filter(
+        dish_id__in=dish_articles
+    ).values('dish_id', 'city', 'final_price')
+    for row in city_prices:
+        prices_by_dish[row['dish_id']].setdefault(row['city'], {})['site'] = (
+            float(row['final_price']) if row['final_price'] is not None else None
+        )
+
+    partner_prices = DishPartnerPrice.objects.filter(
+        dish_id__in=dish_articles
+    ).values('dish_id', 'city', 'partner_category', 'final_price')
+    for row in partner_prices:
+        prices_by_dish[row['dish_id']].setdefault(row['city'], {})[row['partner_category']] = (
+            float(row['final_price']) if row['final_price'] is not None else None
+        )
+
+    dishes = {}
+    for dish in dishes_queryset:
         dish_name = None
         for translation in dish.translations.all():
             if translation.language_code == language_code and translation.short_name:
                 dish_name = translation.short_name
                 break
 
-        # Если русского перевода нет, берем первый доступный
         if not dish_name and dish.translations.exists():
             dish_name = dish.translations.first().short_name
 
-        # Если вообще нет переводов, используем артикул
         if not dish_name:
             dish_name = f"Блюдо {dish.article}"
 
         dishes[dish.article] = {
             "Name": dish_name,
             "Image": dish.image.url if dish.image else "",
-            "Price": [
-                float(dish.final_price),     # основная цена
-                float(dish.final_price_p1),  # цена для партнера P1
-                float(dish.final_price_p2)   # цена для партнера P2
-            ],
-            "Utensils": dish.utensils
+            "Prices": prices_by_dish.get(dish.article, {}),
+            "Utensils": dish.utensils,
         }
 
-    # Удаляем категории без блюд
     categories = {k: v for k, v in categories.items() if v["Dishes"]}
 
     return categories, dishes
@@ -187,14 +184,41 @@ def get_delivery_zones():
     return delivery_zones
 
 
+def get_discounts():
+    """
+    Формирует оптимизированные данные по скидкам.
+
+    Returns:
+        - delivery_zones: словарь зон доставки {id: {name, delivery_cost, is_promo, promo_min_order_amount}}
+
+    """
+    discounts_list = Discount.objects.all()
+
+    discounts = {}
+
+    for discount in discounts_list:
+        discounts.update({discount.pk: {
+                            'is_active': discount.is_active,
+                            'discount_am': discount.discount_am,
+                            'discount_perc': discount.discount_perc,
+                            'title': discount.title_rus,
+                            'type': discount.type,
+                            }
+                            })
+
+    return discounts
+
+
 def get_addchange_extra_context(request, extra_context, type=None, source=None):
     """ Формирует extra_conext в форму создания заказа.
         Пробрасывает GOOGLE_API_KEY, menu, delivery_zones."""
     extra_context["categories"], extra_context["dishes"] = get_menu_data()
+    extra_context["discounts"] = get_discounts()
 
-    if type == 'all':
+    if type != 'partner':
         extra_context["GOOGLE_API_KEY"] = get_google_api_key()
         extra_context["delivery_zones"] = get_delivery_zones()
+
     return extra_context
 
 

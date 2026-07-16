@@ -1,0 +1,57 @@
+/* Акцент вместо заливки фона - цветная полоска слева у строк "Скидка" и
+   "Доп скидка". Не трогает background/color самого содержимого fieldBox
+   (label, select, input) - поэтому не может испортить контраст текста
+   независимо от темы админки (светлой или темной). */
+.fieldBox.field-discount {
+    border-left: 3px solid #60a5fa;
+    padding-left: 10px;
+}
+.fieldBox.field-manual_discount {
+    border-left: 3px solid #fbbf24;
+    padding-left: 10px;
+}
+
+/* Крупные суммы заказа до/после скидки - главные цифры на форме,
+   должны считываться с одного взгляда. */
+.fieldBox.field-amount .readonly,
+.fieldBox.field-final_amount_with_shipping .readonly {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+/* Подписи с результатами расчёта - вставляются JS-ом сразу после полей
+   скидок и итоговой суммы. Обычный цветной текст без своего фона/рамки -
+   у span по умолчанию display: inline, а inline-элементы физически не
+   могут растягиваться на ширину/высоту родителя (в отличие от block/
+   inline-block в grid- или flex-контейнере), поэтому это самый надежный
+   вариант независимо от того, как Django admin верстает форму. */
+.calc-note {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* Синий - то, что посчиталось автоматически (системная скидка из дропдауна) */
+.calc-note--system {
+    color: #60a5fa;
+}
+
+/* Жёлтый - то, что вводится и правится вручную (доп скидка) */
+.calc-note--manual {
+    color: #fbbf24;
+}
+
+/* Зелёный - итоговый результат (итоговая скидка на сумму заказа) */
+.calc-note--total {
+    color: #34d399;
+}
+
+/* Компактный ряд "Контактная информация": не растягивать fieldBox
+   на всю доступную ширину, подстраиваться под содержимое */
+.field-recipient_name,
+.field-recipient_phone,
+.field-get_msngr_link {
+    flex: 0 0 auto !important;
+    max-width: fit-content;
+}
