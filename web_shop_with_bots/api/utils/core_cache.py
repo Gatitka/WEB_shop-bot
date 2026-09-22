@@ -7,6 +7,7 @@ PROMONEWS_CACHE_KEY = "promonews"
 BANNERS_CACHE_KEY = "banners"
 TAKEAWAY_CONDITIONS_CACHE_KEY = "create_order_takeaway_conditions"
 DELIVERY_CONDITIONS_CACHE_KEY = "create_order_delivery_conditions"
+RESTAURANT_DELIVERY_ACTIVE_CACHE_KEY = "restaurant_delivery_active_Beograd"
 
 MENU_CACHE_KEYS = [
     "menu_/api/v1/menu/",
@@ -24,6 +25,7 @@ def invalidate_contacts_cache():
         CONTACTS_DELIVERY_CACHE_KEY,
         TAKEAWAY_CONDITIONS_CACHE_KEY,
         DELIVERY_CONDITIONS_CACHE_KEY,
+        RESTAURANT_DELIVERY_ACTIVE_CACHE_KEY,
     ])
 
 

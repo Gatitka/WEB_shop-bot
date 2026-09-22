@@ -787,6 +787,8 @@ DELIVERY_CHOICES = (
     ("restaurant", "Ресторан")
 )
 
+RESTAURANT_PARTNER_GROUP = 'restaurant_partner_beograd'
+
 MAX_DISC_AMOUNT = 25
 
 MESSENGERS = [

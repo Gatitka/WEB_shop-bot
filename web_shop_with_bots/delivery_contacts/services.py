@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.core.cache import cache
 from django.conf import settings
+from rest_framework.exceptions import ValidationError
 
 from delivery_contacts.models import Delivery, DeliveryZone
 
@@ -14,10 +15,45 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+RESTAURANT_DELIVERY_ACTIVE_CACHE_PREFIX = "restaurant_delivery_active_"
+
+
+def is_restaurant_delivery_active(city):
+    cache_key = f"{RESTAURANT_DELIVERY_ACTIVE_CACHE_PREFIX}{city}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return bool(cached)
+
+    is_active = Delivery.objects.filter(
+        city=city, type='restaurant', is_active=True
+    ).exists()
+    cache.set(cache_key, int(is_active), timeout=24 * 3600)
+    return is_active
+
+
+def is_restaurant_partner(user):
+    return (
+            user.is_authenticated
+            and user.groups.filter(name=settings.RESTAURANT_PARTNER_GROUP).exists()
+        )
+
+
+
 def get_delivery(request, type):
+    """Выбор объекта доставки в засимости от типа заказа.
+    Если заказ и Белграда и заказ у партнера """
     city = request.data.get('city', settings.DEFAULT_CITY)
     if city is None:
         city = settings.DEFAULT_CITY
+
+    user = request.user
+
+    if is_restaurant_partner(user) and is_restaurant_delivery_active(city):
+        restaurant_delivery = Delivery.objects.filter(
+            city=city, type='restaurant', is_active=True
+        ).first()
+        if restaurant_delivery:
+            return restaurant_delivery
 
     delivery = Delivery.objects.filter(
         city=city,
@@ -26,6 +62,19 @@ def get_delivery(request, type):
     ).first()
 
     return delivery
+
+# def get_delivery(request, type):
+#     city = request.data.get('city', settings.DEFAULT_CITY)
+#     if city is None:
+#         city = settings.DEFAULT_CITY
+
+#     delivery = Delivery.objects.filter(
+#         city=city,
+#         type=type,
+#         is_active=True
+#     ).first()
+
+#     return delivery
 
 
 def get_delivery_zone(city, lat=None, lon=None):

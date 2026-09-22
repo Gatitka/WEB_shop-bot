@@ -22,7 +22,7 @@ def validate_delivery_time(value, delivery, restaurant=None):
         handoff_min_time = delivery.min_time
         handoff_max_time = delivery.max_time
 
-    if delivery.type == 'takeaway':
+    if delivery.type in ('takeaway', 'restaurant'):
         if restaurant is not None:
             if not isinstance(restaurant, Restaurant):
                 restaurant = Restaurant.objects.filter(id=restaurant).first()

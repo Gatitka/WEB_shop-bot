@@ -31,10 +31,14 @@ class DeliveryAdmin(TranslatableAdmin):
     """Настройки админ панели доставки"."""
 
     def workhours(self, obj):
+        if obj.type in ('takeaway', 'restaurant'):
+            return "— см. ресторан"
         return obj.get_workhours()
     workhours.short_description = 'время выдачи'
 
     def acctodayhours(self, obj):
+        if obj.type in ('takeaway', 'restaurant'):
+            return "— см. ресторан"
         return obj.get_acctodayhours()
     acctodayhours.short_description = format_html(
         "время приема заказов<br>'Сегодня/Как можно быстрее'")
@@ -47,6 +51,13 @@ class DeliveryAdmin(TranslatableAdmin):
 
     fieldsets = (
         ('Основное', {
+            'description': (
+                "Поля времени ниже используются только для типа "
+                "<b>«Доставка»</b>. Для «Самовывоз» и «Ресторан» расписание "
+                "всегда берётся из выбранного в заказе ресторана "
+                "(его рабочие часы и время приёма ASAP-заказов) — "
+                "эти четыре поля в таком случае игнорируются кодом."
+            ),
             'fields': (
                 ('type', 'is_active'),
                 ('city'),
@@ -188,17 +199,36 @@ class RestaurantAdmin(OSMGeoAdmin):   # admin.ModelAdmin):
     readonly_fields = ('admin_photo', 'get_admin')
     list_filter = ('is_active', 'city')
     actions = [*active_actions]
-    fields = (
-        ('short_name'),
-        ('is_active', 'is_default', 'is_overloaded'),
-        ('city'),
-        ('address'),
-        ('coordinates'),
-        ('open_time', 'close_time'),
-        ('min_acc_time', 'max_acc_time'),
-        ('phone'),
-        ('get_admin'),
-        ('admin_photo', 'image')
+    fieldsets = (
+        ('Основное', {
+            'fields': (
+                ('short_name'),
+                ('is_active', 'is_default', 'is_overloaded'),
+                ('city'),
+                ('address'),
+                ('coordinates'),
+            )
+        }),
+        ('Расписание', {
+            'description': (
+                "Эти часы определяют, когда ресторан принимает заказы — "
+                "и для обычного самовывоза, и для заказов от партнёра "
+                "(способ получения «Ресторан»)."
+            ),
+            'fields': (
+                ('open_time', 'close_time'),
+                ('min_acc_time', 'max_acc_time'),
+            )
+        }),
+        ('Контакты и админы', {
+            'fields': (
+                ('phone'),
+                ('get_admin'),
+            )
+        }),
+        ('Изображение', {
+            'fields': ('admin_photo', 'image'),
+        }),
     )
 
     def working_hours(self, obj):
