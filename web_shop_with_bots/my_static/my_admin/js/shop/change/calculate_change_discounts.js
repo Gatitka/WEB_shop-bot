@@ -49,6 +49,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Слушаем изменения в поле суммы заказа (событие дергает calculate_change_dishes.js)
     document.addEventListener('amountChanged', function() {
+        // При самовывозе (T) скидка автоматическая (% от суммы Discount type=2) -
+        // пересчитываем её DIN-значение под новую сумму заказа, как в add-форме.
+        // Для остальных типов заказа ручную скидку не трогаем - её мог ввести
+        // админ осознанно, затирать резетом в 0 (как делает add-форма) не хотим.
+        if (isEditing && orderTypeField && orderTypeField.value === 'T') {
+            handleDiscountChange();
+        }
         calculateFinalAmount();
     });
 

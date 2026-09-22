@@ -166,12 +166,11 @@ class OrderAddForm(forms.ModelForm):
             self.initial['city'] = user.city
             self.instance.city = user.city
 
-        # Исключаем скидки на 1й заказ (1) и на оплату наличными при доставке (3)
+        # В выпадающем списке показываем только активные скидки
         if 'discount' in self.fields:
             filtered_discounts = [(None, '---------')] + [
                 (discount.id, str(discount))
-                for discount in Discount.objects.all()
-                if discount.id not in [1, 3]
+                for discount in Discount.objects.filter(is_active=True)
             ]
             self.fields['discount'].choices = filtered_discounts
 
@@ -526,7 +525,7 @@ class OrderChangeForm(forms.ModelForm):
             set_admin_data(self, user)
 
         # отображение process_comment
-        if self.instance is None or self.instance.process_comment is None:
+        if self.instance is None or not self.instance.process_comment:
             self.fields['process_comment'].widget = forms.HiddenInput()
 
         # установить значение order_type
@@ -546,14 +545,17 @@ class OrderChangeForm(forms.ModelForm):
                                                 model_class=Campaign)
             self.fields['delivery_zone'].queryset = get_filtered_delivery_zones(user)
 
-        # Исключаем скидки на 1й заказ (1) и на оплату наличными при доставке (3)
+        # В выпадающем списке показываем только активные скидки
         if 'discount' in self.fields:
             filtered_discounts = [(None, '---------')] + [
                 (discount.id, str(discount))
-                for discount in Discount.objects.all()
-                if discount.id not in [3]
+                for discount in Discount.objects.filter(is_active=True)
             ]
             self.fields['discount'].choices = filtered_discounts
+
+        # Ручная скидка необязательна - пустое значение = 0 (аналогично OrderAddForm)
+        if 'manual_discount' in self.fields:
+            self.fields['manual_discount'].required = False
 
         # если юзер известен, то загрузка его избранных адресов
         user = self.instance.user
@@ -833,6 +835,11 @@ class OrderChangeForm(forms.ModelForm):
             if process_comment == '':
                 return None
         return process_comment
+
+    def clean_manual_discount(self):
+        # Пустое значение (стёрли вручную) = скидки нет, а не NULL -
+        # иначе Order.save() споткнется на self.full_clean() (blank=False у модели)
+        return self.cleaned_data.get('manual_discount') or 0
 
     def clean(self):
         cleaned_data = super().clean()

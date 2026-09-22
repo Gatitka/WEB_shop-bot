@@ -176,7 +176,6 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Calculate delivery button clicked');
 
             const city = getOrderCity();
-            const city = cityField ? cityField.textContent.trim() : '';
             const recipientAddress = recipientAddressInput?.value || myDeliveryAddressElement?.value;
             const amount = amountField?.textContent?.trim();
             const coordinates = coordinatesInput?.value;

@@ -378,12 +378,23 @@ class Dish(TranslatableModel):
     def get_price_matrix_activation_errors(self):
         errors = []
 
+        # Города, в которых блюдо реально присутствует в меню (CityDishList).
+        # Именно этот список — источник истины, а не settings.CITY_CHOICES.
+        dish_cities = set(self.citydishlist_set.values_list('city', flat=True))
+
+        if not dish_cities:
+            errors.append(
+                "блюдо не добавлено ни в один городской список меню (CityDishList) — "
+                "активировать нельзя"
+            )
+            return errors
+
         city_prices = {cp.city: cp for cp in self.city_prices.all()}
         partner_prices = {
             (pp.city, pp.partner_category): pp for pp in self.partner_prices.all()
         }
 
-        for city, _ in settings.CITY_CHOICES:
+        for city in dish_cities:
             city_price = city_prices.get(city)
 
             if not city_price:
