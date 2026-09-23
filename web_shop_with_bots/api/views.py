@@ -26,7 +26,7 @@ from djoser import utils
 from djoser.views import UserViewSet
 
 from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -62,10 +62,13 @@ from shop.services import (get_base_profile_and_shopping_cart, get_cart,
 from shop.validators import validate_user_order_exists
 from tm_bot.models import (get_status_tmbot, OrdersBot, get_bot,
                            MessengerAccount, MessengerAccountBot)
+from tm_bot.restaurant_partner_stats import get_restaurant_partner_stats
 
 from users.models import (BaseProfile, UserAddress,
                           get_or_create_dummy_webacount_and_baseprofile)
 from users.validators import validate_first_and_last_name
+
+
 
 import logging.config
 import logging
@@ -1697,3 +1700,25 @@ def fixed_js_response(request):
         data = json.loads(f.read())
 
     return Response(data)
+
+
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def restaurant_partner_stats_view(request):
+    """Ответ репорт боту сформированным отчетом."""
+    token = request.headers.get('X-Report-Bot-Token')
+    if not settings.REPORT_BOT_API_TOKEN or token != settings.REPORT_BOT_API_TOKEN:
+        return Response({'detail': 'Forbidden'}, status=403)
+
+    period = request.query_params.get('period')
+    if period not in ('today', 'month'):
+        return Response({'detail': "period must be 'today' or 'month'"}, status=400)
+
+    stats = get_restaurant_partner_stats(period)
+    return Response({
+        'orders_count': stats['orders_count'],
+        'total_sum': str(stats['total_sum']),
+        'avg_check': str(stats['avg_check']),
+    })

@@ -80,6 +80,8 @@ urlpatterns = [
 
     path('v1/telegram/subscription/', views.SubscriptionAPIView.as_view(),
          name="telegram_subscription"),
+    path('v1/telegram/restaurant-partner-stats/', views.restaurant_partner_stats_view,
+         name='restaurant-partner-stats'),
 ]
 
 if settings.DEBUG:

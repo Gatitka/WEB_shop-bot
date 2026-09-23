@@ -218,13 +218,33 @@ def update_mab_send_result(
         )
 # ---------------------------- UNITED SEND MESSAGES ---------------------------------
 
+def send_message_new_order_to_restaurant_partner(order):
+    """Доп. уведомление в чат партнёрского кафе (Белград, delivery.type == 'restaurant')."""
+    chat_id = settings.RESTAURANT_PARTNER_CHAT_ID
+    if not chat_id:
+        logger.warning("RESTAURANT_PARTNER_CHAT_ID не задан — уведомление партнёру пропущено.")
+        return None
+
+    message = ta.get_admin_message_new_order(order)
+    cleaned_message = ta.escape_markdown(message)
+    return send_message_telegram(chat_id,
+                                 cleaned_message,
+                                 settings.REPORT_BOT_TOKEN,
+                                 disable_link_preview=True)
+
+
 def send_message_new_order_admin_user(order):
     """ Отправка сообщения телеграм-ботом в:
         Админский чат о новом заказе. (последовательно)
+        + доп. чат партнёра, если заказ 'ресторан' в Белграде.
         +
-        Пользователю отправляем сначала в бот города.
-        Если не получилось, то в его бот с пометкой, что вопросы по заказу к админу другого города"""
+        Пользователю отправляем сначала в бот города...
+    """
     send_message_new_order_to_admin(order)
+
+    if order.city == 'Beograd' and order.delivery.type == 'restaurant':
+        send_message_new_order_to_restaurant_partner(order)
+
     # send_message_new_order_to_user_other_city(order)
 
 
@@ -290,7 +310,7 @@ def send_message_new_order_to_admin(order):
     chat_id = get_chat_id_by_order(order)
     return send_message_telegram(chat_id,
                                  cleaned_message,
-                                 settings.ADMIN_BOT_TOKEN,
+                                 settings.REPORT_BOT_TOKEN,
                                  disable_link_preview=True)
 
 
@@ -301,7 +321,7 @@ def send_error_message_order_unsaved(bot, order_id, e):
     message = f'❗️Заказ TM BOT #{order_id} не сохранился в базе данных.'
     cleaned_message = ta.escape_markdown(message)
     chat_id = get_chat_id_by_bot(bot)
-    send_message_telegram(chat_id, cleaned_message, settings.ADMIN_BOT_TOKEN)
+    send_message_telegram(chat_id, cleaned_message, settings.REPORT_BOT_TOKEN)
 
 
 def send_error_message_order_saved(order):
@@ -311,7 +331,7 @@ def send_error_message_order_saved(order):
     message = f'❗️Заказ TM BOT #{order.source_id} сохранился с ошибками или требует уточнения.'
     cleaned_message = ta.escape_markdown(message)
     chat_id = get_chat_id_by_order(order)
-    send_message_telegram(chat_id, cleaned_message, settings.ADMIN_BOT_TOKEN)
+    send_message_telegram(chat_id, cleaned_message, settings.REPORT_BOT_TOKEN)
 
 
 def send_message_admin_changed_settings(message, city):
@@ -322,7 +342,7 @@ def send_message_admin_changed_settings(message, city):
     chat_id = get_admin_chat_id_by_city(city)
     return send_message_telegram(chat_id,
                                  cleaned_message,
-                                 settings.ADMIN_BOT_TOKEN,
+                                 settings.REPORT_BOT_TOKEN,
                                  disable_link_preview=True)
 
 # ---------------------------- TO CLIENT SEND MESSAGES ---------------------------------

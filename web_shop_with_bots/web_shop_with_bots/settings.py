@@ -733,7 +733,9 @@ if ENVIRONMENT in ['test_server', 'production'] and SENTRY_DSN and SENTRY_DSN.lo
 # -------------------------------- TELEGRAM BOT  ----------------------------
 
 
-ADMIN_BOT_TOKEN = os.getenv('ADMIN_BOT_TOKEN')
+REPORT_BOT_TOKEN = os.getenv('REPORT_BOT_TOKEN')
+REPORT_BOT_API_TOKEN = os.getenv('REPORT_BOT_API_TOKEN')    # to check requests
+
 CHAT_ID = os.getenv('CHAT_ID')
 CHAT_ID1 = os.getenv('CHAT_ID1')   # BR
 CHAT_ID2 = os.getenv('CHAT_ID2')   # NS
@@ -752,6 +754,7 @@ ADMIN_CHATS = {
     "Beograd": CHAT_ID1,
     "NoviSad": CHAT_ID2
 }
+RESTAURANT_PARTNER_CHAT_ID = os.getenv('RESTAURANT_PARTNER_CHAT_ID')
 
 TELEGRAM_BOT_TOKEN_TEST = os.getenv('TELEGRAM_BOT_TOKEN_TEST')
 TELEGRAM_AUTH_TEST_BOTS = {
@@ -884,7 +887,7 @@ SOURCE_TYPES = PARTNER_TYPES + [
 
 
 CITY_EXCLUDED_TYPES = {
-    'Beograd':  {'R'},
+    # 'Beograd':  {'R'},
     'Novi Sad': {'P1-2', 'P3-1'},
 }
 
