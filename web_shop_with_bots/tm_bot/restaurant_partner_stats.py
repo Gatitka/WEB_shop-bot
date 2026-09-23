@@ -8,18 +8,20 @@ def get_restaurant_partner_stats(period: str) -> dict:
     """
     period: 'today' | 'month'
     Статистика по заказам city='Beograd', delivery__type='restaurant',
-    исключая отменённые (CND).
+    исключая отменённые (CND). Считаем по execution_date — дате факта
+    исполнения заказа, а не по дате создания.
     """
-    now = timezone.localtime()
+    today = timezone.localdate()
     qs = Order.objects.filter(
         city='Beograd',
         delivery__type='restaurant',
     ).exclude(status='CND')
 
     if period == 'today':
-        qs = qs.filter(created__date=now.date())
+        qs = qs.filter(execution_date=today)
     elif period == 'month':
-        qs = qs.filter(created__year=now.year, created__month=now.month)
+        qs = qs.filter(execution_date__year=today.year,
+                       execution_date__month=today.month)
 
     agg = qs.aggregate(
         total_sum=Sum('final_amount_with_shipping'),

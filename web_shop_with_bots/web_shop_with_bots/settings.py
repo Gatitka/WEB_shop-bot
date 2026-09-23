@@ -197,6 +197,7 @@ default_allowed_hosts = [
     'localhost',
     '127.0.0.1',
     '[::1]',
+    'host.docker.internal'
 ]
 
 allowed_hosts = default_allowed_hosts.copy()
