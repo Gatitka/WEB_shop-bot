@@ -1702,8 +1702,6 @@ def fixed_js_response(request):
     return Response(data)
 
 
-
-
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def restaurant_partner_stats_view(request):
@@ -1716,7 +1714,19 @@ def restaurant_partner_stats_view(request):
     if period not in ('today', 'month'):
         return Response({'detail': "period must be 'today' or 'month'"}, status=400)
 
-    stats = get_restaurant_partner_stats(period)
+    month = year = None
+    if period == 'month':
+        month_raw = request.query_params.get('month')
+        year_raw = request.query_params.get('year')
+        try:
+            month = int(month_raw) if month_raw is not None else None
+            year = int(year_raw) if year_raw is not None else None
+        except ValueError:
+            return Response({'detail': "month/year must be integers"}, status=400)
+        if month is not None and not (1 <= month <= 12):
+            return Response({'detail': "month must be 1-12"}, status=400)
+
+    stats = get_restaurant_partner_stats(period, month=month, year=year)
     return Response({
         'orders_count': stats['orders_count'],
         'total_sum': str(stats['total_sum']),
